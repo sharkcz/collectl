@@ -36,19 +36,35 @@ For Debian
 
 KNOWN PROBLEMS/RESTRICTIONS
 
-  - see man page for more details
   - playback mode on PCs gives incorrect warnings about uninitialized variables
     when -b/-e used.  these can safely be ignored.
   - in playback mode, make sure to deselect -O if recorded subsys not specified
     or else will trip error checks in checkSubOpts()
-  - this version may generate errors "Ignoring '!' modifier for short option
-    P" with older versions of perl OR at least older version of the 'getopts'
+  - this version may generate errors "Ignoring '!' modifier for short options
+    with older versions of perl OR at least older version of the 'getopts'
     module.
   - when showing process command, only show command portion.  the args will 
     still be saved when using -P
   - if run as a non-privileged users, network speeds will NOT be recorded in
     in file headers and the default speed specified by DefNetSpeed in the conf
     file will be used to determine if any network stats are bogus
+  - if system time is changed by more then the log rolling frequency after collectl
+    starts, multiple log files will be created during the next polling cycle(s)
+
+2.4.3	Feb 04, 2008
+  - cpu percentages calculations need to include iowait in denominator
+  - memory stats: include AnonPages in mapped memory
+  - fixed pattern match for IB device number to properly select mlx4_ adapter
+  - was incorrectly including network bond stats with total network stats
+  - wasn't printing date/time for --vmstat when requested
+  - added IbDupCheckFlag to collectl.conf to allow disabling the check for 
+    duplicate instances both trying to read IB counters
+  - removed a couple of spaces from default output so now <80 columns wide
+  - when someone creates a new logical disk after collectl has been started, we need
+    to add that disk to the list of valid disk names
+  - changed the algorithm used to check for bogus network data.  you can also
+    disable these checks by setting DefNetMax to a negative value in 
+    collectl.conf
 
 2.4.2	Jan 16, 2008
   - changed purge algorithm to explicitly purge any files in the logging directory

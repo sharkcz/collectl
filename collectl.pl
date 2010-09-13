@@ -69,7 +69,7 @@ use IO::Select;
 $miniDateFlag=0;
 $kernel2_4=$kernel2_6=$PageSize=0;
 $PidFile='/var/run/collectl.pid';
-$PerlVers=$Memory=$Swap=$Hyper='';
+$PerlVers=$Memory=$Swap=$Hyper=$Distro='';
 $CpuVendor=$CpuMHz=$CpuCores=$CpuSiblings='';
 $PQuery=$PCounter=$VStat=$VoltaireStats=$IBVersion=$HCALids='';
 $numBrwBuckets=$cfsVersion=$sfsVersion='';
@@ -85,7 +85,7 @@ if ($Config{'version'} lt '5.8.0')
 #  exit;
 }
 
-$Version=  '2.4.2';
+$Version=  '2.4.3';
 $Copyright='Copyright 2003-2008 Hewlett-Packard Development Company, L.P.';
 $License=  "collectl may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
@@ -188,6 +188,7 @@ $LustreConfigInt=1;
 $InterConnectInt=900;
 $HeaderRepeat=20;
 $DefNetSpeed=10000;
+$IbDupCheckFlag=1;
 
 $Passwd=       '/etc/passwd';
 $Grep=         '/bin/grep';
@@ -427,7 +428,7 @@ if ($verboseFlag+$vmstatFlag+$procmemFlag+$procioFlag || $custom ne '')
   {
     # When forcing a value for $subsys we also need to make it look like
     # that's what the user specified.
-    error("no subsystems can be specified for -M2")    if $userSubsys ne '';
+    error("no subsystems can be specified for --vmstat")    if $userSubsys ne '';
     $subsys=$userSubsys="cm";
   }
   elsif ($procmemFlag || $procioFlag)
@@ -466,7 +467,7 @@ error("--rawtoo requires -P or --sexpr")                   if $rawtooFlag && !$p
 error("--rawtoo and -P requires -f")                       if $rawtooFlag && $plotFlag && $filename eq '';
 error("--rawtoo cannot be used with -p")                   if $rawtooFlag && $playback ne '';
 error("-ou/--utc only apply to -P format")                 if $utcFlag && !$plotFlag;
-error("can't mix -ou with other formats")                  if $utcFlag && $options=~/[dDt]/;
+error("can't mix -ou with other formats")                  if $utcFlag && $options=~/[dDT]/;
 error("-oz only applies to -P files")                      if $options=~/z/ && !$plotFlag;
 error("--sep cannot be a '%'")                             if defined($SEP) && $SEP eq '%';
 error("--sep only applied to plot format")                 if defined($SEP) && !$plotFlag;
@@ -750,7 +751,7 @@ error("-oi only supported interactively with -P to terminal")
     if $options=~/i/ && ($playback ne '' || !$plotFlag || $filename ne '');
 $miniDateFlag=($options=~/d/i) ? 1 : 0;
 $miniTimeFlag=($options=~/T/)  ? 1 : 0;
-error("use only 1 of -o dDt") 
+error("use only 1 of -o dDT") 
     if ($miniDateFlag && $miniTimeFlag) || ($options=~/d/ && $options=~/D/);
 error("-ot only applies to terminal output")
                              if $options=~/t/ && $filename ne "";
@@ -1642,11 +1643,6 @@ for (; $count!=0 && !$doneFlag; $count--)
 
   #    T i m e    F o r    a    N e w    L o g ?
 
-  # if writing to a logfile and rolling them...
-  # note that there is at least one situation where someone wants to 
-  # run collectl continuously and catch headers when the date changes,
-  # hence the support for executing the log rolling code and generating 
-  # headers even when not logging to a file.
   if ($logToFileFlag && $rollSecs)
   {
     # if time to roll, do so and recalculate next roll time.
@@ -3324,6 +3320,7 @@ sub buildCommonHeader
   $commonHeader.='#'x80;
   $commonHeader.="\n# Collectl:   V$Version  HiRes: $hiResFlag  Options: $cmdSwitches\n";
   $commonHeader.="# Host:       $Host  DaemonOpts: $DaemonOptions\n";
+  $commonHeader.="# Distro:     $Distro\n"    if $Distro ne '';
   $commonHeader.=$timeZoneInfo  if defined($timeZoneInfo);
   $commonHeader.="# SubSys:     $tempSubsys SubOpts: $subOpts Options: $options  Interval: $tempInterval NumCPUs: $NumCpus $Hyper Flags: $flags\n";
   $commonHeader.="# HZ:         $HZ  Arch: $SrcArch PageSize: $PageSize\n";
@@ -3423,7 +3420,8 @@ sub setOutputFormat
   $options=~s/h//    if $numOpts>1;
 
    # time doesn't print in verbose display (unless of course -oh set too)
-  if ($tempVerbose && (!defined($options) || $options!~/h/))
+   # Another exception is --vmstats and I may find others over time too
+  if (!$vmstatFlag && $tempVerbose && (!defined($options) || $options!~/h/))
   {
     $miniDateFlag=$miniTimeFlag=0;
     $miniDateTime=$miniFiller='';
@@ -3901,6 +3899,7 @@ sub loadConfig
       $PCounter=$value         if $param=~/^PCounter/;
       $PQueryList=$value       if $param=~/^PQuery/;
       $VStat=$value            if $param=~/^VStat/;
+      $IbDupCheckFlag=$value   if $param=~/^IbDupCheckFlag/;
 
       $Interval=$value         if $param=~/^Interval$/;
       $Interval2=$value        if $param=~/^Interval2/;

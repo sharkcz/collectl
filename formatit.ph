@@ -26,6 +26,10 @@ sub initRecord
   $Host=(split(/\./, $Host))[0];
   $HostLC=lc($Host);
 
+  $Distro=cat('/etc/redhat-release')    if -e '/etc/redhat-release';
+  $Distro=cat('/etc/SuSE-release')      if -e '/etc/SuSE-release';
+  chomp $Distro;
+
   # For -s p calculations, we need the HZ of the system
   # Note the hack for perl 5.6 which doesn't support PAGESIZE
   $HZ=POSIX::sysconf(&POSIX::_SC_CLK_TCK);
@@ -148,6 +152,11 @@ sub initRecord
     $lspciVer=~/ (\d+\.\d+)/;
     $lspciVer=$1;
     my $lspciVendorField=($lspciVer<2.2) ? 3 : 2;
+
+    # Turns out SuSE put 'Class' string back into V2.4.4 without changing
+    # version number and so at some point (and I don't know when), this
+    # will have to change if/when they use the 'official' version.
+    $lspciVendorField=3    if $Distro=~/SUSE/;
     print "lspci -- Version: $lspciVer  Vendor Field: $lspciVendorField\n"
 	if $debug & 1;
 
@@ -216,20 +225,22 @@ sub initRecord
     # a read/clear everytime, multiple copies of collectl will step on each other.
     # Therefore we can only allow one instance to actually monitor the IB and the
     # first one wins, unless we're trying to start a daemon in which case we let 
-    # step on the other [hopefully temporary] instance.
-    if ($mellanoxFlag)
+    # step on the other [hopefully temporary] instance.  Since there are odd cases
+    # where it may not always catch exception, one can override checking in .conf
+    if ($IbDupCheckFlag && $mellanoxFlag)
     {
       $command="$Ps axo pid,cmd | $Grep collectl | $Grep -v grep";
       foreach my $line (`$command`)
       {
-        $line=~s/^\s+//;    # show pids have leading white space
+        $line=~s/^\s+//;    # some pids have leading white space
         my ($pid, $procCmd)=split(/ /, $line, 2);
         next    if $pid==$$;
 
         # There are just too many ways one can specify the subsystems whether it's
         # overriding the DaemonCommands or SubsysCore in collectl.conf, using an
         # alternate collectl.conf or specifying --subsys instead of -s  and I'm 
-        # just not going to go there [for now] as it's complicated enough.
+        # just not going to go there [for now] as it's complicated enough, hence
+        # '$IbDupCheckFlag'
 
         # If a daemon, subsys comes out of collectl.conf; otherwise it's already
         # loaded into '$procCmd'
@@ -565,6 +576,9 @@ sub initFormat
     $header=~/Collectl:\s+V(\S+)/;
     $version=$1;
     $hiResFlag=$1    if $header=~/HiRes:\s+(\d+)/;   # only after V1.5.3
+
+    $header=~/Distro:\s+(.+)/;
+    $Distro=(defined($1)) ? $1 : '';
 
     # we want to preserve original subsys from the header, but we
     # also want to override it if user did a -s.  If user specified a
@@ -1074,7 +1088,7 @@ sub initFormat
   $dirty=$clean=$target=$laundry=$active=$inactive=0;
   $procsRun=$procsBlock=0;
   $pagein=$pageout=$swapin=$swapout=$swapTotal=$swapUsed=$swapFree=0;
-  $memTot=$memUsed=$memFree=$memShared=$memBuf=$memCached=$memSlab=$memMap=$memCommit=0;
+  $memTot=$memUsed=$memFree=$memShared=$memBuf=$memCached=$memSlab=$memAnon=$memMap=$memCommit=0;
   $sockUsed=$sockTcp=$sockOrphan=$sockTw=$sockAlloc=0;
   $sockMem=$sockUdp=$sockRaw=$sockFrag=$sockFragM=0;
 
@@ -1533,7 +1547,7 @@ sub dataAnalyze
     $irq=  fix($irqNow-$irqLast[$cpuIndex]);
     $soft= fix($softNow-$softLast[$cpuIndex]);
     $steal=fix($stealNow-$stealLast[$cpuIndex]);
-    $total=$user+$nice+$sys+$idle+$irq+$soft+$steal;
+    $total=$user+$nice+$sys+$idle+$wait+$irq+$soft+$steal;
     $total=1    if !$total;  # has seen to be 0 when interval=0;
 
     # For some calculations, like disk performance, we use a more exact measure
@@ -1987,8 +2001,22 @@ sub dataAnalyze
     else
     {
       # data must be in /proc/partitions OR /proc/diskstats 
-      @dskFields=(split(/\s+/, $data))[4..14]    if $kernel2_4;
-      @dskFields=(split(/\s+/, $data))[3..13]    if $kernel2_6;
+      ($diskname,@dskFields)=(split(/\s+/, $data))[3..14]    if $kernel2_4;
+      ($diskname,@dskFields)=(split(/\s+/, $data))[2..13]    if $kernel2_6;
+
+      # If a new disk shows up after logging started, and this has only happened with logical
+      # volumes so far, we need to bump the index and initialize 'last' variables.  There is a
+      # BIG assumption here that these show up at the end of the existing device list which we
+      # may have to revisit at some time.
+      if ($dskIndex==$NumDisks)
+      {
+        logmsg("W", "New disk '$diskname' discovered after logging started");   
+        $dskName[$NumDisks++]=$diskname;
+        for (my $i=0; $i<11; $i++)
+        {
+          $dskFieldsLast[$dskIndex][$i]=0;
+        }
+      }
 
       # Clarification of field definitions:
       # Excellent reference: http://cvs.sourceforge.net/viewcvs.py/linux-vax
@@ -2015,7 +2043,7 @@ sub dataAnalyze
 		  fix($dskFieldsLast[$dskIndex][10]-$dskFields[10]);
 
       # Don't include device mapper data in totals
-      if ($dskName[$dskIndex]!~/^dm-/)
+      if ($diskname!~/^dm-/)
       {
         $dskReadTot+=      $dskRead[$dskIndex];
         $dskReadMrgTot+=   $dskReadMrg[$dskIndex];
@@ -2285,18 +2313,19 @@ sub dataAnalyze
     $memFree=$data    if $type=~/^MemFree/;
   }
 
-  elsif ($type=~/^Buffers|^Cached|^Dirty|^Active|^Inactive|^Mapped|^Slab:|^Committed_AS:/ && $subsys=~/m/ && $kernel2_6)
+  elsif ($type=~/^Buffers|^Cached|^Dirty|^Active|^Inactive|^AnonPages|^Mapped|^Slab:|^Committed_AS:/ && $subsys=~/m/ && $kernel2_6)
   {
     $data=(split(/\s+/, $data))[0];
-    $memBuf=$data       if $type=~/^Buf/;
-    $memCached=$data    if $type=~/^Cac/;
-    $dirty=$data        if $type=~/^Dir/;
-    $active=$data       if $type=~/^Act/;
-    $inactive=$data     if $type=~/^Ina/;
-    $memSlab=$data      if $type=~/^Sla/;
-    $memMap=$data       if $type=~/^Map/;
-    $memCommit=$data    if $type=~/^Com/;
-   }
+    $memBuf=$data             if $type=~/^Buf/;
+    $memCached=$data          if $type=~/^Cac/;
+    $dirty=$data              if $type=~/^Dir/;
+    $active=$data             if $type=~/^Act/;
+    $inactive=$data           if $type=~/^Ina/;
+    $memSlab=$data            if $type=~/^Sla/;
+    $memAnon=$data            if $type=~/^Anon/;
+    $memMap=$data+$memAnon    if $type=~/^Map/;
+    $memCommit=$data          if $type=~/^Com/;
+  }
 
   elsif ($type=~/^procs/ && $subsys=~/m/ && $kernel2_6)
   {
@@ -2395,24 +2424,8 @@ sub dataAnalyze
     $netTxCarNow= $fields[15];
     $netTxCmpNow= $fields[16];
 
-    # It has occasionally been observed that bogus data is returned for some networks.
-    # If we see anything that looks like twice the typical speed, ignore it but remember
-    # that during the very first interval this data should be bogus!
-    my $netRxKBTemp=fix($netRxKBNow-$netRxKBLast[$netIndex])/1024;
-    my $netTxKBTemp=fix($netTxKBNow-$netTxKBLast[$netIndex])/1024;
-    if ($intervalCounter &&  
-         ($netRxKBTemp>$NetMaxTraffic[$netIndex] || $netTxKBTemp>$NetMaxTraffic[$netIndex]))
-    {
-      #print "$netNameNow TxNOW: $netTxKBNow LAST: $netTxKBLast[$netIndex]\n";
-      #print "$netNameNow RX: $netRxKBTemp TX: $netTxKBTemp  MAX: $NetMaxTraffic[$netIndex]\n";
-      incomplete("NET:".$netNameNow, $lastSecs, 'Bogus');
-      logmsg('I', "Bogus Value(s) for $netNameNow - TX: $netTxKBTemp  RX: $netRxKBTemp");
-      $netIndex++; 
-      return;
-    }
-
-    $netRxKB[$netIndex]= $netRxKBTemp;
-    $netTxKB[$netIndex]= $netTxKBTemp;
+    $netRxKB[$netIndex]= fix($netRxKBNow-$netRxKBLast[$netIndex])/1024;
+    $netTxKB[$netIndex]= fix($netTxKBNow-$netTxKBLast[$netIndex])/1024;
     $netRxPkt[$netIndex]=fix($netRxPktNow-$netRxPktLast[$netIndex]);
     $netTxPkt[$netIndex]=fix($netTxPktNow-$netTxPktLast[$netIndex]);
 
@@ -2429,6 +2442,29 @@ sub dataAnalyze
     $netTxColl[$netIndex]=fix($netTxCollNow-$netTxCollLast[$netIndex]);
     $netTxCar[$netIndex]= fix($netTxCarNow- $netTxCarLast[$netIndex]);
     $netTxCmp[$netIndex]= fix($netTxCmpNow- $netTxCmpLast[$netIndex]);
+
+    # It has occasionally been observed that bogus data is returned for some networks.
+    # If we see anything that looks like twice the typical speed, ignore it but remember
+    # that during the very first interval this data should be bogus!  Also, set ALL data
+    # points to 0 since we can't trust any of them.  Note that the bogus value is now in
+    # the 'last' variable and so the next valid value will be bogus relative to it, but
+    # then its value will become 'last' and the following values should be 'happy'.
+    if ($DefNetSpeed>0 && $intervalCounter &&
+         ($netRxKB[$netIndex]>$NetMaxTraffic[$netIndex] || $netTxKB[$netIndex]>$NetMaxTraffic[$netIndex]))
+    {
+      # we're going through some extra pain to make error messages very explicit.  we also can't use
+      # int() because some bogus values are too big, especially if data collectl on 64 bit machine
+      # and processed on 32 bit one.
+      $netTxKB[$netIndex]=~s/\..*//;
+      $netRxKB[$netIndex]=~s/\..*//;
+      incomplete("NET:".$netNameNow, $lastSecs, 'Bogus');
+      logmsg('I', "Network speed threshhold: $NetMaxTraffic[$netIndex]  Bogus Value(s) - TX: $netTxKB[$netIndex]KB  RX: $netRxKB[$netIndex]KB");
+
+      my $i=$netIndex;
+      $netRxKB[$i]=$netTxKB[$i]=$netRxPkt[$i]=$netTxPkt[$i]=0;
+      $netRxErr[$i]=$netRxDrp[$i]=$netRxFifo[$i]=$netRxFra[$i]=$netRxCmp[$i]=$netRxMlt[$i]=0;
+      $netTxErr[$i]=$netTxDrp[$i]=$netTxFifo[$i]=$netTxColl[$i]=$netTxCar[$i]=$netTxCmp[$i]=0;
+    }
 
     # these are derived for simplicity of plotting
     $netRxErrs[$netIndex]=$netRxErr[$netIndex]+$netRxDrp[$netIndex]+
@@ -2447,8 +2483,8 @@ sub dataAnalyze
     }
 
     # at least for now, we're only worrying about totals on real network
-    # devices and loopback and sit are certainly not them.
-    if ($netNameNow!~/lo|sit/)
+    # devices and loopback, sit and bonds (including IB) are certainly not them.
+    if ($netNameNow!~/lo|sit|bond/)
     {
       $netRxKBTot+= $netRxKB[$netIndex];
       $netRxPktTot+=$netRxPkt[$netIndex];
@@ -5471,7 +5507,7 @@ sub printSexprRaw
       my ($kbinT, $pktinT, $kboutT, $pktoutT)=(0,0,0,0);
       for ($i=0; $i<$netIndex; $i++)
       {
-        next    if $netName=~/lo|sit/;
+        next    if $netName=~/lo|sit|bond/;  # also filters out 'ibbond'
         $kbinT+=  $netRxKBLast[$i];
         $pktinT+= $netRxPktLast[$i];
         $kboutT+= $netTxKBLast[$i];
@@ -6028,8 +6064,8 @@ sub briefFormatit
     $line.="<----${fill1}CPU$Hyper$fill2---->"     if $subsys=~/c/;
     $line.="<-----------Memory---------->"         if $subsys=~/m/;
     $line.="<----slab---->"                        if $subsys=~/y/;
-    $line.="<-----------Disks----------->"         if $subsys=~/d/;
-    $line.="<-----------Network---------->"        if $subsys=~/n/;
+    $line.="<----------Disks----------->"          if $subsys=~/d/;
+    $line.="<----------Network---------->"         if $subsys=~/n/;
     $line.="<------------TCP------------>"         if $subsys=~/t/;
     $line.="<------Sockets----->"                  if $subsys=~/s/;
     $line.="<--------------Elan------------>"      if $subsys=~/x/ && $NumXRails;
@@ -6052,8 +6088,8 @@ sub briefFormatit
     $line.="free buff cach inac slab  map "        if $subsys=~/m/;
     $line.=" Alloc   Bytes "	 		   if $subsys=~/y/ && $slabinfoFlag;
     $line.=" InUse   Total "	 		   if $subsys=~/y/ && $slubinfoFlag;
-    $line.="KBRead  Reads  KBWrit Writes "         if $subsys=~/[dp]/;
-    $line.="netKBi pkt-in  netKBo pkt-out "        if $subsys=~/n/;
+    $line.="KBRead  Reads KBWrit Writes "          if $subsys=~/[dp]/;
+    $line.="netKBi pkt-in netKBo pkt-out "         if $subsys=~/n/;
     $line.="PureAcks HPAcks   Loss FTrans "        if $subsys=~/t/;
     $line.="  Tcp  Udp  Raw Frag "                 if $subsys=~/s/;
     $line.="  KBin  pktIn  KBOut pktOut Errs "     if $subsys=~/x/ && $NumXRails;
@@ -6110,7 +6146,7 @@ sub briefFormatit
 
   if ($subsys=~/d/)
   {
-    $line.=sprintf("%6d %6d  %6d %6d ",
+    $line.=sprintf("%6d %6d %6d %6d ",
         $dskReadKBTot/$intSecs,  $dskReadTot/$intSecs,
         $dskWriteKBTot/$intSecs, $dskWriteTot/$intSecs);
   }
@@ -6118,7 +6154,7 @@ sub briefFormatit
   # Network always the same
   if ($subsys=~/n/)
   {
-    $line.=sprintf("%6d %6d  %6d  %6d ",
+    $line.=sprintf("%6d %6d %6d  %6d ",
         $netEthRxKBTot/$intSecs, $netEthRxPktTot/$intSecs,
         $netEthTxKBTot/$intSecs, $netEthTxPktTot/$intSecs);
   }
@@ -6378,12 +6414,12 @@ sub printMini1Counters
 
   if ($subsys=~/d/)
   { 
-    printf "%6s %6s  %6s %6s ", 
+    printf "%6s %6s %6s %6s ", 
 	cvt($dskReadKBTOT/$aveSecs,6,0,1),  cvt($dskReadTOT/$aveSecs,6), 
 	cvt($dskWriteKBTOT/$aveSecs,6,0,1), cvt($dskWriteTOT/$aveSecs,6);
    }
 
-  printf "%6s %6s  %6s  %6s ", 
+  printf "%6s %6s %6s  %6s ", 
 	cvt($netEthRxKBTOT/$aveSecs,6,0,1), cvt($netEthRxPktTOT/$aveSecs,6), 
 	cvt($netEthTxKBTOT/$aveSecs,6,0,1), cvt($netEthTxPktTOT/$aveSecs,6)
 	 	 if $subsys=~/n/;
@@ -6802,7 +6838,7 @@ sub ibCheck
     @lines=ls($SysIB);
     foreach $line (@lines)
     {
-      $line=~/(.*?)(\d+)/;
+      $line=~/(.*)(\d+)$/;
       $devname=$1;
       $devnum=$2;
 

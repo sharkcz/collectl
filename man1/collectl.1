@@ -1348,6 +1348,10 @@ frequently a counter is being updated, try running collectl with an interval
 of 0.1 or even 0.01 seconds for a few seconds.  See man collectl-themath for more
 details.
 
+At least one network card occasionally generates erroneous network stats and to try
+to keep the data rational, collectl tries to detect this and when it does generates
+a message that bogus data has been detected.
+
 .SH FILES
 
 see collectl-files man page

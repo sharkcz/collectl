@@ -20,8 +20,8 @@
 
 # description: Run data collection for a number of subsystems
 #    see /etc/collectl.conf for startup options
-#    $2: process name, if other than collectl OR "" to use $3
-#    $3: parameters, in quotes if more than one, to pass to daemon command
+#      $2: process name extension, if other than collectl [optional for start/restart/reload]
+#      $3: parameters, in quotes if more than one, to pass to daemon command
 
 COLLECTL=/usr/sbin/collectl
 if [ ! -f $COLLECTL ]; then
@@ -29,14 +29,27 @@ if [ ! -f $COLLECTL ]; then
     exit 0
 fi
 
-# Note that the process name we grep for changes when not 'collectl'
 PNAME=collectl
-PROCNAME=$COLLECTL
 if [ "$2" != "" ]; then
-  PNAME="collectl-$2"
-  PSWITCH=" --pname $2"
-  PROCNAME=$PNAME
+    EXT=$2
+    if [ "$1" = "start" ] || [ "$1" = "restart" ] || [ "$1" = "force-reload" ]; then
+        if [ "$3" = "" ]; then
+            SWITCHES=$2
+            EXT=""
+        else
+            SWITCHES=$3
+        fi
+    fi
+
+    # Just to make sure nothing is different when running 'collectl', we
+    # won't use --check even though it's probably ok to use all the time.
+    if [ "$EXT" != "" ]; then
+        PNAME="collectl-$EXT"
+        PSWITCH="--pname $EXT"
+        CHECK="--check $PNAME "
+    fi
 fi
+PROCNAME=$PNAME
 PIDFILE="/var/run/$PNAME.pid"
 
 # If a pidfile, make sure it's not stale and if it is, collectl not running
@@ -50,7 +63,7 @@ case "$1" in
       if [ "$pid" != "" ]; then
         echo "[already running]"
       else
-	$COLLECTL -D $PSWITCH $3
+	$COLLECTL -D $SWITCHES $PSWITCH
 	echo "."
       fi
       ;;
@@ -100,7 +113,7 @@ case "$1" in
       if [ "$pid" == "" ]; then
           echo "$PNAME does not appear to be running so will not be shut down"
       else
-          $0 stop $2
+          $0 stop $EXT
       fi
       $0 start "$2" "$3"
       ;;

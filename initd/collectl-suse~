@@ -113,7 +113,7 @@ case "$1" in
 	;;
 
   restart|reload)
-   	$0 stop $EXT
+   	$0 stop $2 $EXT
    	$0 start "$2" "$3"
    	rc_status
 	;;

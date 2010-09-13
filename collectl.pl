@@ -110,7 +110,7 @@ if ($PerlVers lt '5.08.00')
   print "See /opt/hp/collectl/docs/FAQ-collectl.html for details.\n";
 }
 
-$Version=  '3.3.4-5';
+$Version=  '3.3.5-4';
 $Copyright='Copyright 2003-2009 Hewlett-Packard Development Company, L.P.';
 $License=  "collectl may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
@@ -187,15 +187,11 @@ undef @lustreCltDirs;
 undef @lustreCltOstDirs;
 undef @lustreOstSubdirs;
 undef %playbackSettings;
-undef %slabTotalMemLast;
-undef %slabMemTotMin;
-undef %slabMemTotMax;
-undef %slabMemTotLast;
 $recHdr1=$miniDateTime=$miniFiller=$DaemonOptions='';
 $OstNames=$MdsNames=$LusDiskNames=$LusDiskDir='';
 $NumLustreCltOsts=$NumLusDisks=$MdsFlag=0;
 $NumSlabs=$SlabGetProc=$SlabSkipHeader=$newSlabFlag=0;
-$wideFlag=$coreFlag=$newRawFlag=0;
+$wideFlag=$coreFlag=$newRawSlabFlag=0;
 $totalCounter=$separatorCounter=0;
 $NumCpus=$NumDisks=$NumNets=$DiskNames=$NetNames=$HZ='';
 $NumOst=$NumBud=0;
@@ -250,10 +246,10 @@ $SysIB='/sys/class/infiniband';
 # These aren't user settable but are needed to build the list of ALL valid
 # subsystems
 $SubsysDet=   "BCDEFJLNTXYZ";
-$SubsysExcore="y";
+$SubsysExcore='y';
 
 # These are the subsystems allowed in brief mode
-$BriefSubsys="bcdfijlmnstxy";    # note - use of y requires SAME intervals!
+$BriefSubsys="bcdfijlmnstx";
 
 # And the default environmentals
 $envOpts='cft';
@@ -290,6 +286,12 @@ $termHeight=$TermHeight;
 # use the value of LINES to set the terminal height
 if (!$PcFlag && !$daemonFlag && !$backFlag && $Resize ne '' && defined($ENV{TERM}) && $ENV{TERM}=~/xterm/)
 {
+  # IF the user typed a CR after collectl started but before it started, flush input buffer
+  my $selTemp=new IO::Select(STDIN);
+  while ($selTemp->can_read(0))
+  { my $temp=<STDIN>; }
+  $selTemp->remove();
+
   `$Resize`=~/LINES.*?(\d+)/m;
   $termHeight=$1;
 }
@@ -308,15 +310,15 @@ $briefFlag=1;
 $showPHeaderFlag=$showMergedFlag=$showHeaderFlag=$showSlabAliasesFlag=$showRootSlabsFlag=0;
 $verboseFlag=$vmstatFlag=$alignFlag=0;
 $quietFlag=$utcFlag=0;
-$address=$beginTime=$endTime=$filename=$flush=$fileRoot='';
+$address=$filename=$flush=$fileRoot='';
 $limits=$lustreSvcs=$runTime=$playback=$playbackFile=$rollLog='';
 $groupFlag=$msgFlag=$niceFlag=$plotFlag=$sshFlag=$wideFlag=$rawFlag=$ioSizeFlag=0;
 $userOptions=$userInterval=$userSubsys='';
 $import=$export=$expName=$expOpts=$topOpts=$topType='';
 $impNumMods=0;  # also acts as a flag to tell us --import code loaded
 $homeFlag=$rawtooFlag=$autoFlush=$allFlag=0;
-$procOpts=$slabOpts='';
-$procFilt=$slabFilt='';
+$procOpts=$procFilt=$procState='';
+$slabOpts=$slabFilt='';
 $procAnalFlag=$procAnalCounter=$slabAnalFlag=$slabAnalCounter=$lastInt2Secs=0;
 $lastLogPrefix=$passwdFile='';
 $nfsOpts=$nfsFilt=$lustOpts=$userEnvOpts='';
@@ -344,12 +346,8 @@ Getopt::Long::Configure('no_pass_through');
 GetOptions('align!'     => \$alignFlag,
            'A=s'        => \$address,
            'address=s'  => \$address,
-           'b=s'        => \$beginTime,
-           'begin=s'    => \$beginTime,
 	   'c=i'        => \$count,
            'count=i'    => \$count,
-           'e=s'        => \$endTime,
-           'end=s'      => \$endTime,
 	   'f=s'        => \$filename,
    	   'filename=s' => \$filename,
            'F=i'        => \$flush,
@@ -370,8 +368,6 @@ GetOptions('align!'     => \$alignFlag,
            'messages!'  => \$msgFlag,
            'o=s'        => \$userOptions,
            'options=s'  => \$userOptions,
-	   'O=s'        => \$subOptsX,
-           'subopts=s'  => \$subOptsX,
 	   'N!'         => \$niceFlag,
            'nice!'      => \$niceFlag,
            'passwd=s'   => \$passwdFile,
@@ -400,9 +396,7 @@ GetOptions('align!'     => \$alignFlag,
            'helpextend!'=> \$xSwitch,
            'X!'         => \$XSwitch,
            'helpall!'   => \$XSwitch,
-	   'Y=s'        => \$slabFiltX,
 	   'slabfilt=s' => \$slabFilt,
-	   'Z=s'        => \$procFiltX,
 	   'procfilt=s' => \$procFilt,
 
            'all!'          => \$allFlag,
@@ -424,6 +418,7 @@ GetOptions('align!'     => \$alignFlag,
            'pname=s'       => \$pname,
            'procanalyze!'  => \$procAnalFlag,
 	   'procopts=s'    => \$procOpts,
+           'procstate=s'   => \$procState,
            'rawtoo!'       => \$rawtooFlag,
            'showsubsys!'   => \$showSubsysFlag,
            'showoptions!'  => \$showOptionsFlag,
@@ -497,6 +492,10 @@ if ($address ne '')
   $sockFlag=1;
 }
 
+# I'm probably the only one who cares, but in -p --top -s, don't default 
+# to a --hr of 5, use 20
+$headerRepeat=20    if $topFlag && $playback ne '' && $headerRepeat==5;
+
 # If we used to trap these before we opened the socket, but then we couldn't
 # send the message back to the called cleanly!
 if ($sockFlag)
@@ -516,6 +515,7 @@ showOptions()      if $showOptionsFlag;
 showSubopts()      if $showSuboptsFlag;
 showTopopts()      if $showTopoptsFlag;
 showSlabAliases($slabFilt)  if $showSlabAliasesFlag || $showRootSlabsFlag;
+
 if ($XSwitch)
 {
   extendHelp(1);
@@ -527,13 +527,6 @@ if ($XSwitch)
   printText("$License\n");
   exit;
 }
-
-# These switches/options have changed and will hopeefully be dropped mid 2009
-error('-oP replaced with --passwd')                    if $userOptions=~/P/;
-error('-b and -e replaced with --from/--thru')         if $beginTime ne '' || $endTime ne '';
-error('-Y and -Z renamed to --slabfilt/--procfilt')    if defined($slabFiltX)||defined($procFiltX);
-error('-O/--subopts replaced by lustopts')             if defined($subOptsX);
-error('-sLL replaced with -sL --lustopts O')           if $userSubsys=~/LL/;
 
 if ($nfsOpts ne '')
 {
@@ -561,7 +554,7 @@ error("can't use --export with --verbose")    if $verboseFlag && $export ne '';
 error("can't use -P with --verbose")          if $verboseFlag && $plotFlag;
 error("can't use -f with --verbose")          if $verboseFlag && $filename ne '';
 
-# --all is shortcut for all summary data except slabs
+# --all is shortcut for all summary data
 if ($allFlag)
 {
   error("can't mix -s with -all")    if $userSubsys ne '';
@@ -606,31 +599,11 @@ error("+/- must start -s arguments if used")
                     if $subsys=~/[+-]/ && $subsys!~/^[+-]/;
 error("invalid subsystem '$subsys'")
                     if $subsys!~/^[-+$SubsysCore$SubsysExcore$SubsysDet]+$/;
+$subsys=mergeSubsys($SubsysDef);
 
-if ($subsys=~/[+-]/)
-{
-  $temp=$SubsysDef;
-  if ($subsys=~/-(.*)/)
-  {
-    $pat=$1;
-    $pat=~s/\+.*//;    # if followed by '+' string
-    error("invalid subsystem follows '-'.  must be one or more of $SubsysCore")
-	if $pat!~/^[$SubsysCore]+$/;
-    $temp=~s/[$pat]//g;
-  }
-
-  # we've already validated subsystems below and so if someone adds a core
-  # subsystem no harm is done.
-  if ($subsys=~/\+(.*)/)
-  {
-    $pat=$1; 
-    $pat=~s/-.*//;    # if followed by '-' string
-    $temp="$temp$pat";
-  }
-  $subsys=$temp;
-}
-
-# note that --procanalyze, --slabanalyze and --top can change $subsys
+# note that -p, --procanalyze, --slabanalyze and --top can change $subsys
+# also be sure to note if the user typed --verbose
+$userVerbose=$verboseFlag;
 setOutputFormat();
 
 # This is tricky as the main logic for checking intervals lives further
@@ -648,12 +621,6 @@ if ($briefFlag)
     $temp1=($temp[0] eq '') ? $Interval : $temp[0];
     $temp2=$temp[1]    if $temp[1] ne '';
   }
-
-  # if more than one subsys and one of them is 'y', they MUST have same
-  # interval.
-
-  error("main and secondary intervals must match when -sy included OR use --verbose")
-      if length($subsys)>1 && $subsys=~/y/ && $temp1!=$temp2;
 }
 
 #    S p e c i a l    F o r m a t s
@@ -671,6 +638,7 @@ if ($procAnalFlag || $slabAnalFlag)
   # the values.
   $slabAnalOnlyFlag=($slabAnalFlag && $userSubsys!~/Y/) ? 1 : 0;
   $procAnalOnlyFlag=($procAnalFlag && $userSubsys!~/Z/) ? 1 : 0;
+
   $userSubsys.='Y'    if $slabAnalOnlyFlag;
   $userSubsys.='Z'    if $procAnalOnlyFlag;
   $subsys=$userSubsys;
@@ -742,14 +710,7 @@ if ($topOpts ne '')
     $subsys=(defined($TopProcTypes{$topType})) ? "${tempSubsys}Z" : "${tempSubsys}Y";
     $interval.=":$interval"    if $interval!~/:/;
   }
-
-  error("--top only reports timestamps for interactive, non-process/non-slab data")
-      if $options=~/[dDT]/ && ($playback ne '' || $subsys eq 'Z' || $subsys eq 'Y');
 }
-
-# These checks can only be done after setOutputFormat()
-error("--top only reports timestamps for single subsystem verbose data")
-      if $options=~/[dDT]/ && $numTop && ($playback ne '' || !$sameColsFlag);
 
 #    I m p o r t
 
@@ -818,7 +779,7 @@ if ($import ne '')
   }
 
   # Reset output formatting based on the modules we just loaded
-  print "RESET OUTPUT FLAGS\n"    if $debug & 1;
+  print "Reset output flags\n"    if $debug & 1;
   setOutputFormat();
 }
 
@@ -1042,9 +1003,8 @@ if ($daemonFlag)
 # count
 if ($count!=-1)
 {
-  error("-c must be numeric")       if $count!~/^\d+$/;
-  error("-c conflicts with -r and -R")
-              if $endTime ne "" || $rollLog ne "" || $runTime ne "";
+  error("-c must be numeric")             if $count!~/^\d+$/;
+  error("-c conflicts with -r and -R")    if $rollLog ne "" || $runTime ne "";
   $count++    # since we actually need 1 extra interval
 }
 
@@ -1072,7 +1032,7 @@ if ($limits ne '')
 }
 
 # options
-error("invalid option")    if $options ne "" && $options!~/^[\^12aAcdDGgimnPTuUxXz]+$/g;
+error("invalid option")    if $options ne "" && $options!~/^[\^12aAcdDGgimnTuUxXz]+$/g;
 error("-oi only supported interactively with -P to terminal")    
     if $options=~/i/ && ($playback ne '' || !$plotFlag || $filename ne '');
 $miniDateFlag=($options=~/d/i) ? 1 : 0;
@@ -1124,11 +1084,11 @@ if ($playback ne "")
       if $playback!~/\*$|raw$|gz$/;
   error("MUST specify -P if -p and -f")      if $filename ne "" and !$plotFlag;
 
+  # Quick check to make sure at least one file matches playback string
+  my $foundFlag=0;
   foreach $file (glob($playback))
   {
-    # won't happen if file string had wildcards because then glob would
-    # only find read files.
-    error("can't find '$file'")              if !-e $file;
+    $foundFlag=1;
 
     # this is a great place to print headers since we're already looping through glob
     if ($showHeaderFlag)
@@ -1154,6 +1114,7 @@ if ($playback ne "")
       $ZTMP->gzclose()    if $file=~/gz$/;
     }
   }
+  error("can't find any files matching '$playback'")    if !$foundFlag;
   exit    if $showHeaderFlag;
 }
 
@@ -1289,10 +1250,6 @@ if ($homeFlag)
 # if -N, set priority to 20
 `renice 20 $$`    if $niceFlag;
 
-# this sets all the xFlags as specified by -s.  At least one must be set to
-# write to the 'tab' file.
-setFlags($subsys);
-
 # Couldn't find anywhere else to put this one...
 error("-sT only works with -P for now (too much data)")
     if $TFlag && !$plotFlag;
@@ -1314,11 +1271,12 @@ if ($playback ne '')
 {
   # Select all files that need to be processed based on dates
   my $numSelected=0;
-  my ($firstFileDate, $lastFileDate, $lastFileTime, $lastPrefix)=(0,0,'','');
+  my ($firstFileDate, $lastFileDate, $lastPrefix)=(0,0,'');
 
+  my $pushed='';
   while (my $file=glob($playback))
   {
-    next    if $file!~/(.*)-(\d{8})-(\d{6})\.raw/;
+    next    if $file!~/(.*)-(\d{8})-(\d{6})\.(raw[p]*)/;
 
     my $prefix=  $1;
     my $fileDate=$2;
@@ -1336,40 +1294,44 @@ if ($playback ne '')
     next    if $fromDate==0 && $thruDate==0 && ($fileTime > $thruTime);
 
     # This is the magic AND there are 3 cases all of which have the common test of
-    # there needing to be something on the stack and the current file is < $fromTime,
-    # in which case we might NOT want to process the file on the stack under the 
-    # the following cases:
+    # there needs to be a file with a different basename (in case we're doing a rawp
+    # file and there is alreay a raw file there) on the stack and the current file 
+    # is < $fromTime, in which case we might NOT want to process the file(s) on the
+    # top of the stack under the the following cases:
     # - if we have a from date this only applies to files for the from date
     # - if no from date but a thru date, apply time to files of first date
     # - if no from AND thru dates this test applies to ALL dates but only
     #   pop files for the same date which are by definition too 'young'
 
-    if (($lastFileDate!=0) && ($fileTime<$fromTime) && ($prefix eq $lastPrefix))
+    if ($file!~/$pushed/ && ($lastFileDate!=0) && ($fileTime<$fromTime) && ($prefix eq $lastPrefix))
     {
-      pop @playbackList
+      $popped=pop(@playbackList)
 	  if ($fromDate!=0 && $fileDate==$fromDate) ||
              ($fromDate==0 && $thruDate!=0 && $fileDate==$firstFileDate) ||
 	     ($fromDate==0 && $thruDate==0 && $fileDate==$lastFileDate);
+      $popped=quotemeta((split(/\./, $popped))[0]);
+
+      # get rid of companion file if there is one.
+      pop(@playbackList)    if scalar(@playbackList) && $playbackList[0]=~/$popped/;
     }
 
     push @playbackList, $file;
-    #print "PUSHED $file  DATE: $fileDate/$lastFileDate  TIME: $fileTime/$fromTime\n";
+    $pushed=quotemeta((split(/\./, $file))[0]);    # filename less extension, ready for regx
 
     $lastPrefix=$prefix;
     $lastFileDate=$fileDate;
-    $lastFileTime=$lastFileTime;
   }
-  #print "SELECTED\n"; foreach my $file (@playbackList) { print "$file\n"; }
 
   $numProcessed=0;
   $elapsedSecs=0;
-  $preprocFlags=preprocessPlayback(\@playbackList);
+  preprocessPlayback(\@playbackList);
 
-  $lastPrefix=$prefixPrinted='';
+  $lastPrefix=$prefixPrinted=$lastSubsys='';
   foreach $file (@playbackList)
   {
     # Unfortunately we need a more unique global name for the file we're doing
     $playbackFile=$file;
+    $rawPFlag=($file=~/\.rawp/) ? 1 : 0;
 
     # For now, we're going to skip files in error and process the rest.
     # Some day we may just want to exit on errors (or have another switch!)
@@ -1389,12 +1351,15 @@ if ($playback ne '')
     next    if $ignoreFlag;
 
     print "\nPlaying back $file\n"    if $msgFlag || $debug & 1;
-    $numProcessed++;
+
     $file=~/(.*-\d{8})-\d{6}\.raw[p]*/;
     $prefix=$1;
     $fileRoot=basename($prefix);
+    $newPrefixFlag=0;
     if ($prefix ne $lastPrefix)
     {
+      $newPrefixFlag=1;
+
       # For each day's set of files, we need to reset this variable so interval
       # lengths are calculared correctly.  Since int3 doesn't contain any rate
       # data we don't care about that one.
@@ -1404,11 +1369,28 @@ if ($playback ne '')
       {
         # Whatever the messages may be, we only want to display them once for
         # each set of files, that is files with the same prefix
-        print "  >>> Forcing configuration change(s) for '$prefix-*'\n";
+	my $preamblePrinted=0;
         for ($i=0; $i<$preprocMessages{$prefix}; $i++)
         {
           $key="$prefix|$i";
-	  print "  >>> $preprocMessages{$key}\n"    if $file=~/$prefix/;
+          if ($file=~/$prefix/)
+          {
+            # messy but makes it easier on the user to only see this message when a -s change
+            # didn't happen because of a raw/rawp adjustment.  Since changes are appended, just
+            # subtract first string from final one and don't report if only [YZ] remains
+            if ($preprocMessages{$key}=~/-s overridden/ && ($playback{$prefix}->{flags} & 1))
+            {
+                my $first=$playback{$prefix}->{subsysFirst};
+                my $final=$playback{$prefix}->{subsys};
+                $final=~s/$first//;
+                next    if $final=~/^[YZ]*$/; 
+            }
+
+            print "  >>> Forcing configuration change(s) for '$prefix-*'\n"
+		if !$preamblePrinted;
+	    print "  >>> $preprocMessages{$key}\n";
+            $preamblePrinted=1;
+	  }
         }
       }
 
@@ -1416,11 +1398,11 @@ if ($playback ne '')
       # span the set of common files.
       $lustreCltInfo='';
 
-      undef %slabTotalMemLast;
-      undef %slabMemTotMin;
-      undef %slabMemTotMax;
-      undef %slabMemTotLast;
       $headersPrinted=$totalCounter=$separatorCounter=0;
+
+      # Finally save the merged set of subsystems associated with all the files for
+      # for this prefix.
+      $subsysAll=$playback{$prefix}->{subsys};
     }
     $lastPrefix=$prefix;
 
@@ -1430,13 +1412,35 @@ if ($playback ne '')
     printf "Host: $Host  Version: %s  Date: %s  Time: %s  Interval: %s Subsys: $recSubsys\n",
               $recVersion, $recDate, $recTime, $recInterval
 		  if $debug & 1;
-    loadUids($passwdFile)    if $recSubsys=~/Z/;
 
-    # track when the hostname (as set by initFormat() changes).  Note that the $Host is not
-    # necessarily the same as the prefix which can have a qualifying prefix.  Maybe this should
-    # just be set when prefic changes but all the testing has been done this way so far.
-    $sameHostFlag=(defined($lastHost) && $Host eq $lastHost) ? 1 : 0;
-    $lastHost=$Host;
+    loadUids($passwdFile)      if $recSubsys=~/Z/;
+    #print "SUBSYS: $subsys  RECSUBSYS: $recSubsys  FLAGS: $playback{$prefix}->{flags}\n";
+
+    # if --top but user didn't specify -s too, ignore anything in header(s)
+    $subsys=~s/[^YZ]*//g       if $topFlag && $userSubsys eq '';
+    $subsysAll=~s/[^YZ]*//g    if $topFlag && $userSubsys eq '';
+
+    # I wanted these 'in your face' rather than buried in 'initFormat()'.
+    if ($playback{$prefix}->{flags} & 1)
+    {
+      # when playing back data from BOTH files, we need to reset these if in fact something to
+      # print from rawp so that we'll repeat brief headers.
+      $headersPrinted=$totalCounter=0       if $subsys=~/[YZ]/i;
+
+      # When playing back files generated with -G and user specified -s, make sure that subsys
+      # only contains file-related subsystems so $subsys is consistent with the file we're processing
+      $subsys=~s/[YZ]//gi     if $file!~/rawp/;
+      $subsys=~s/[^YZ]//gi    if $file=~/rawp/;
+      next    if $subsys eq '';    # in case $subsys now '' for this file
+    }
+    else
+    {
+      # no 'rawp' files associated with this prefix so if user chose 'y' in playback and no slab
+      # data has been recorded, ignore it so we won't put ourselves into --verbose because of it.
+      # NOTE - this is an exception to the rule that if the user requests a subsystem for which
+      #        we have no data we report it as zeros.
+      $subsys=~s/y//gi    if $recSubsys!~/y/i;
+    }
 
     # the only way nfsfilt can come back null is when there is a blank nfsfilt in header
     my $tempFilt=($recNfsFilt ne '' ? $recNfsFilt : 'c2,s2,c3,s3,c4,s4');
@@ -1456,11 +1460,24 @@ if ($playback ne '')
     {
       logmsg('I', "-sj or -sJ with -P also requires CPU details so adding -sC.  See FAQ for details.");
       $subsys.='C';
+      $subsysAll.='C';
     }
 
-    error("data file does not contain io data")         if $topIOFlag && !$processIOFlag;
-    error("data file does not contain process data")    if $procAnalFlag && $recSubsys!~/Z/;
-    error("data file does not contain slab data")       if $slabAnalFlag && $recSubsys!~/Y/;
+    # the way the process/slab tests work is if raw file not built with -G, look at all files.
+    # but IF a -G only look at rawp files.
+    if (($playback{$prefix}->{flags} & 1)==0 || $rawPFlag)
+    {
+      # no rawp files so these tests are pretty easy
+      my $skipmsg='';
+      $skipmsg="io"         if $topIOFlag && !$processIOFlag;
+      $skipmsg="process"    if $procAnalFlag && $recSubsys!~/Z/;
+      $skipmsg="slab"       if $slabAnalFlag && $recSubsys!~/Y/;
+      if ($skipmsg ne '' && ($msgFlag || $debug & 1))
+      {
+        print "  >>> Skipping file because it does not contain $skipmsg data <<<\n";
+        next;
+      }
+    }
 
     # Need to reset the globals for the intervals that gets recorded in the header.
     # Note the conditional on the assignments for i2 and i3.  This is because they SHOULD be
@@ -1501,9 +1518,12 @@ if ($playback ne '')
     $lustOpts=~s/[MR]//g    if $lustOpts=~/[MR]/ && $CltFlag==0;
 
     # Now we can check for valid/consistent sub-options (not sure this is still
-    # necessary, but it shouldn't hurt).
+    # necessary, but it shouldn't hurt).  Since we can swap back and forth between
+    # raw and rawp, with the latter requiring verbose, always reset to the default
+    # of brief, unless if course user specified --verbose.
     checkSubsysOpts();       # Make sure valid
-    setOutputFormat();       # use same values as for interactive mode
+    $verboseFlag=($userVerbose) ? 1 : 0;
+    setOutputFormat();
 
     # We need to set the 'coreFlag' based on whether or not any core 
     # subsystems will be processed.
@@ -1545,16 +1565,16 @@ if ($playback ne '')
       next;
     }
 
-    # we get a new output file (if writing to a file) for each prefix-date
-    # combo, noting that $Host is a global pointing to the current host being
-    # processed both in record as well as playback mode.  We also need to
-    # track for terminal processing as well, so use a different flag for that
+    # we get new output files (if writing to a file) for each prefix-date combo noting if reading
+    # a rawp file we might get 2, also noting that $Host is a global pointing to the current host
+    # being processed both in record as well as playback mode.  We also need to track for terminal
+    # processing as well, so use a different flag for that
     $key="$prefix:$recDate";
     $newPrefixDate=(!defined($playback{$key})) ? 1 : 0;
     if ($newPrefixDate)
     {
-      print "Prefix: $prefix  Host: $Host\n"    
-	  if ($debug & 1) && !$logToFileFlag;
+      print "Prefix: $prefix  Host: $Host\n"    if ($debug & 1) && !$logToFileFlag;
+
       $headersPrintedProc=$headersPrintedSlab=$prcFileCount=0;
       $newOutputFile=($filename ne '') ? 1 : 0;
       $playback{$key}=1;
@@ -1599,13 +1619,14 @@ if ($playback ne '')
     # only one time per output file
     if ($plotFlag && ($newOutputFile || $options=~/u/))
     {
-      # Make sure that if the user specified -s, we override any setting in 
-      # the file so appropriate logs get created.  It turns out if we're processing
-      # both raw and rawp files, we only fall through here once and so need to know
-      # we need to open ALL associated files which preproc() tells us via its flag.
-      setFlags($subsys);
-      $ZFlag=1    if $preprocFlags & 1;
- 
+      # Before we do anything else, close any files that were opened last pass
+      # noting 'closeLogs()' also calls setFlags($subsys)
+      closeLogs($lastSubsys)    if $lastSubsys ne '';
+
+      # Open all output files here based on what was in merged subsystems.
+      setFlags($subsysAll);
+      print "SetFlags: $subsysAll\n"    if $debug & 1;
+
       # If playback file has a prefix before its hostname things get more complicated
       # as we want to preserve that prefix and at the same time honor -f.
       $filespec=$filename;
@@ -1616,7 +1637,10 @@ if ($playback ne '')
         $filespec.=(-d $filespec) ? "$Sep$temp" : "-$temp";
       }
 
-      # note we're only passing '$file' along in case we need diagnostics.
+      # note we're only passing '$file' along in case we need diagnostics and we're also
+      # resetting '$subsys' to match ALL the subsystems selected for this set of file(s)
+      my $saveSubsys=$subsys;
+      $subsys=$subsysAll;
       $newfile=newLog($filespec, $recDate, $recTime, $recSecs, $recTZ, $file);
       if ($newfile ne '1')
       {
@@ -1634,7 +1658,9 @@ if ($playback ne '')
 	}
         next;
       } 
+      $subsys=$saveSubsys;
       $newOutputFile=0;
+      $lastSubsys=$subsysAll;    # used to track which files were actually opened
     }
 
     # when processing data for a new prefix/date and printing on a terminal
@@ -1651,19 +1677,17 @@ if ($playback ne '')
       resetBriefCounters();
     }
     
-    # Whenever a from time specified AND we're doing a new host, we need to start out in
+    # Whenever a from time specified AND we're doing a new prefix, we need to start out in
     # skip mode.  In all other cases we read ALL the records.  Since --from with no date
     # applies to all files, that will also trigger starting out in 'skip' mode.
-    $skip=($fromSecs && ($fromDate==0 || !$sameHostFlag)) ? 1 : 0;
+    $skip=($fromSecs && ($fromDate==0 || $newPrefixFlag)) ? 1 : 0;
 
-    # we need to init $newSeconds so debugging won't gen 'uninits' on 1st pass
-    $firstTime=$firstTime2=1;  # tracks int1 and int2 first time processing
     undef($fileFrom);
-    $fileThru=0;
-    $newMarkerWritten=0;
-    $timestampFlag=0;
-    $timestampCounter=0;
-    $bytes=1;  # so no compression error on non-zipped files
+    $firstTime=$firstTime2=1;  # tracks int1 and int2 first time processing
+    $fileThru=$newMarkerWritten=$timestampFlag=$timestampCounter[$rawPFlag]=0;
+    $fullTime=0;        # so we don't get uninit first time we do $microInterval calculation
+    $bytes=1;           # so no compression error on non-zipped files
+    $numProcessed++;    # it's not until we get here that we can say this
     while (1)
     {
       # read a line from either zip file or plain ol' one and skip comments
@@ -1678,7 +1702,7 @@ if ($playback ne '')
       writeInterFileMarker()
 	  if $filename ne '' && $prcFileCount>1 && !$newMarkerWritten;
       $newMarkerWritten=1;
-	  
+  
       # if new interval, it really indicates the end of the last one but its
       # time is that of the new one so process last interval before saving.
       # if this isn't a valid interval marker the file somehow got corrupted
@@ -1687,55 +1711,62 @@ if ($playback ne '')
       $timestampFlag=0;
       if ($line=~/^>>>/)
       {
+        # we need to make sure both $lastSeconds and $newSeconds track BOTH the
+        # raw and rawp files, if both exist.
+
         $timestampFlag=1;
         if ($line!~/^>>> (\d+\.\d+) <<</)
         {
  	  logmsg("E", "Corrupted file do to invalid time marker in '$file'\n".
-  		      "Ignoring the rest of file.  Last valid marker: $newSeconds");
+  		      "Ignoring the rest of file.  Last valid marker: $newSeconds[$rawPFlag]");
 	  next;
         }
 
-        # At this point, $newSeconds is actually pointing to the last interval and be
-        # sure to conver to local time so --from/--thru checks work
+        # At this point and if defined $newSeconds is actually pointing to the last interval
+        # and be sure to convert to local time so --from/--thru checks work.
 	my $thisSeconds=$1+$timeAdjust;
-        $lastSeconds=(defined($newSeconds)) ? $newSeconds : 0;
+        $lastSeconds[$rawPFlag]=(defined($newSeconds[$rawPFlag])) ? $newSeconds[$rawPFlag] : 0;
   	$skip=0    if $fromSecs && $thisSeconds>=$fromSecs;
-        last       if $thruSecs && $lastSeconds>$thruSecs;
+        last       if $thruSecs && $lastSeconds[$rawPFlag]>$thruSecs;
 
-        $timestampCounter++    if !$skip;
-        if ($timestampCounter==1)
+        $timestampCounter[$rawPFlag]++    if !$skip;
+        if ($timestampCounter[$rawPFlag]==1)
         {
           # If a second (or more) file for same host, are their timstamps consecutive?
+          # Since we could have a raw/rawp file the way to tell a new file is that
+          # $newSeconds will be defined.
           # If NOT consecutive (or first file for a host), init 'last' variables, noting
           # we also need to init if there was a disk configuration change.
-          $consecutiveFlag=($sameHostFlag && $thisSeconds==$newSeconds && !$diskChangeFlag) ? 1 : 0;
-          $newSeconds=$thisSeconds;
+          $consecutiveFlag=(!$newPrefixFlag && defined($newSeconds[$rawPFlag]) && $thisSeconds==$newSeconds[$rawPFlag] && !$diskChangeFlag) ? 1 : 0;
+          $newSeconds[$rawPFlag]=$thisSeconds;
           if (!$consecutiveFlag)
           {
-	    initLast();
-            $lastSecs=$thisSeconds;
+	    # if not doing raw/rawp files, init everything, otherwise just init the type we're doing
+	    initLast()             if ($playback{$prefix}->{flags} & 1)==0;
+	    initLast($rawPFlag)    if  $playback{$prefix}->{flags} & 1;
+            $lastSecs[$rawPFlag]=$thisSeconds;
 	  }
 	  print "ConsecFlag: $consecutiveFlag\n"    if $debug & 1;
           next;
 	}
-        $newSeconds=$thisSeconds;
+        $newSeconds[$rawPFlag]=$fullTime=$thisSeconds;    # we use '$fullTime' for $microInterval re-calculation
 
-        # track thru times for each file to be used for totals/averages
-        # in terminal mode
-        if (!$skip)
+        # track from/thru times for each file to be used for -oA in terminal mode
+        if (!$skip && !$rawPFlag)
         {
-          $fileFrom=$newSeconds    if !defined($fileFrom);
-          $fileThru=$newSeconds;
+          $fileFrom=$newSeconds[$rawPFlag]    if !defined($fileFrom);
+          $fileThru=$newSeconds[$rawPFlag];
         }
       }
       next    if $skip;
+      print $line    if $debug & 4;
 
       if ($grepPattern ne '')
       {
         if ($line=~/$grepPattern/)
         {
-          my $msec=(split(/\./, $newSeconds))[1];
-          my ($ss, $mm, $hh, $mday, $mon, $year)=localtime($newSeconds);
+          my $msec=(split(/\./, $newSeconds[$rawPFlag]))[1];
+          my ($ss, $mm, $hh, $mday, $mon, $year)=localtime($newSeconds[$rawPFlag]);
 	  $datetime=sprintf("%02d:%02d:%02d", $hh, $mm, $ss);
 	  $datetime=sprintf("%02d/%02d %s", $mon+1, $mday, $datetime)                   if $options=~/d/;
 	  $datetime=sprintf("%04d%02d%02d %s", $year+1900, $mon+1, $mday, $datetime)    if $options=~/D/;
@@ -1745,8 +1776,10 @@ if ($playback ne '')
 	next;
       }
 
-      print $line    if $debug & 4;
       # Either we're processing a timestamp marker OR data entries
+      # When using a single raw file that has inteval markers for all record and newer rawp
+      # files that only have them for interval2 only we need to force the 'print' flag each time
+      $interval2Print=1    if $rawPFlag && $recVersion ge '3.3.5';
       if ($timestampFlag)
       {
         # We already skipped first interval marker.  As for the second one, which indicates the end of
@@ -1754,9 +1787,9 @@ if ($playback ne '')
         # we get to use the last file's data for the previous interval's data.  BUT we have to make
         # sure 'initInterval' called for second interval which may have been skipped.
         my $saveI2P=$interval2Print;    # gets reset to 0 during intervalEnd()
-        intervalEnd($lastSeconds)    if $consecutiveFlag || $timestampCounter>2;
-        initInterval()               if $timestampCounter==2;
-        $firstTime2=0                if $saveI2P;
+        intervalEnd($lastSeconds[$rawPFlag])    if $consecutiveFlag || $timestampCounter[$rawPFlag]>2;
+        initInterval()    if $timestampCounter[$rawPFlag]==2;
+        $firstTime2=0     if $saveI2P;
       }
       else
       {
@@ -1775,24 +1808,23 @@ if ($playback ne '')
     # normally samples will end on timestamp marker (even if last interval) and therefore
     # processed above.  However in pre-3.1.2 releases timestamps weren't written when 
     # logs rolled and so we need to process the last interval in those cases as well.
-    intervalEnd($newSeconds)     if !$timestampFlag && $recVersion lt '3.1.2';
+    intervalEnd($newSeconds[$rawPFlag])     if !$timestampFlag && $recVersion lt '3.1.2';
 
+    my $tmpsys=$subsys;
+    $tmpsys=~s/[YZ]//g;
     $ZPLAY->gzclose()    if  $zInFlag;
     close PLAY           if !$zInFlag;
 
     # if we reported data from this file (we may have skipped it entirely if --from
     # used with multiple files), calculate how many seconds reported on in for 
     # stats reporting with -oA
-    if (!$skip)
+    if (!$skip && !$rawPFlag)
     {
-      # we always skip the beginning interval and if we terminated by hitting
-      # our ending interval we need to add one back on because when we hit 
-      # the end of the file without --thru, the THRU date is pointing to the 
-      # start of the next interval which has no data.
-      $playbackSecs=$fileThru-$fileFrom-$interval;
-      $playbackSecs+=$interval    if $thruSecs && $newSeconds>$thruSecs;
+      # Note that by default we never include first interval data, but if this was a
+      # consecitive file we need to include that interval to so add it back in
+      $playbackSecs=$fileThru-$fileFrom;
+      $playbackSecs+=$interval    if $consecutiveFlag;
       $elapsedSecs+=$playbackSecs;
-      #print "PLAYBACK SECS: $playbackSecs  PREFIX SECS: $elapsedSecs\n";
     }
 
     # for easier reading...
@@ -1802,14 +1834,18 @@ if ($playback ne '')
     logmsg("E", "Error reading '$file'\n")    if $bytes==-1;
   }
 
+  # Close logs that are open from last pass
+  closeLogs($lastSubsys)    if $numProcessed;
+
   # Always print last set of summary data...
   printProcAnalyze()    if $procAnalCounter;
   printSlabAnalyze()    if $slabAnalCounter;
 
-  # if printing to terminal, be sure to print averages & totals for last file
-  # processed
-  if ($options=~/A/ && $filename eq '')
+  # if printing to terminal, be sure to print averages & totals for last file processed
+  if (!$rawPFlag && $options=~/A/ && $filename eq '')
   {
+    $subsys=$subsysAll;    # in case mixed raw/rawp we need to reset
+    $subsys=~s/y//;
     printBriefCounters('A');
     printBriefCounters('T');
   }
@@ -1865,6 +1901,10 @@ if ($expName ne '')
   my $initName="${expName}Init";
   &$initName(@expOpts);
 }
+
+# this sets all the xFlags as specified by -s.  At least one must be set to
+# write to the 'tab' file.
+setFlags($subsys);
 
 # In case displaying output.  We also need the recorded version to match ours.
 initFormat();
@@ -2080,8 +2120,8 @@ print "waiting for $temp second sample...\n"    if $filename eq "" && !$quietFla
 
 # Need to make sure proc's and env's align with printing of other vars first 
 # time.  In other words, do the first read immediately.
-$counted2=$limit2-1    if $subsys=~/[yYZ]/;
-$counted3=$limit3-1    if $subsys=~/E/;
+$counted2=($subsys=~/[yYZ]/) ? $limit2-1 : 0;
+$counted3=($subsys=~/E/)     ? $limit3-1 : 0;
 
 # Figure out how many intervals we want to check for lustre config changes,
 # noting that in the debugging case where the interval is 0, we calculate it
@@ -2202,12 +2242,14 @@ for (; $count!=0 && !$doneFlag; $count--)
 
   #    G a t h e r    S T A T S
 
-  # This is the section of code that needs to be reasonably efficient.
-  # but first, start the interval with a time marker noting we have to first
-  # make sure we're padding with 0's, then truncate to 2 digit precision.
+  # This is the section of code that needs to be reasonably efficient.  but first, start  
+  # the interval with a time marker noting we have to first make sure we're padding with
+  # 0's, then truncate to 2 digit precision noting is a rawp file we only write a marker
+  # during interval2
+  $counted2++;
   $fullTime=sprintf("%d.%06d", $intSeconds, $intUsecs);
   record(1, sprintf(">>> %.3f <<<\n", $fullTime))               if $recFlag0;
-  record(1, sprintf(">>> %.3f <<<\n", $fullTime), undef, 1)     if $recFlag1;
+  record(1, sprintf(">>> %.3f <<<\n", $fullTime), undef, 1)     if $recFlag1 && $counted2==$limit2;
 
   ##############################################################
   #    S t a n d a r d    I n t e r v a l    P r o c e s s i n g
@@ -2228,7 +2270,7 @@ for (; $count!=0 && !$doneFlag; $count--)
       record(2, $line)
 	  if (( ($cFlag || $CFlag) && $line=~/^cpu|^ctx|^proce/) ||
               ( ($dFlag || $DFlag) && $kernel2_4 && !$partDataFlag && $line=~/^disk/) ||
-	      ( $DFlag && $line=~/^cpu /) ||
+	      ( $DFlag && !$hiResFlag && $line=~/^cpu /) ||
               ( $mFlag && $line=~/^page|^swap|^procs/));  # note that 'page/swap' 2.4 and procs in 2.6 and later 2.4s
       record(2, "$1\n")
           if ($cFlag || $CFlag) && $line=~/(^intr \d+)/;
@@ -2454,11 +2496,11 @@ for (; $count!=0 && !$doneFlag; $count--)
   #    I n t e r v a l 2    P r o c e s s i n g
   #############################################
 
-  if (($yFlag || $YFlag || $ZFlag) && ++$counted2==$limit2)
+  if (($yFlag || $YFlag || $ZFlag) && $counted2==$limit2)
   {
     if ($yFlag || $YFlag)
     {
-      # NOTE - $SlabGetProc is either 0 for all slabs or 14 for selective
+      # NOTE - $SlabGetProc is either 99 for all slabs or 14 for selective
       #        $SlabHeader is 1 for 2.4 kernels and 2 for 2.6 ones
       if ($slabinfoFlag)
       {
@@ -2476,7 +2518,7 @@ for (; $count!=0 && !$doneFlag; $count--)
 	  next    if defined($slabskip{$slab});
 
 	  # See if a new slab appeared, noting this doesn't apply when using
-          # -Y because of the optimization 'next' for '$slabFilt' above
+          # --slabfilt because of the optimization 'next' for '$slabFilt' above
 	  # also remember since we're only looking at root slabs, we'll never
           # discover 'linked' ones
 	  if (!defined($slabdata{$slab}))
@@ -2488,9 +2530,9 @@ for (; $count!=0 && !$doneFlag; $count--)
 	  # Whenever there are 'new' slabs to read (which certainly includes the first 
           # full pass or any time we change log files) read constants before reading
           # variant data.
-	  getSys('Slab', '/sys/slab', $slab, ['object_size', 'slab_size', 'order','objs_per_slab'])
-	      if $firstPass || $newRawFlag || $newSlabFlag;
-	  getSys('Slab', '/sys/slab', $slab, ['objects', 'slabs']);
+	  getSys('Slab', '/sys/slab', $slab, 1, ['object_size', 'slab_size', 'order','objs_per_slab'])
+	      if $firstPass || $newRawSlabFlag || $newSlabFlag;
+	  getSys('Slab', '/sys/slab', $slab, 1, ['objects', 'slabs']);
 	  $newSlabFlag=0;
 	}
       }
@@ -2643,7 +2685,8 @@ for (; $count!=0 && !$doneFlag; $count--)
     sleep $interval                    if !$hiResFlag;
     Time::HiRes::usleep($uInterval)    if  $hiResFlag;
   }
-  $firstPass=$newRawFlag=0;
+  $firstPass=0;
+  $newRawSlabFlag=0    if $counted2==0;    # interval 2 just processed
   next;
 }
 
@@ -2662,7 +2705,7 @@ record(1, sprintf(">>> %.3f <<<\n", $fullTime))               if $recFlag0;
 record(1, sprintf(">>> %.3f <<<\n", $fullTime), undef, 1)     if $recFlag1;
 
 # close logs cleanly and turn echo back on because when 'brief' we turned it off.
-closeLogs();
+closeLogs($subsys);
 unlink $PidFile       if $daemonFlag;
 `stty echo`           if !$PcFlag && $termFlag;
 printf("%c[r", 27)    if $numTop && $userSubsys ne '';
@@ -2713,7 +2756,6 @@ sub preprocessPlayback
   my ($selected, $header, $i);
   my ($lastPrefix, $thisSubSys, $thisInterval, $lastInterval, $mergedInterval);
   my ($lastSubSys, $lastSubOpt, $lastNfs, $lastDisks, $lastLustreConfig, $lastLustreSubSys);
-  my $preprocFlags=0;
   local ($configChange, $filePrefix, $file);
 
   $selected=0;
@@ -2730,13 +2772,7 @@ sub preprocessPlayback
       next;
     }
     $filePrefix=$1;
-
-    # skip these, but set a flag to let us know we did
-    if ($file=~/\.rawp/)
-    {
-       $preprocFlags|=1;
-       next;
-    }
+    $playback{$filePrefix}->{flags}|=0    if !defined($playback{$filePrefix}->{flags});
 
     if (-z $file)
     {
@@ -2744,9 +2780,9 @@ sub preprocessPlayback
       next;
     }
 
-    if ($file!~/raw$|gz$/)
+    if ($file!~/raw$|rawp$|gz$/)
     {
-      $preprocErrors{$file}="I:it doesn't end in 'raw' or 'gz'";
+      $preprocErrors{$file}="I:it doesn't end in 'raw', 'rawp' or 'gz'";
       next;
     }
 
@@ -2760,9 +2796,13 @@ sub preprocessPlayback
     }
 
     # Read header - cleanup code in newlog: see call to getHeader in newLog()
+    # Set flags based on whether raw or rawp
     $header=getHeader($file);
     $header=~/SubSys:\s+(\S+)/;
     $thisSubSys=$1;
+
+    $playback{$filePrefix}->{flags}|=1    if $file=~/\.rawp/;
+    $playback{$filePrefix}->{flags}|=2    if $file!~/\.rawp/;
 
     # We finally dropped SubOpts and nfsOpts from the header in V3.2.1-5, but not LustOpts
     my $subOpts=($header=~/SubOpts:\s+(\S*)\s+Options:/) ? $1 : '';
@@ -2841,6 +2881,9 @@ sub preprocessPlayback
       ($thisLustreConfig, $lastLustOpts)=checkLustre('', $header, '', $thisLustOpts);
 
       $lastDisks=checkDisks('', $thisDisks)    if $thisSubSys=~/D/;
+
+      # useful for telling what may have changed
+      $playback{$filePrefix}->{subsysFirst}=$thisSubSys;
     }
     else    # subsequent files (if any) for same prefix-date
     {
@@ -2857,13 +2900,14 @@ sub preprocessPlayback
     $lastPrefix=$filePrefix;
     $lastSubSys=$thisSubSys;
     $lastLustreConfig=$thisLustreConfig;
+
+    $playback{$filePrefix}->{subsys}=$thisSubSys;
   }
 
   # If multiple files for this prefix processed there are outstanding
   # potential changes we need to check for.
   configChange($lastPrefix, $lastSubSys, $lastLustreConfig, $mergedInterval)
       if $selected && !$newPrefix;
-  return($preprocFlags);
 }
 
 # if no -s, return default subsys
@@ -2872,8 +2916,8 @@ sub preprocessPlayback
 sub mergeSubsys
 {
   my $default=shift;
-  my $newSubsys=$default;
  
+  my $newSubsys=$default;
   if ($userSubsys ne '')
   {
     if ($userSubsys!~/[+-]/)
@@ -2896,10 +2940,6 @@ sub mergeSubsys
       }
       $newSubsys=$default;
     }
-  }
-  else
-  {
-    $newSubsys=$default;
   }
   return($newSubsys);
 }
@@ -3037,6 +3077,8 @@ sub checkSubsysOpts
     error("process options i and m are mutually exclusive")    if $procOpts=~/i/ && $procOpts=~/m/;
     error("--procopts z can only be used with --top")          if !$numTop && $procOpts=~/z/;
   }
+  error("--procstate not one or more of 'DRSTWZ'")             if $procState ne '' && $procState!~/^[DRSTWZ]+$/;
+
 
   # it's possible this is not recognized as running a particular type of service
   # from the 'flag's if that service is isn't yet started and so we need
@@ -3091,7 +3133,7 @@ sub checkNfs
   # too tricky to handle all possible inconsistencies with multiple files
   # so we're only going to print a stock message
   $preprocErrors{$filePrefix}="E:confilicting nfs settings with other files of same prefix";
-  return($temp);  
+  return($temp);
 }
 
 sub checkDisks
@@ -3415,6 +3457,14 @@ sub getProc
       record(2, "$tag$spacer$line", undef, 1);
       next;
     }
+
+    # GENERIC 2 - same as generic but support for rawp file
+    if ($type==99)
+    {
+      $spacer=$tag ne '' ? ' ' : '';
+      record(2, "$tag$spacer$line", undef, 1);
+      next;
+    }
   }
   close PROC;
   return(1);
@@ -3504,27 +3554,28 @@ sub getExec
 # special 'skip', 'ignore', etc flags.  Just read the data!
 sub getSys
 {
-  my $tag=  shift;
-  my $sys=  shift;
-  my $dir=  shift;
-  my $files=shift;
+  my $tag=     shift;
+  my $sys=     shift;
+  my $dir=     shift;
+  my $rawpFlag=shift;    # write to rawp file if one and this is defined
+  my $files=   shift;
 
   foreach my $file (@$files)
   {
     # as of writing this for slub, I'm not expecting file open failures
     # but might as well put in here in case needed in the future
-    my $filename="$sys/$dir/$file";
-    if (!open SYS, "<$filename")
+    my $filespec="$sys/$dir/$file";
+    if (!open SYS, "<$filespec")
     {
       # but just report it once
-      logmsg("E", "Couldn't open '$filename'")
-	  if !defined($notOpened{$filename});
-      $notOpened{$filename}=1;
+      logmsg("E", "Couldn't open '$filespec'")
+	  if !defined($notOpened{$filespec});
+      $notOpened{$filespec}=1;
       return(0);
     }
 
     my $line=<SYS>;
-    record(2, "$tag $dir $file $line");
+    record(2, "$tag $dir $file $line", undef, $rawpFlag);
   }
 }
 
@@ -3767,7 +3818,7 @@ sub newLog
     # the default filename may only have a datestamp put time back in.
     my $rawFilename=$filename;
     $rawFilename=~s/$dateonly$/$datetime/;
-    print "Create raw file:   $rawFilename\n"    if $debug & 8192;
+    print "Create raw file:   $rawFilename Flag0: $recFlag0  Flag1: $recFlag1\n"    if $debug & 8192;
 
     # Unlike plot files, we ALWAYS compress when compression lib exists
     $ZRAW=Compress::Zlib::gzopen("$rawFilename.raw.gz", $zmode) or
@@ -3784,8 +3835,10 @@ sub newLog
     # fails it's fatal.  we may also need a slub header
     record(1, $commonHeader, $recMode)        if $recFlag0;
     record(1, $commonHeader1, $recMode, 1)    if $recFlag1;
-    record(1, $slubHeader, $recMode)          if $slubinfoFlag && $subsys=~/y/i;
-    $newRawFlag=1;
+    record(1, $slubHeader, $recMode, 1)       if $slubinfoFlag && $subsys=~/y/i;
+
+    # This flag indicated a new file was created and full SLUB records may need to be read
+    $newRawSlabFlag=1;
   }
 
   #    C r e a t e    P l o t    F i l e s
@@ -3893,7 +3946,7 @@ sub newLog
           logmsg("F", "Couldn't open OST gzip file")     if  $zFlag && $LFlag && $reportOstFlag;
 
     # These next two guys are 'special' because they're not really detail files per se, 
-    # Also note when doing --rawtoo, the date in 'prc' and 'raw' is essentially identical and
+    # Also note when doing --rawtoo, the data in 'prc' and 'raw' is essentially identical and
     # we don't need it on both places.  Furthermore, raw is already being compressed.
     if (!$rawtooFlag)
     {
@@ -3997,8 +4050,8 @@ sub buildCommonHeader
   my $tempSubsys=$subsys;
   if ($groupFlag)
   {
-    $tempSubsys=~s/Z+//g      if $rawType==0;
-    $tempSubsys=~s/[^Z]+//g   if $rawType==1;
+    $tempSubsys=~s/[YZ]//g      if $rawType==0;
+    $tempSubsys=~s/[^YZ]+//g    if $rawType==1;
   }
 
   # We want to store all the interval(s) being used and not just what
@@ -4015,6 +4068,7 @@ sub buildCommonHeader
   # can grow over time...
   my $flags='';
   $flags.='d'    if $diskChangeFlag;
+  $flags.='g'    if $groupFlag;
   $flags.='i'    if $processIOFlag;
   $flags.='s'    if $slubinfoFlag;
 
@@ -4089,15 +4143,15 @@ sub writeInterFileMarker
 # an extension).
 sub plotFileExists
 {
-  my $filename=shift;
+  my $filespec=shift;
   my (@files, $file);
 
-  @files=glob("$filename*");
-  foreach $file (@files)
+  @files=glob("$filespec*");
+  foreach my $file (@files)
   {
       return(1)  if $file!~/raw/;
   }
-    return(0);
+  return(0);
 }
 
 # In retrospect, there are a number of special cases in here just for playback
@@ -4242,7 +4296,7 @@ sub flushBuffers
       $ZRAWP->gzflush(2)<0 and flushError('raw', $ZRAWP)    if $recFlag1;
       return    if !$plotFlag;
     }
-
+    print "FLUSH\n";
     $ZLOG-> gzflush(2)<0 and flushError('log', $ZLOG)     if $subsys=~/[a-z]/;
     $ZBLK-> gzflush(2)<0 and flushError('blk', $ZBLK)     if $LFlag && $lustOpts=~/D/;
     $ZBUD-> gzflush(2)<0 and flushError('bud', $ZBUD)     if $BFlag;
@@ -4361,7 +4415,7 @@ sub logmsg
   print MSG "$date $time $msg\n";
   close MSG;
 
-  logsys($msg)    if $severity=~/EF/;
+  logsys($msg)    if $severity=~/EF/ && !$PcFlag;
   exit            if $severity=~/F/;
 }
 
@@ -4371,15 +4425,17 @@ sub logsys
 
   if ($filename ne "")
   {
-    #$x=Sys::Syslog::openlog($Program, "", "user");
-    #$x=Sys::Syslog::syslog("info", $message);
-    #Sys::Syslog::closelog();
+    $x=Sys::Syslog::openlog($Program, "", "user");
+    $x=Sys::Syslog::syslog("info", "%s", $message);
+    Sys::Syslog::closelog();
   }
 }
 
 sub setFlags
 {
   my $subsys=shift;
+
+  print "SetFlags: $subsys\n"    if $debug & 1;
 
   # NOTE - are flags are faster than string compares?
   # unfortunately I got stuck using zFlag for ZIP and ZFlag for processes
@@ -4411,11 +4467,11 @@ sub setFlags
   if ($groupFlag)
   {
     $tempSys=$subsys;
-    $tempSys=~s/Z//g;
+    $tempSys=~s/[YZ]//g;
     $recFlag0=0    if $tempSys eq '';
-    $recFlag1=1    if $subsys=~/Z/;
+    $recFlag1=1    if $subsys=~/[YZ]/;
   }
-  print "RecFlags: $recFlag0 $recFlag1\n"    if $debug & 1;
+  print "RecFlags: $recFlag0 $recFlag1\n"    if $debug & 1 && !$playback;
 }
 
 sub setNFSFlags
@@ -4519,10 +4575,15 @@ sub checkHiRes
   }
 }
 
+
+# This is only called during collection, not playback
 sub closeLogs
 {
+  my $subsys=shift;
   return    if !$logToFileFlag;
-  print "Closing logs\n"    if $debug & 1;
+
+  print "Closing logs for: $subsys\n"    if $debug & 1;
+  setFlags($subsys);
   
   # closing raw files based on presence of zlib and NOT -oz
   if ($zlibFlag && $logToFileFlag && $rawFlag)
@@ -4560,7 +4621,6 @@ sub closeLogs
   {
     $temp="$SubsysCore$SubsysExcore";
     $ZLOG-> gzclose()     if $plotFlag && $subsys=~/[$temp]+/;
-    $ZBLK-> gzclose()     if $LFlag && $plotFlag && $lustOpts=~/D/;
     $ZBUD-> gzclose()     if $BFlag && $plotFlag;
     $ZCLT-> gzclose()     if $LFlag && $plotFlag && CltFlag;
     $ZCPU-> gzclose()     if $CFlag && $plotFlag;
@@ -4573,8 +4633,8 @@ sub closeLogs
     $ZNET-> gzclose()     if $NFlag && $plotFlag;
     $ZOST-> gzclose()     if $LFlag && $plotFlag && $OstFlag;
     $ZTCP-> gzclose()     if $TFlag && $plotFlag;
-    $ZSLB-> gzclose()     if $YFlag && $plotFlag && !$rawtooFlag;
-    $ZPRC-> gzclose()     if $ZFlag && $plotFlag && !$rawtooFlag;
+    $ZSLB-> gzclose()     if $YFlag && $plotFlag && !$rawtooFlag && !$slabAnalOnlyFlag;
+    $ZPRC-> gzclose()     if $ZFlag && $plotFlag && !$rawtooFlag && !$procAnalOnlyFlag;
   }
 }
 
@@ -5681,6 +5741,14 @@ Processes
       NOTE2:  if any type fields are immediatly followed by a plus sign, any 
               threads associated with that process will also be reported.
               see man page for important restrictions
+
+   --procstate  Only show processes in one or more of the following states
+      D - waiting in uninterruptable disk sleep
+      R - running
+      S - sleeping in uninterruptable wait
+      T - traced or stopped
+      W - paging
+      Z - zombie
 
 Slab Options and Filters
    --slabopts

@@ -5,6 +5,7 @@ BINDIR=/opt/hp/collectl
 mkdir -p $BINDIR
 mkdir -p $BINDIR/sbin
 mkdir -p $BINDIR/docs
+mkdir -p $BINDIR/util
 mkdir -p $BINDIR/man1
 mkdir -p $BINDIR/etc/init.d
 
@@ -17,7 +18,9 @@ cp formatit.ph           $BINDIR/sbin
 cp lexpr.ph sexpr.ph     $BINDIR/sbin
 cp gexpr.ph misc.ph      $BINDIR/sbin
 cp envrules.std          $BINDIR/sbin
-cp vmstat.ph readS       $BINDIR/sbin
+cp vmstat.ph             $BINDIR/sbin
+cp client.pl readS       $BINDIR/util
+cp col2tlviz.pl          $BINDIR/util
 cp collectl.conf         $BINDIR/etc
 cp docs/*                $BINDIR/docs
 cp initd/*               $BINDIR/etc/init.d
@@ -26,7 +29,7 @@ cp man1/*                $BINDIR/man1
 # Force in case redoing the install and files already zipped
 gzip -f $BINDIR/man1/*
 
-chmod 755 $BINDIR/sbin/collectl $BINDIR/sbin/readS
+chmod 755 $BINDIR/sbin/collectl $BINDIR/util/*
 chmod 755 $BINDIR//etc/init.d/collectl
 chmod 444 $BINDIR/sbin/formatit.ph $BINDIR/sbin/*expr.ph $BINDIR/sbin/vmstat.ph
 chmod 444 $BINDIR/etc/collectl.conf

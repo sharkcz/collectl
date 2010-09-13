@@ -45,7 +45,7 @@ than spaces, one can change the data separator with --sep.  In fact, for the
 case where a tool such as rrd requires the date be in UTC format, you can even
 change the timestamp format using --utc.
 <p>
-<h3>Logging Option</h3>
+<h3>Logging Options</h3>
 There are 2 switches you should become familiar with for logging data, noting that
 you cannot write to a file and the terminal at the same time.
 <ul>
@@ -56,6 +56,28 @@ a directory name, that string is prepended to the standard output file name</li>
 <li><b>-P</b> which when used in combination with <i>-f</i> instructs collectl to write
 a <a href=Plotfiles.html><i>plottable</i></a> file instead</li>
 </ul>
+
+As collectl continues to grow in functionality and collect more data, linux is also growing
+in complexity and increasing the number of active processes as well as expanding the number
+of slabs.  There is a 3rd option which has been around for quite awhile but has had minimal
+use or discussion and that is the -G or --group switch.  When specified, this tells collectl
+to write process and slab data to a second file named <i>rawp</i> (initially it only
+contained process data).  The main reason for doing so is because without this switch a typical
+raw file, even when compressed, can approach 50MB or more, growing even larger as the number
+of active procsses grows.
+<p>
+While large files are nothing new to collectl, playing them back either for the purpose of drilling
+into the data or to simply generate plot files can become very expensive in terms of time and CPU
+load.  In extreme some cases it can take tens of minutes to process a single, large raw file and even
+in normal cases it will take multiple minutes.  Having 
+collectl write to 2 separate files doesn't add any additional overhead or disk space
+but can significantly reduce the playback time when you are not interested in slab or process data,
+which is often the case during initial analysis.
+As a data point, on my development system, single compressed collectl logs are on the order of 35MB.
+When using the -G switch, it generated a pair of files where the process/slab data is about 34MB 
+and the file with the rest of the data is only 1MB making the <i>raw</i>, where all the subsystem
+details are stored, very efficient to process in playback mode, taking about a minute compared to
+5 minutes when that file includes slab and process data.
 <p>
 For most users this is all you need to know.  On the other hand if
 want to use collectl to feed data to other tools or perhaps log to both

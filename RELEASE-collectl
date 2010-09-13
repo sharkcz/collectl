@@ -1,19 +1,22 @@
-
 RELEASE NOTES FOR COLLECTL
 
 INSTALLATION
 
-Using the rpm
+Installing the rpm
 
-    use rpm -i
+    rpm -ihv collectl-x.y.z.noarch.rpm
     
-    In both cases, collectl will not be configured to start on boot
-    but can easily be set to do so with the chkconfig command.
-
 Installing from source
 
     unpack the tarball, which you've obviously done
     follow the instructions in the README, which basically says to run INSTALL
+
+Configure to start on boot
+
+    In both cases, collectl will not be configured to start on boot
+    but can easily be set to do so with the command:
+
+    chkconfig collectl on
 
 KNOWN PROBLEMS/RESTRICTIONS
 
@@ -36,6 +39,63 @@ KNOWN PROBLEMS/RESTRICTIONS
     cycle(s)
   - if a symlink is used to point to the executable, it MUST contain the full
     path or collectl will not be able to find 'formatit.ph'
+
+3.3.5-4 Jul 20. 2009
+  - performance optimizations in dataAnalyze()
+    - check process/slabs first whenever type is proc/slab.  then in a separate clause
+      look at subsys, thereby preventing parsing of type in other checks
+    - always include test of subsys and do it first.  found to be completely missing
+      in lustre tests
+
+3.3.5-3 Jul 17, 2009
+  - expanded meaning of -G to include slabs in 'rawp' files and to add 'g' to the Flags
+    in the header, which also uncovered a number of bugs in the way batches of files for
+    different hosts/dates were selected/handled even before slabs were added
+  - drop support for -sy in brief mode since it really doesn't make much sense and if you
+    do specify -sy it now forces verbose mode.  see Slab documentation for more on playing
+    back files generated with -G
+  - if can't find an ofed utility AND rpm isn't on system, don't use it [thanks seb]
+  - fixed some problems with -oA processing
+  - removed a couple of error checks for switches that don't apply to a particular option
+    since they are silently ignored already, making it easier to recall a command and add
+    switches rather than having to remove those that don't apply
+  - flush STDIN at startup in case someone typed extra CRs
+  - added col2tlviz to kit
+  - changes to --export processing broke --vmstat so moved call to setFlags() from right 
+    before playback code (which sets them itself) to right after call to $expName init routine
+  - changed start scripts so that if you can specifice "start/restart {[extension] switches]"
+    making easier to use/document.  the old syntax which put the switches 1st meant you had to
+    use "" if you didn't want to change them AND it didn't work with redhat's 'service' command
+
+3.3.5-2 June 30, 2009
+  - added client.pl to examples/ and moved readS to /examples
+  - added new switch --procstate, which allows you to limit process displays to
+    only show those processes in one or more explicit states
+  - incorrectly looking for 'LustreVersion' in header instead of 'CfsVersion'
+  - when dropped SubOpts from header it broke pattern matching for subsys in 
+    header during playback
+  - only calculate disk detail stats using CPU time when hires not available
+  - when reporting a lustre server that is both an MDS and OST in brief mode,
+    the 2nd line column headers are reversed for the types of server
+  - removed obsolete switches (and warnings) -b, -e, -oP, -Y, -Z, -O, --subopts and -sLL
+  - changed buddyinfo headers in verbose, plot and detail files being sure to include 
+    name/zone after : in details [thanks bayard]
+  - use mergeSubsys() everywhere $userSubsys is used to reset value of $subsys
+  - changed some instaces local variable $file to begin sorting out of local variables
+    with the same name as the global one
+  - if newlog starts and NOT an interval 2 interval, we don't record correct slab data so
+    only clear $newRawSlabFlag (also renamed for clarification) during interval 2
+
+3.3.5-1 June 19, 2009
+  - print load averages to 2 decimal places in plot format to match interactive format,
+    which also required adding to lexpr and allowing it to deal with fractions
+    [thanks stevef]
+  - when disk order changes, error message was not reporting correct old maj/min
+    numbers [thanks philippe]
+  - code for including >ignore< stanza in envrules was causing unititialized variable errors
+  - do not make sure ipmi available when running with --envtest
+  - do not include ':' in lexpr network name string
+  - re-enable sending startup and E/F messages to syslog
 
 3.3.4-5	June 14, 2009
   - old redhat distros don't recognize the -p switch on the start script so check

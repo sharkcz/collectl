@@ -93,6 +93,10 @@ sub lexpr
       $cpuSumString.=sendData("ctxint.int",  $intrpt/$intSecs);
       $cpuSumString.=sendData("ctxint.proc", $proc/$intSecs);
       $cpuSumString.=sendData("ctxint.runq", $loadQue);
+
+      $cpuSumString.=sendData("cpuload.avg1",  $loadAvg1, '%4.2f');
+      $cpuSumString.=sendData("cpuload.avg5",  $loadAvg5, '%4.2f');
+      $cpuSumString.=sendData("cpuload.avg15", $loadAvg15,'%4.2f');
     }
 
     if ($lexSubsys=~/C/)
@@ -242,10 +246,13 @@ sub lexpr
       for ($i=0; $i<$netIndex; $i++)
       {
         next    if $netName[$i]=~/lo|sit/;
-        $netDetString.=sendData("netinfo.kbin.$netName[$i]",   $netRxKB[$i]/$intSecs);
-        $netDetString.=sendData("netinfo.pktin.$netName[$i]",  $netRxPkt[$i]/$intSecs);
-        $netDetString.=sendData("netinfo.kbout.$netName[$i]",  $netTxKB[$i]/$intSecs);
-        $netDetString.=sendData("netinfo.pktout.$netName[$i]", $netTxPkt[$i]/$intSecs);
+
+        my $netName=$netName[$i];
+        $netName=~s/:$//;
+        $netDetString.=sendData("netinfo.kbin.$netName",   $netRxKB[$i]/$intSecs);
+        $netDetString.=sendData("netinfo.pktin.$netName",  $netRxPkt[$i]/$intSecs);
+        $netDetString.=sendData("netinfo.kbout.$netName",  $netTxKB[$i]/$intSecs);
+        $netDetString.=sendData("netinfo.pktout.$netName", $netTxPkt[$i]/$intSecs);
       }
     }
   }
@@ -351,8 +358,7 @@ sub sendData
 {
   my $name= shift;
   my $value=shift;
-
-  $value=int($value);
+  my $format=shift;
 
   # These are only undefined the very first time
   if (!defined($lexTTL[$lexDataIndex]))
@@ -398,7 +404,9 @@ sub sendData
   if (!$lexCOFlag || $value!=$lexDataLast[$lexDataIndex] || $lexTTL[$lexDataIndex]==1)
   {
     $valSentFlag=1;
-    $returnString=sprintf("%s %d\n", $name, $value)    unless $lexDebug & 8;
+    $format='%d'    if !defined($format);
+#    $returnString=sprintf("%s %d\n", $name, $value)    unless $lexDebug & 8;
+    $returnString=sprintf("%s $format\n", $name, $value)    unless $lexDebug & 8;
     $lexDataLast[$lexDataIndex]=$value;
   }
 

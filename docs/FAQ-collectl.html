@@ -47,6 +47,9 @@
   <li><a href="#ops17">What does this message mean: <i>-sj or -sJ with -P also requires CPU details so adding -sC</i></a></li>
   <li><a href="#ops18">Why are some process usernames being reported as numbers?</a></li>
   <li><a href="#ops19">Why don't I get a prc file with -P and --rawtoo?</a></li>
+  <li><a href="#ops21">What happened to -sy in brief mode?</a></li>
+  <li><a href="#ops22">Why do I get an empty file during play back with -sY/sZ and -P -f?</a></li>
+  <li><a href="#ops23">Why don't I get slb/prc files with -P, -sY/Z and --rawtoo but witout -rawtoo I do?</a></li>
 </ul>
 
 <h1>General Questions</h1>
@@ -471,6 +474,24 @@ you get tired of using <i>--passwd</i>.
 The data in the raw file is essentially identical to that in the prc file so the theory is why repeat it
 when you can easily create it from the raw file.  Furthermore the raw file is already compressed and so
 is a lot smaller.
+
+<a name="ops21"><a><h2>
+<h2>What happened to -sy in brief mode?</h2>
+The brief form was always a hack because slab data is typically collected at a different frequency
+than everything else.  With the 2.6 kernel, slab usage was included in the brief memory display 
+anyway and therefore less important via the -sy switch.  With the move to supporting slab data in
+a separate file with -G/--group, that become an even better reason to drop it so I did.
+
+<a name="ops22"><a>
+<h2>Why do I get an empty file during play back with -sY/-sZ and -P -f?</h2>
+Trying to get this right was just considered too much effort for too rare a case.
+
+<a name="ops23"><a>
+<h2>Why don't I get slb/prc files with -P, -sY/Z and --rawtoo but witout -rawtoo I do?</h2>
+Process data in raw format is almost identical to process data in plot format and it felt like a waste of
+space to replicate the data.  Since slab data tends to be treated the same, at least in rawp files, it just
+came along for the ride.  You can always force the generation of the slb/prc files by playing back the raw
+file with -sY/Z for a second pass.
 
 </body>
 </html>

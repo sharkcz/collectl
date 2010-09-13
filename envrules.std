@@ -35,7 +35,7 @@
 #   CPU2_DIMM3H->CTemp3H   CPU2_DIMM2C->CTemp2C    CPU2_DIMM1F->CTemp1F
 #   Node Exit Amb->ETemp   Front I/O Amb->FTemp    HDD BP Amb->HTemp
 #   Node Inlet Amb->ITemp  PCIE local Temp->LTemp  Northbridge Amb->NTemp   PSU BP->PTemp
->ProLiant SL170h G6<
+>ProLiant SL170h G6,ProLiant SL2x170z G6<
 [pre]
 /^CPU(\d) DIMM Amb/CTemp$1D/
 /^Node //

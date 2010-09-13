@@ -183,5 +183,25 @@ As with the process analysis report, you can control the timeframe of the report
 and unless you explicitly specify one or more subsystems no other data will be reported.  On the other hand if you
 do specify -s, you will get the additional data reported in the standard way in plot-formatted files.
 
+<h3>Slabs and the <i>rawp</i> file</h3>
+As of collectl V3.3.5, it is now possible to request slab data as well as process data be logged to a
+separate file as specified by the -G and --group switches.  To read more about the mechanics of this 
+see <a href=Logging.html>Logging</a> and in particular the section on <i>Grouping data into 2 files</i>.
+<p>
+If you have indeed chosen to use this mechansim there are a few things that have changed in collectl's behavior:
+<ul>
+<li>If you play back the pair of files as a set the right things will happen.  Collectl will play back the non-slab
+containing file as if slab data was never requested, defaulting to brief format unless something was requested
+that explicitly forces verbose format, and then play back the other file as if only slab (and possibly 
+process) data had been requested.  In any event, the output will not be interleaved as each file is played
+back independent of the other.</li>
+<li>If you explicitly play back the file with the slab data and specify subsystems other than slabs or
+processes, they will be ignored in the output.  If you play back the file without the
+slab or process data and specify slab or process detail, they will also be ignored.
+</ul>
+
+If you <i>do not</i> use -G and write slab data to the same file, -sy will automatically put you in
+verbose mode as brief slab data is no longer reported.  If you want to see brief slab usage, use -sm.
+
 </body>
 </html>

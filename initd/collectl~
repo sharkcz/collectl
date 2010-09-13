@@ -21,8 +21,8 @@
 # chkconfig: 345 99 99
 # description: Run data collection for a number of subsystems
 #    see /etc/collectl.conf for startup options
-#      $2: process name extension, if other than collectl [optional for start/restart/reload]
-#      $3: parameters, in quotes if more than one, to pass to daemon command
+#    $2: process name, if other than collectl OR "" to use $3
+#    $3: parameters, in quotes if more than one, to pass to daemon command
 
 RETVAL=0
 COLLECTL=/usr/sbin/collectl
@@ -31,7 +31,7 @@ COLLECTL=/usr/sbin/collectl
 # older distros do not support "status -p" and we need to know if this one does
 STATUS=`status` 
 if [[ $STATUS = *-p* ]]; then IFLAG=1; else IFLAG=0; fi
-if [ $IFLAG -eq 0 ] && [ "$3" != '' ]; then 
+if [ $IFLAG -eq 0 ] && [ "$2" != '' ]; then 
     echo "starting multiple instances with this distro is not supported";
     exit
 fi
@@ -41,32 +41,21 @@ if [ ! -f $COLLECTL ]; then
     exit 1
 fi
 
+# Just to make sure nothing is different when running 'collectl', we 
+# won't use --check even though it's probably ok to use all the time.
 PNAME=collectl
 if [ "$2" != "" ]; then
-    EXT=$2
-    if [ "$1" = "start" ] || [ "$1" = "restart" ] || [ "$1" = "reload" ]; then
-        if [ "$3" = "" ]; then
-	    SWITCHES=$2
-	    EXT=""
-	else
-	    SWITCHES=$3
-	fi
-    fi
-
-    # Just to make sure nothing is different when running 'collectl', we 
-    # won't use --check even though it's probably ok to use all the time.
-    if [ "$EXT" != "" ]; then
-	PNAME="collectl-$EXT"
-	PSWITCH="--pname $EXT"
-	CHECK="--check $PNAME "
-    fi
+  PNAME="collectl-$2"
+  PSWITCH="--pname $2 "
+  CHECK="--check $PNAME "
 fi
 PIDFILE="/var/run/$PNAME.pid"
 
 case "$1" in
    start)
-      COMMAND="$COLLECTL -D $SWITCHES $PSWITCH"
+      COMMAND="$COLLECTL -D $PSWITCH $3"
       echo -n "Starting $PNAME:"
+echo "daemon $CHECK$COMMAND"
       daemon $CHECK$COMMAND
       RETVAL=$?
       echo
@@ -96,7 +85,7 @@ case "$1" in
       ;;
 
   restart|reload)
-   	$0 stop $EXT
+   	$0 stop $2
    	$0 start "$2" "$3"
    	RETVAL=$?
 	;;

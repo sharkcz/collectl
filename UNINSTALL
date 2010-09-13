@@ -1,4 +1,6 @@
-#!/bin/bash
+#!/bin/sh
+
+DESTDIR=${DESTDIR:="/"}
 
 #    R e m o v e    O L D    S t r u c t u r e    I f   T h e r e
 
@@ -22,8 +24,6 @@ rm -f /etc/init.d/collectl               # gentoo and generic
 rm -f /etc/runlevels/default/collectl    # gentoo
 
 #    N e w    D i r e c t o r y    S t r u c t u r e
-
-DESTDIR=${DESTDIR:="/"}
 
 BINDIR=$DESTDIR/usr/bin
 DOCDIR=$DESTDIR/usr/share/doc/collectl

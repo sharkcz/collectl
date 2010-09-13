@@ -43,10 +43,56 @@ sub initRecord
   $slabinfoFlag= (-e '/proc/slabinfo') ? 1 : 0;
   $slubinfoFlag= (-e '/sys/slab')      ? 1 : 0;
 
-  # Get number of cpus, which are used in header of 'raw' file
+  # Get number of ACTIVE CPUs from /proc/stat and in case we're not running on a
+  # kernel that will set the CPU states (or let us change them), enable CPU flag
   $NumCpus=`$Grep cpu /proc/stat | wc -l`;
   $NumCpus=~/(\d+)/;
   $NumCpus=$1-1;
+  for (my $i=0; $i<$NumCpus; $i++)
+  {
+    $cpuEnabled[$i]=1;
+  }
+  $cpusEnabled=$NumCpus;
+
+  # Now get the total number the system sees, and if different, reset the
+  # number as well as a flag for the header
+  $cpuDisabledFlag=0;
+  $cpuDisabledMsg='';
+  $cpusDisabled=0;
+  if (-e '/sys')
+  {
+    my $totalCpus=`ls /sys/devices/system/cpu/|grep cpu|wc -l`;
+    chomp $totalCpus;
+
+    if ($totalCpus!=$NumCpus)
+    {
+      $NumCpus=$totalCpus;
+      $cpusDisabled++;    # for use in header
+      $cpuDisabledFlag=1;
+
+      # we really only have to worry about lower level details of WHO is disabled when
+      # doing cpu or interrupt stats.  Furthermore, if doing cpu, the dynamic processing
+      # will figure out who's disabled but its too much overhead for interrupts alone so
+      # we'll do that here one time only.  This may have to be do dynamically if a problem. 
+      if ($subsys=~/j/i && $subsys!~/c/i)
+      {
+        # CPU0 always online AND no 'online' entry exists!
+        $cpusEnabled=1;
+        $cpuEnabled[0]=1;
+
+        for (my $i=1; $i<$NumCpus; $i++)
+        {
+          my $online=`cat /sys/devices/system/cpu/cpu$i/online`;
+          chomp $online;
+
+          $cpuEnabled[$i]=$online;
+          $cpusEnabled++    if $online;
+          $intrptTot[$i]=0;
+        }
+      }
+    }
+  }
+
   $temp=`$Grep vendor_id /proc/cpuinfo`;
   $CpuVendor=($temp=~/: (.*)/) ? $1 : '???';
   $temp=`$Grep siblings /proc/cpuinfo`;
@@ -206,6 +252,7 @@ sub initRecord
           # the version yet, always ignore it.
           my $message='';
           my $temp=`$PQuery 2>/dev/null`;
+
           $message="Permission denied"            if $temp=~/Permission denied/;
           $message="Required module missing"      if $temp=~/required by/;
           $message="No such file or directory"    if $temp=~/No such file/;
@@ -216,7 +263,13 @@ sub initRecord
             $PQuery='';
           }
 
+          # Can you believe it?  PQuery writes its version output to stderr!
+          $temp=`$PQuery -V 2>&1`;
+          $temp=~/VERSION: (.*)_/;
+          $PQVersion=$1;
+
           # perfquery there, but what is ofed's version?
+          # NOTE - looks like RedHat is no longer shipping ofed
           if ($PQuery ne '')
 	  {
             if (!-e $OfedInfo)
@@ -229,7 +282,7 @@ sub initRecord
             # Unfortunately the ofed_info that ships with voltaire adds 5 extra
             # line at front end so let's look at first 10 lines for version.
             $IBVersion=($OfedInfo ne '' && `$OfedInfo|head -n10`=~/OFED-(.*)/) ? $1 : '???';
-	    print "OFED V$IBVersion\n"    if $debug & 2;
+	    print "OFED V: $IBVersion PQ V:$PQVersion\n"    if $debug & 2;
 	  }
         }
 	else
@@ -663,7 +716,7 @@ sub initFormat
 
     # Prior to collect V3.2.1-4, use the header to determine the type of nfs data in the
     # file noting very old versions used SubOpts.
-    $recNfsFilt=$1    if $header=~/NfsFilt: (\S*) Interval/;
+    $recNfsFilt=$1    if $header=~/NfsFilt: (\S*) \S/;
     $subOpts=($header=~/SubOpts:\s+(\S*)\s*Options/) ? $1 : '';    # pre V3.2.1-4
     if  ($version lt '3.2.1-4')
     {
@@ -962,10 +1015,11 @@ sub initFormat
     $NumBud=$1;
 
     $flags=($header=~/Flags:\s+(\S+)/) ? $1 : '';
-    $diskChangeFlag=($flags=~/d/) ? 1 : 0;
-    $groupFlag=($flags=~/g/)      ? 1 : 0;
-    $processIOFlag= ($flags=~/i/) ? 1 : 0;
-    $slubinfoFlag=  ($flags=~/s/) ? 1 : 0;
+    $diskChangeFlag= ($flags=~/d/) ? 1 : 0;
+    $groupFlag=      ($flags=~/g/)      ? 1 : 0;
+    $processIOFlag=  ($flags=~/i/) ? 1 : 0;
+    $slubinfoFlag=   ($flags=~/s/) ? 1 : 0;
+    $cpuDisabledFlag=($flags=~/D/) ? 1 : 0;
 
     $header=~/Memory:\s+(\d+)/;
     $Memory=$1;
@@ -1051,6 +1105,11 @@ sub initFormat
 	$HCAPorts[$i][2]=substr($portStates, 1, 1);
 	$portStates=substr($portStates, 3)    if length($portStates)>2;
       }
+
+      # Now get OFED/Perqquery versions which for earlier versions were not in header
+      # Not clear if we really need these in playback mode but since we may some day...
+      $IBVersion=($header=~/IBVersion:\s+(\S+)/) ? $1 : '';
+      $PQVersion=($header=~/PQVersion:\s+(\S+)/) ? $1 : '';
     }
 
     # Scsi info is optional
@@ -1098,7 +1157,7 @@ sub initFormat
   $pagein=$pageout=$swapin=$swapout=$swapTotal=$swapUsed=$swapFree=0;
   $pagefault=$pagemajfault=0;
   $memTot=$memUsed=$memFree=$memShared=$memBuf=$memCached=$memSlab=$memAnon=$memMap=$memCommit=0;
-  $memHugeTot=$memHugeFree=$memHugeRsvd=0;
+  $memHugeTot=$memHugeFree=$memHugeRsvd=$memSUnreclaim=0;
   $sockUsed=$sockTcp=$sockOrphan=$sockTw=$sockAlloc=0;
   $sockMem=$sockUdp=$sockRaw=$sockFrag=$sockFragM=0;
 
@@ -1595,6 +1654,9 @@ sub initDay
 # they occur for multiple devices and/or on multiple lines in the raw file.
 sub initInterval
 {
+  # When a new interval starts we need to assume the list of disks are correct
+  $diskChangeFlag=0;
+
   $budIndex=0;
   for (my $i=0; $i<11; $i++)
   {
@@ -1604,9 +1666,14 @@ sub initInterval
   $userP[$NumCpus]=$niceP[$NumCpus]=$sysP[$NumCpus]=$idleP[$NumCpus]=0;
   $irq[$NumCpus]=$softP[$NumCpus]=$stealP[$NumCpus]=$waitP[$NumCpus]=0;
 
+  # Since the number of cpus can change dynamically, we need to clear these every pass,
+  # BUT for now since we're only checking when monitoring CPUS and not interrupts we
+  # can't clear the '$cpuEnabled' when not do cpu stats since that's to much overhead
+  $cpusEnabled=0    if $subsys=~/c/i;
   for (my $i=0; $i<$NumCpus; $i++)
   {
-    $intrptTot[$i]=0;
+    $cpuEnabled[$i]=0    if $subsys=~/c/i;
+    $intrptTot[$i]=0;    # But these HAVE to be reset every interval
   }
 
   $netIndex=0;
@@ -1737,6 +1804,21 @@ sub intervalEnd
     $interval2Secs=$interval2SecsReal=($lastInterval!=0) ? $lastInterval : $interval2;
     $interval2Secs=$interval2SecsReal=1                if $options=~/n/ || !$interval2Secs;
     $lastInt2Secs=$seconds;
+  }
+
+  # This is sooo rare, but if a CPU goes off-line it can happen at any time and so we need
+  # to check at the end of every interval, whether interactively or during playback.
+  $cpuDisabledFlag=($cpusEnabled!=$NumCpus) ? 1 : 0;
+  $cpuDisabledMsg= ($cpuDisabledFlag) ? ': *** One or more CPUs disabled ***' : '';
+  if ($cpuDisabledFlag)
+  {
+    # Since current stats never get updated for cpus that are offline and not in /proc/stat
+    # we need to manaually force their current values to 0.
+    for (my $i=0; $i<$NumCpus; $i++)    # in case cpu0 goes offline on its own?
+    {
+      $userP[$i]=$niceP[$i]=$sysP[$i]=$waitP[$i]=$irqP[$i]=$softP[$i]=$stealP[$i]=$idleP[$i]=0
+	if !$cpuEnabled[$i];
+    }
   }
 
   # during interactive processing, the first interval only provides baseline data
@@ -2056,6 +2138,8 @@ sub dataAnalyze
   {
     $type=~/^cpu(\d*)/;   # can't do above because second "~=" kills $1
     $cpuIndex=($1 ne "") ? $1 : $NumCpus;    # only happens in pre 1.7.4
+    $cpuEnabled[$cpuIndex]=1;
+    $cpusEnabled++    if $cpuIndex != $NumCpus;
     ($userNow, $niceNow, $sysNow, $idleNow, $waitNow, $irqNow, $softNow, $stealNow)=split(/\s+/, $data);
     $waitNow=$irqNow=$softNow=$stealNow=0    if $kernel2_4 && !defined($waitNow);
     $stealNow=0                              if !defined($stealNow);
@@ -2122,7 +2206,26 @@ sub dataAnalyze
   elsif ($subsys=~/j/i && $type eq 'int')
   {
     # Note that leading space(s) were removed when we split line above
-    my ($type, @vals)=split(/\s+/, $data, $NumCpus+2);
+    my ($type, @vals)=split(/\s+/, $data, $cpusEnabled+2);
+
+    # If the number of enabled CPUs different than the total, we'll have one
+    # or more missing columns in /proc/interrupts so do a right shift
+
+    if ($cpusEnabled!=$NumCpus)
+    {
+      # First move the description up to the last position.
+      $vals[$NumCpus]=$vals[$cpusEnabled];
+
+      # Now right shift all the data into the correct CPU slot
+      my $index=$NumCpus-1;
+      for (my $i=$cpusEnabled-1; $i>=0; $i--)
+      {
+        # if this CPU disabled, just set its count to 0 and move on to next one
+        $vals[$index--]=0    if !$cpuEnabled[$index];
+        $vals[$index]=$vals[$i];
+        $index--;
+      }
+    }
 
     #    I n i t i a l i z e    ' l a s t '    v a l u e s
 
@@ -2160,6 +2263,14 @@ sub dataAnalyze
 
     for (my $i=0; $i<$NumCpus; $i++)
     {
+      # If a CPU is disabled, just set it's count to zero.
+      if (!$cpuEnabled[$i])
+      {
+        $intrpt[$type]->[$i]=0    if $type=~/^\d/;
+        $intrpt{$type}->[$i]=0    if $type!~/^\d/;
+	next;
+      }
+
       if ($type=~/^\d/)
       {
         $intrpt[$type]->[$i]=$vals[$i]-$intrptLast[$type]->[$i];
@@ -2783,13 +2894,23 @@ sub dataAnalyze
         my $oldMaj=$dskMaj[$dskIndex];
         my $oldMin=$dskMin[$dskIndex];  
 
-        initDisk();
-        $diskName=$dskName[$dskIndex];    # in case new disk
-        $diskChangeFlag=1;    # this also tell 'bogus' check later on to 0 current values
-
-	if ($filename ne '')
+        # When running in 'collection' mode, re-init disk name structure in case things changed
+        # but in playback mode just stuff the new disk onto the end.
+        if ($playback eq '')
         {
-          # Since we're seeing this disk for the first time, be sure to init
+          initDisk();
+        }
+        else
+        {
+          $dskName[$dskIndex]=$diskName;
+        }
+
+        $diskName=$dskName[$dskIndex];    # in case new disk
+        $diskChangeFlag=1;                # this also tells 'bogus' check later on to 0 current values
+
+	if ($filename ne '' || $playback ne '')
+        {
+          # If we're seeing this disk for the first time, be sure to init
           # its 'last' variables to 0 so the next interval's numbers come out right.
           if ($dskIndex==$NumDisks)
           {
@@ -2798,6 +2919,7 @@ sub dataAnalyze
             {
               $dskFieldsLast[$dskIndex][$i]=0;
             }
+            $NumDisks++;
           }
           else
           {
@@ -3335,7 +3457,7 @@ sub dataAnalyze
     $memFree=$data    if $type=~/^MemFree/;
   }
 
-  elsif ($subsys=~/m/ && $kernel2_6 && $type=~/^Buffers|^Cached|^Dirty|^Active|^Inactive|^AnonPages|^Mapped|^Slab:|^Committed_AS:|^Huge/)
+  elsif ($subsys=~/m/ && $kernel2_6 && $type=~/^Buffers|^Cached|^Dirty|^Active|^Inactive|^AnonPages|^Mapped|^Slab:|^Committed_AS:|^Huge|^SUnreclaim/)
   {
     $data=(split(/\s+/, $data))[0];
     $memBuf=$data             if $type=~/^Buf/;
@@ -3350,6 +3472,7 @@ sub dataAnalyze
     $memHugeTot=$data         if $type=~/^HugePages_T/;
     $memHugeFree=$data        if $type=~/^HugePages_F/;
     $memHugeRsvd=$data        if $type=~/^HugePages_R/;
+    $memSUnreclaim=$data      if $type=~/^SUnreclaim/;
   }
 
   elsif ($subsys=~/m/ && $kernel2_6 && $type=~/^Swap/)
@@ -3731,7 +3854,7 @@ sub dataAnalyze
 }
 
 # headers for plot formatted data
-sub printHeaders
+sub printPlotHeaders
 {
   my $i;
 
@@ -3758,7 +3881,7 @@ sub printHeaders
     $headers.="[MEM]SwapTot${SEP}[MEM]SwapUsed${SEP}[MEM]SwapFree${SEP}[MEM]SwapIn${SEP}[MEM]SwapOut${SEP}";
     $headers.="[MEM]Dirty${SEP}[MEM]Clean${SEP}[MEM]Laundry${SEP}[MEM]Inactive${SEP}";
     $headers.="[MEM]PageIn${SEP}[MEM]PageOut${SEP}[MEM]PageFaults${SEP}[MEM]PageMajFaults${SEP}";
-    $headers.="[MEM]HugeTotal${SEP}[MEM]HugeFree${SEP}[MEM]HugeRsvd${SEP}";
+    $headers.="[MEM]HugeTotal${SEP}[MEM]HugeFree${SEP}[MEM]HugeRsvd${SEP}[MEM]SUnreclaim${SEP}";
   }
 
   if ($subsys=~/s/)
@@ -3914,6 +4037,8 @@ sub printHeaders
   {
     for ($i=0; $i<$NumDisks; $i++)
     {
+      next    if $dskFilt ne '' && $dskName[$i]!~/$dskFilt/;
+
       $temp= "[DSK]Name${SEP}[DSK]Reads${SEP}[DSK]RMerge${SEP}[DSK]RKBytes${SEP}";
       $temp.="[DSK]Writes${SEP}[DSK]WMerge${SEP}[DSK]WKBytes${SEP}[DSK]Request${SEP}";
       $temp.="[DSK]QueLen${SEP}[DSK]Wait${SEP}[DSK]SvcTim${SEP}[DSK]Util${SEP}";
@@ -4287,9 +4412,9 @@ sub printPlot
   # want one header but when going to files we ALWAYS want a new header each day when 
   # $headersPrinted gets reset to 0.
   $interval1Counter++;
-  printHeaders()    if ($headerRepeat==0 && $filename eq '' && $interval1Counter==1) ||
-                       ($headerRepeat==0 && $filename ne '' && !$headersPrinted) ||
-                       ($headerRepeat>0  && ($interval1Counter % $headerRepeat)==1);
+  printPlotHeaders()    if ($headerRepeat==0 && $filename eq '' && $interval1Counter==1) ||
+                           ($headerRepeat==0 && $filename ne '' && !$headersPrinted) ||
+                           ($headerRepeat>0  && ($interval1Counter % $headerRepeat)==1);
 
   #######################
   #    C O R E    D A T A
@@ -4320,7 +4445,7 @@ sub printPlot
                 $swapTotal, $swapUsed, $swapFree, $swapin/$intSecs, $swapout/$intSecs,
                 $dirty, $clean, $laundry, $inactive,
                 $pagein/$intSecs, $pageout/$intSecs, $pagefault/$intSecs, $pagemajfault/$intSecs);
-      $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS", $memHugeTot, $memHugeFree, $memHugeRsvd);
+      $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS", $memHugeTot, $memHugeFree, $memHugeRsvd, $memSUnreclaim);
     }
 
     # SOCKETS
@@ -4539,6 +4664,8 @@ sub printPlot
     $dskPlot='';
     for ($i=0; $i<$NumDisks; $i++)
     {
+      next    if $dskFilt ne '' && $dskName[$i]!~/$dskFilt/;
+
       # We don't always need this but it sure makes it simpler this way
       # also note that the name isn't really plottable...
       $dskRecord=sprintf("%s$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
@@ -5067,7 +5194,7 @@ sub printTerm
     if (printHeader())
     {
       printText("\n")    if !$homeFlag;
-      printText("#$miniFiller CPU$Hyper SUMMARY (INTR, CTXSW & PROC $rate)\n");
+      printText("#$miniFiller CPU$Hyper SUMMARY (INTR, CTXSW & PROC $rate)$cpuDisabledMsg\n");
       printText("#$miniFiller User  Nice   Sys  Wait   IRQ  Soft Steal  Idle  Intr  Ctxsw  Proc  RunQ   Run   Avg1  Avg5 Avg15\n");
     }
     $line=sprintf("$datetime  %4d  %4d  %4d  %4d  %4d  %4d  %4d  %4d  %4s   %4s  %4d  %4d  %4d  %5.2f %5.2f %5.2f\n",
@@ -5083,7 +5210,7 @@ sub printTerm
     if (printHeader())
     {
       printText("\n")    if !$homeFlag;
-      printText("# SINGLE CPU$Hyper STATISTICS\n");
+      printText("# SINGLE CPU$Hyper STATISTICS$cpuDisabledMsg\n");
       my $intrptText=($subsys=~/j/i) ? ' INTRPT' : '';
       printText("#$miniFiller   Cpu  User Nice  Sys Wait IRQ  Soft Steal Idle$intrptText\n");
     }
@@ -5109,11 +5236,11 @@ sub printTerm
     if (printHeader())
     {
       printText("\n")    if !$homeFlag;
-      printText("# INTERRUPT SUMMARY\n");
+      printText("# INTERRUPT SUMMARY$cpuDisabledMsg\n");
       my $oneline="#$miniFiller ";
       for (my $i=0; $i<$NumCpus; $i++)
       {
-        my $cpuname="Cpu$i";
+        my $cpuname=($cpuEnabled[$i]) ? "Cpu$i" : "CpuX";
         $oneline.=sprintf(" %6s", $cpuname);
       }
       printText("$oneline\n");
@@ -5132,11 +5259,11 @@ sub printTerm
     if (printHeader())
     {
       printText("\n")    if !$homeFlag;
-      printText("# INTERRUPT DETAILS\n");
+      printText("# INTERRUPT DETAILS$cpuDisabledMsg\n");
       my $oneline="#$miniFiller Int ";
       for (my $i=0; $i<$NumCpus; $i++)
       {
-        my $cpuname="Cpu$i";
+        my $cpuname=($cpuEnabled[$i]) ? "Cpu$i" : "CpuX";
         $oneline.=sprintf(" %6s", $cpuname);
       }
       $oneline.=sprintf("   %-15s %s\n", 'Type', 'Device(s)');
@@ -5152,6 +5279,7 @@ sub printTerm
       for (my $i=0; $i<$NumCpus; $i++)
       {
         next    if $key eq 'ERR' || $key eq 'MIS';
+
         my $ints=($key=~/^\d/) ? $intrpt[$key]->[$i]/$intSecs : $intrpt{$key}->[$i]/$intSecs;
         $oneline.=sprintf("%6d ", $ints);
         $linetot+=$ints;
@@ -5190,6 +5318,9 @@ sub printTerm
 
     for ($i=0; $i<$NumDisks; $i++)
     {
+      # ignore disk that don't pass filter
+      next    if $dskFilt ne '' && $dskName[$i]!~/$dskFilt/;
+
       # If exception processing in effect, make sure this entry qualities
       next    if $options=~/x/ && $dskRead[$i]/$intSecs<$limIOS && $dskWrite[$i]/$intSecs<$limIOS;
 
@@ -5349,7 +5480,7 @@ sub printTerm
 
   # This is the normal output for an MDS and only skip if --lustopts D and only D
   # noting D output (which itself is only for hp-sfs), is handled elsewhere
-  if ($subsys=~/l/ && $reportMdsFlag && ($lustOpts=~/[mB]/ || $lustOpts!~/D/))
+  if ($subsys=~/l/ && $reportMdsFlag && $lustOpts ne 'D')
   {
     if (printHeader())
     {
@@ -5389,7 +5520,7 @@ sub printTerm
 
   # This is the normal output for an OST and only skip if --lustopts D and only D
   # noting D output (which itself is only for hp-sfs), is handled elsewhere
-  if ($subsys=~/l/ && $reportOstFlag && ($lustOpts=~/[oB]/ || $lustOpts!~/D/))
+  if ($subsys=~/l/ && $reportOstFlag && $lustOpts ne 'D')
   {
     if (printHeader())
     {
@@ -6391,22 +6522,23 @@ sub printTermProc
       }
       else
       {
-        printText("# PROCESS SUMMARY $temp1$temp2\n");
+        printText("# PROCESS SUMMARY $temp1$temp2$cpuDisabledMsg\n");
       }
 
+      $tempHdr='';
       if ($procOpts!~/[im]/)
       {
-        $tempHdr= "#${tempFiller} PID  User     PR  PPID S   VSZ   RSS CP  SysT  UsrT Pct  AccuTime ";
+        $tempHdr.="#${tempFiller} PID  User     PR  PPID S   VSZ   RSS CP  SysT  UsrT Pct  AccuTime ";
         $tempHdr.=" RKB  WKB "    if $processIOFlag;
         $tempHdr.="MajF MinF Command\n";
       }
       elsif ($procOpts=~/i/)
       {
-        $tempHdr= "#${tempFiller} PID  User      PPID S  SysT  UsrT Pct  AccuTime   RKB   WKB  RKBC  WKBC  RSys  WSys  Cncl Command\n";
+        $tempHdr.="#${tempFiller} PID  User      PPID S  SysT  UsrT Pct  AccuTime   RKB   WKB  RKBC  WKBC  RSys  WSys  Cncl Command\n";
       }
       elsif ($procOpts=~/m/)
       {
-        $tempHdr= "#${tempFiller} PID  User     S VmSize  VmLck  VmRSS VmData  VmStk  VmExe  VmLib MajF MinF Command\n";
+        $tempHdr.="#${tempFiller} PID  User     S VmSize  VmLck  VmRSS VmData  VmStk  VmExe  VmLib MajF MinF Command\n";
       }
       printText($tempHdr);
     }
@@ -6940,10 +7072,13 @@ sub printBrief
       ($headerRepeat==0 && !$headersPrinted) ||
       ($headerRepeat>0 && ($totalCounter % $headerRepeat)==1))
   {
+    $cpuDisabledMsg=~s/^://;    # just in case non-null
     $pad=' ' x length($miniDateTime);
     $fill1=($Hyper eq '') ? "----" : "";
     $fill2=($Hyper eq '') ? "----" : "-";
-    $line.="$clscr#$pad";
+    $line.="$clscr";
+    $line.="#$cpuDisabledMsg\n";
+    $line.="#$pad";
     $line.="<----${fill1}CPU$Hyper$fill2---->"     if $subsys=~/c/;
     if ($subsys=~/j/)
     {
@@ -7009,6 +7144,18 @@ sub printBrief
       $line.=sprintf("Cp%d "x($NumCpus>100?90:$NumCpus-10),    10..$NumCpus);
       $line.=sprintf("C%d "x($NumCpus>1000?900:$NumCpus-100), 100..$NumCpus);
       $line.=sprintf("%d "x($NumCpus-1000),                  1000..$NumCpus);
+
+      # Rare, but if a cpu is offline, change its name in the header
+      if ($cpusDisabled)
+      {
+	for (my $i=0; $i<$NumCpus; $i++)
+        {
+	  $line=~s/Cpu$i/CpuX/    if !$cpuEnabled[$i];
+	  $line=~s/Cp$i/CpXX/     if !$cpuEnabled[$i] && length($i)==2;
+	  $line=~s/C$i/CXXX/      if !$cpuEnabled[$i] && length($i)==3;
+	  $line=~s/$i/XXXX/       if !$cpuEnabled[$i] && length($i)==4;
+        }
+      }
     }
 
     $line.="Free Buff Cach Inac Slab  Map "          if $subsys=~/m/;
@@ -7255,7 +7402,7 @@ sub printBrief
   {
     $mini1select=new IO::Select(STDIN);
     resetBriefCounters();
-    `stty -echo`    if !$PcFlag;
+    `stty -echo`    if !$PcFlag && !$backFlag;
   }
 
   # See if user entered a command.  If not, @ready will never be
@@ -8429,8 +8576,9 @@ sub lustreCheckClt
       next    if $dir=~/\-osc$/;
 
       # if ost closed (this happens when new filesystems get created), ignore it.
-      my ($uuid, $state)=split(/\s+/, cat("$dir/ost_server_uuid"));
-      next    if $state=~/CLOSED|DISCONN/;
+      # note that newer versions of lustre added a sstate and sets it to DEACTIVATED
+      my ($uuid, $state,$sstate)=split(/\s+/, cat("$dir/ost_server_uuid"));
+      next    if $state=~/CLOSED|DISCONN/ || $sstate=~/DEACT/;
 
       # uuids look something like 'xxx-ost_UUID' and you can actully have a - or _
       # following the xxx so drop the beginning/end this way in case an embedded _
@@ -8592,8 +8740,11 @@ sub getOfedPath
     }
   }
 
+  # RHEL54 stopped shipping it so we need to know RH version first
+  my $RHVersion=($Distro=~/Red Hat.*(\d+\.\d+)/) ? $1 : '';
+
   # Can't find in standard places so ask rpm, but only if it's there
-  if ($found eq '' && -e $Rpm)
+  if ($found eq '' && -e $Rpm && $RHVersion<5.4)
   {
     # This is something we really don't want to have to be doing
     logmsg('W', "Cannot find '$name' in ${configFile}'s OFED search list, checking with rpm");

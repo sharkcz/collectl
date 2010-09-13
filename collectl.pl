@@ -93,7 +93,7 @@ $numBrwBuckets=$cfsVersion=$sfsVersion='';
 $Resize=$IpmiCache=$IpmiTypes=$ipmiExec='';
 $i1DataFlag=$i2DataFlag=$i3DataFlag=0;
 $lastSecs=$interval2Print=0;
-$diskRemapFlag=$diskChangeFlag=0;
+$diskRemapFlag=$diskChangeFlag=$cpuDisabledFlag=$cpusDisabled=0;
 
 # Find out ASAP if we're linux or WNT based as well as whether or not XC based
 $PcFlag=($Config{"osname"}=~/MSWin32/) ? 1 : 0;
@@ -107,8 +107,8 @@ require "Sys/Syslog.pm"    if !$PcFlag;
 $rootFlag=(!$PcFlag && `whoami`=~/root/) ? 1 : 0;
 $SrcArch= $Config{"archname"};
 
-$Version=  '3.4.1-5';
-$Copyright='Copyright 2003-2009 Hewlett-Packard Development Company, L.P.';
+$Version=  '3.4.2-5';
+$Copyright='Copyright 2003-2010 Hewlett-Packard Development Company, L.P.';
 $License=  "collectl may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
 
@@ -223,7 +223,7 @@ $DefNetSpeed=10000;
 $IbDupCheckFlag=1;
 $TimeHiResCheck=1;
 $PasswdFile='/etc/passwd';
-$Umask=137;
+$Umask=133;
 $DiskMaxValue=-1;    # disabled
 $DiskFilter='cciss/c\d+d\d+ |hd[ab] | sd[a-z]+ |xvd[a-z] |fio[a-z]+ |dm-\d+ |emcpower|psv\d+';
 $DiskFilterFlag=0;   # only set when filter set in collectl.conf
@@ -338,6 +338,7 @@ $procAnalFlag=$procAnalCounter=$slabAnalFlag=$slabAnalCounter=$lastInt2Secs=0;
 $lastLogPrefix=$passwdFile='';
 $nfsOpts=$nfsFilt=$lustOpts=$userEnvOpts='';
 $grepPattern=$pname='';
+$dskFilt='';
 
 # Since --top has optionals arguments, we need to see if it was specified without
 # one and stick in the defaults noting -1 means to use the window size for size
@@ -420,6 +421,7 @@ GetOptions('align!'     => \$alignFlag,
 	   'procfilt=s' => \$procFilt,
 
            'all!'          => \$allFlag,
+           'dskfilt=s'     => \$dskFilt,
            'export=s'      => \$export,
 	   'from=s'        => \$from,
 	   'thru=s'        => \$thru,
@@ -565,7 +567,7 @@ if ($nfsOpts ne '')
 # in playback mode all we're really doing is verifying the options
 setNFSFlags($nfsFilt);
 
-error('invalid value for --lustopts')              if $lustOpts ne '' && $lustOpts!~/^[BDMORcom]+$/;
+error('invalid value for --lustopts')          if $lustOpts ne '' && $lustOpts!~/^[BDMOR]+$/;
 
 if ($vmstatFlag)
 {
@@ -893,6 +895,10 @@ $allThreadFlag=($procOpts=~/t/) ? 1 : 0;
 $SEP=' '                    if !defined($SEP);
 $SEP=sprintf("%c", $SEP)    if $SEP=~/\d+/;
 
+# comma is the same as | in perl
+error("--dskfilt only applies to -sD")    if $dskFilt ne '' && $subsys!~/D/;
+$dskFilt=~s/,/|/g;
+
 #    L i n u x    S p e c i f i c
 
 if (!$PcFlag)
@@ -1106,7 +1112,8 @@ if (!$zlibFlag && $zFlag)
 {
   $options.="z";
   $zFlag=0;
-  logmsg("W", "Zlib not installed so not compressing file(s).  Use -oz to get rid of this warning.");
+  logmsg("W", "Zlib not installed so can't compress raw file(s).  Use --quiet to disable this warning.")    if $rawFlag;
+  logmsg("W", "Zlib not installed so can't compress plot file(s).  Use -oz to get rid of this warning.")   if $plotFlag;
 }
 
 $precision=($options=~/(\d+)/) ? $1 : 0;
@@ -1514,7 +1521,7 @@ if ($playback ne '')
       $skipmsg="io"         if $topIOFlag && !$processIOFlag;
       $skipmsg="process"    if $procAnalFlag && $recSubsys!~/Z/;
       $skipmsg="slab"       if $slabAnalFlag && $recSubsys!~/Y/;
-      if ($skipmsg ne '' && ($msgFlag || $debug & 1))
+      if ($skipmsg ne '')
       {
         print "  >>> Skipping file because it does not contain $skipmsg data <<<\n";
         next;
@@ -1539,7 +1546,6 @@ if ($playback ne '')
       if ($prefix ne $prefixPrinted)
       {
         $commonHeader=buildCommonHeader(0);
-        print $commonHeader;
       }
       $prefixPrinted=$prefix;
       next;
@@ -1892,7 +1898,7 @@ if ($playback ne '')
     printBriefCounters('T');
   }
 
-  `stty echo`    if !$PcFlag && $termFlag;   # in -M1, we turned it off
+  `stty echo`    if !$PcFlag && $termFlag && !$backFlag;   # in -M1, we turned it off
   print "No files processed\n"    if !$numProcessed;
   exit;
 }
@@ -1972,8 +1978,9 @@ logmsg('W', "Couldn't find 'ipmitool' in '$ipmitoolPath'")
       if $subsys=~/E/ && $Ipmitool eq '';
 
 # These can only be done after initRecord()
-error("-sL only applies to MDS services when used with --lustopts D")
-    if $subsys=~/L/ && $NumMds && $lustOpts!~/D/;
+# Since it IS possible for a server to be running as an MDS and a client, we need the following
+error("-sL applies to a server only running as an MDS when used with --lustopts D")
+    if $subsys=~/L/ && $NumMds && !$CltFlag && $lustOpts!~/D/;
 error("--lustopts D only applies to HP-SFS")
     if $lustOpts=~/D/ && $sfsVersion eq '';
 
@@ -2103,7 +2110,7 @@ if ($showHeaderFlag && $playback eq '')
 # Alas, we need a lot of stuff set up before this including the call to newLog()
 if ($showPHeaderFlag)
 {
-  printHeaders();
+  printPlotHeaders();
   exit;
 }
 
@@ -2749,7 +2756,7 @@ record(1, sprintf(">>> %.3f <<<\n", $fullTime), undef, 1)     if $recFlag1;
 # close logs cleanly and turn echo back on because when 'brief' we turned it off.
 closeLogs($subsys);
 unlink $PidFile       if $daemonFlag;
-`stty echo`           if !$PcFlag && $termFlag;
+`stty echo`           if !$PcFlag && $termFlag && !$backFlag;
 printf("%c[r", 27)    if $numTop && $userSubsys ne '';
 printf "%c[%d;H\n", 27, $scrollEnd+$numTop+2    if $numTop;
 logmsg("I", "Terminating...");
@@ -2851,7 +2858,7 @@ sub preprocessPlayback
     my $thisNfsOpts= ($header=~/NfsOpts: (\S*)\s*Interval/)   ? $1 : $subOpts;
     my $thisDisks=   ($header=~/DiskNames: (.*)/) ? $1 : '';
     my $thisLustOpts=($header=~/LustOpts: (\S*)\s*Services/) ? $1 : $subOpts;
-    $thisNfsOpts=~s/[BDMORcom]//g;    # in case it came from SubOpts remove lustre stuff
+    $thisNfsOpts=~s/[BDMORcom]//g;    # in case it came from SubOpts remove lustre stuff, 'com' for pre-lustsvc
     $thisLustOpts=~s/[234C]//g;       # ditto for nfs stuff
 
     $header=~/Interval:\s+(\S+)/;
@@ -3141,11 +3148,6 @@ sub checkSubsysOpts
   error("you cannot mix --lustopts 'O' with 'M' or 'R'")     if $lustOpts=~/O/ && $lustOpts=~/[MR]/;
   error("you cannot mix --lustopts 'B' with 'M'")            if $lustOpts=~/B/ && $lustOpts=~/M/;
   error("you cannot mix --lustopts 'B' with 'R'")            if $lustOpts=~/B/ && $lustOpts=~/R/;
-  error("--lustopts c only applies to client data")          if $lustOpts=~/c/ && !$cltFlag;
-  error("--lustopts m only applies to mds data")             if $lustOpts=~/m/ && !$mdsFlag;
-  error("--lustopts o only applies to oss data")             if $lustOpts=~/o/ && !$ostFlag;
-  error("--lustopts c|m|o cannot be mixed with anything else")
-      if $lustOpts=~/[com]/ && length($lustOpts)>1;
     
   # Force if not already specified, but ONLY for details
   $lustOpts='BO'    if $cltFlag && $subsys=~/L/ && $lustOpts=~/B/ && $lustOpts!~/O/;
@@ -3544,9 +3546,8 @@ sub getExec
     my $lineNum=0;
     foreach my $line (<CMD>)
     {
-      # OFED 1.5 adds an extra field called CounterSelect2, which we want to
-      # ignore
-      next    if ++$lineNum==13 && ($IBVersion ge '1.5.0');
+      # Perfquery V1.5 adds an extra field called CounterSelect2 so ignore.
+      next    if ++$lineNum==13 && ($PQVersion ge '1.5.0');
 
       if ($line=~/^#.*(\d+)$/)
       {
@@ -4126,6 +4127,7 @@ sub buildCommonHeader
   $flags.='g'    if $groupFlag;
   $flags.='i'    if $processIOFlag;
   $flags.='s'    if $slubinfoFlag;
+  $flags.='D'    if $cpuDisabledFlag;
 
   my $commonHeader='';
   if ($rawType!=-1 && $playback ne '')
@@ -4142,8 +4144,9 @@ sub buildCommonHeader
   $commonHeader.="# Host:       $Host  DaemonOpts: $DaemonOptions\n";
   $commonHeader.="# Distro:     $Distro  Platform: $ProductName\n";
   $commonHeader.=$timeZoneInfo  if defined($timeZoneInfo);
-  $commonHeader.="# SubSys:     $tempSubsys Options: $options Interval: $tempInterval NumCPUs: $NumCpus ";
-  $commonHeader.=              "$Hyper NumBud: $NumBud Flags: $flags\n";
+  $commonHeader.="# SubSys:     $tempSubsys Options: $options Interval: $tempInterval NumCPUs: $NumCpus $Hyper";
+  $commonHeader.=               " CPUsDis: $cpusDisabled"    if $cpusDisabled;
+  $commonHeader.=               " NumBud: $NumBud Flags: $flags\n";
   $commonHeader.="# Filters:    NfsFilt: $nfsFilt EnvFilt: $envFilt\n";
   $commonHeader.="# HZ:         $HZ  Arch: $SrcArch PageSize: $PageSize\n";
   $commonHeader.="# Cpu:        $CpuVendor Speed(MHz): $CpuMHz Cores: $CpuCores  Siblings: $CpuSiblings\n";
@@ -4152,7 +4155,7 @@ sub buildCommonHeader
   $commonHeader.="# NumNets:    $NumNets NetNames: $NetNames\n";
   $commonHeader.="# NumSlabs:   $NumSlabs Version: $SlabVersion\n"    if $yFlag || $YFlag;
   $commonHeader.="# IConnect:   NumXRails: $NumXRails XType: $XType  XVersion: $XVersion\n"    if $NumXRails;
-  $commonHeader.="# IConnect:   NumHCAs: $NumHCAs PortStates: $HCAPortStates IBVersion: $IBVersion\n"                if $NumHCAs;
+  $commonHeader.="# IConnect:   NumHCAs: $NumHCAs PortStates: $HCAPortStates IBVersion: $IBVersion PQVersion: $PQVersion\n"                if $NumHCAs;
   $commonHeader.="# SCSI:       $ScsiInfo\n"    if $ScsiInfo ne '';
   if ($subsys=~/l/i)
   {
@@ -5064,6 +5067,7 @@ sub loadPids
   # Step 1 - validate list for invalid types OR non-numeric pids
   #          assume including collectl
   $oneThreadFlag=($procs=~/\+/) ? 1 : 0;    # handy flag to optimize non-thread cases
+  $uidMin=$uidMax=$uidSelFlag=0;
   foreach $task (split(/,/, $procs))
   {
     # for now, we don't do too much validation, but be sure to note
@@ -5072,6 +5076,18 @@ sub loadPids
     {
       $type=$1;
       $value=$2;
+
+      if ($type=~/u/ && $value=~/(\d+)-(\d+)/)
+      {
+        # uids are a special case in that one can specify range or multiple singletons but not multiple
+        # ranges.  when we DO see a range, save it's min/max but DON'T include in the array of selectors
+        error("you cannot specify multiple uuid ranges in --procfilt")    if $uidMin;
+
+        $uidMin=$1;
+	$uidMax=$2;
+        $uidSelFlag=1;
+        next;
+      }
 
       # if we ever do allow this in playback we can't handle 'f'
       error("--procfilt f not allowed in playback mode")    if $type eq 'f' && $playback ne '';
@@ -5107,6 +5123,7 @@ sub loadPids
   # values dynamically as well as staticly, we better pull cmd from the stat
   # file itself.
   @ps=`ps axo pid,ppid,user,uid`;
+  my $firstFilePass=1;
   foreach $process (@ps)
   {
     next    if $process=~/^\s+PID/;
@@ -5129,12 +5146,23 @@ sub loadPids
       next;
     }
 
+    # If uid range specified and this UID there, save it noting it's not
+    # part of the task selection list so we do before the loop below.
+    if ($uidMin>0 && $uid>=$uidMin && $uid<=$uidMax)
+    {
+      $pidOnly=0;
+      $pidProc{$pid}=1;
+      next;
+    }
+
     # select based on criteria, but assume we're not getting a match
     $pidOnly=1;
     $keepPid=0;
     foreach $selector (@TaskSelectors)
     {
       $pidOnly=0    if $selector!~/^p/;
+      $uidSelFlag=1    if $selector=~/^u/i;    # need to know if doing UID matching
+
       if (($selector=~/^p\+*(.*)/ && $pid eq $1)  ||
 	  ($selector=~/^P\+*(.*)/ && $ppid eq $1) ||
 	  ($selector=~/^c\+*(.*)/ && $cmd=~/$1/)  ||
@@ -5169,10 +5197,11 @@ sub loadPids
     findThreads($pid)    if $pidThreads{$pid};
   }
 
-  # if only selecting on pids, those are all we ever want to look for
+  # if a selection list and it's only for pids (and doesn't include uxx-yy), set 
+  # the $pidOnlyFlag so that those are all we ever want to look for
   # for force the $pidsOnlyFlag to be set.  It's those minor optimization
   # in life that count!
-  $pidOnlyFlag=1    if $procs ne '' && $pidOnly;
+  $pidOnlyFlag=1    if $procs ne '' && !$uidMin && $pidOnly;
 
   if ($debug & 256)
   {
@@ -5239,7 +5268,28 @@ sub pidNew
 
   return(0)    if !-e "/proc/$pid/stat";
 
+  # if no filter, by defition this is a match
   $match=($procFilt ne '') ? 0 : $pid;
+
+  # if selectnig by uid (either as a range or explict match), try to read this procs
+  # UID and if not there, no match!
+  if ($uidSelFlag)
+  {
+    $uid=0;
+    open TMP, "</proc/$pid/status" or last;
+    while ($line=<TMP>)
+    {
+      if ($line=~/^Uid:\s+(\d+)/)
+      {
+	$uid=$1;
+	last;
+      }
+    }
+
+    # If UID not found it will be 0 and the following always fail
+    $match=$pid    if $uidMin>0 && $uid>=$uidMin && $uid<$uidMax;
+  }
+
   foreach $selector (@TaskSelectors)
   {
     $type=substr($selector, 0, 1);
@@ -5268,27 +5318,24 @@ sub pidNew
     }
 
     # match on full command path?
-    elsif ($type=~/f/)
+    elsif ($type=~/f/ && cmdHasString($pid, $param))
     {
-      $match=$pid    if cmdHasString($pid, $param);
+      $match=$pid;
+      last;
     }
 
-    # match on UID?
-    elsif ($type=~/[uU]/)
+    # match on UID
+    elsif ($type=~/u/ && $uid==$param)
     {
-      # in case process went away we need to do a 'last'
-      # note that in some cases we don't find a uid and so we silently ignore
-      open TMP, "</proc/$pid/status" or last;
-      while ($line=<TMP>)
-      {
-        if ($line=~/^Uid:\s+(\d+)/)
-	{
-	  $uid=$1;
-	  $match=$pid    if defined($UidSelector{$uid});
-	  last;
-        }
-      }
-      #logmsg("E", "Couldn't find UID for Pid: $pid")   if !$match;
+      $match=$pid;
+      last;
+    }
+
+    # match on username
+    elsif ($type=~/U/ && defined($UidSelector{$uid}) && $UidSelector{$uid} eq $param)
+    {
+      $match=$pid;
+      last;
     }
   }
   print "%%% Discovered new pid for monitoring: $pid\n"
@@ -5482,7 +5529,7 @@ sub envTest
   $briefFlag=0;
   $verboseFlag=1;
   intervalPrint(time);
-  `stty echo`;
+  `stty echo`    if !$PcFlag && $termFlag && !$backFlag;
 }
 
 sub error
@@ -5495,7 +5542,7 @@ sub error
     # printText() will try to send error over socket and we want it local.
     $sockFlag=0    if $serverFlag;
 
-    `stty echo`    if !$PcFlag;
+    `stty echo`    if !$PcFlag && $termFlag && !$backFlag;
     logmsg("F", "Error: $text")    if $daemonFlag;
 
     # we can only call printText() when formatit loaded.
@@ -5745,6 +5792,12 @@ These options are all subsystem specific and all take one or more arguments.
 Options typically effect the type of data collectl and filters effect the way
 it is displayed.  In the case of lustre there are also 'services'
 
+Disk
+  --dskfilt perl-regx[,perl-regx...]
+      this ONLY applies to disk detail output and not data collection
+      only data for disk names that match the pattern(s) will be displayed
+      if you don't know perl, a partial string will usually work too
+
 Environmental
   --envopts [def=cft]
       c - display current data
@@ -5816,7 +5869,7 @@ Processes
       f - full path of command (including args) contains string
       p - pid
       P - parent pid
-      u - any processes owned by this user's UID
+      u - any processes owned by this user's UID or in range xxx-yyy
       U - any processes owned by this user
 
       NOTE1:  if 'procs' is actually a filename, that file will be read and all
@@ -5910,7 +5963,17 @@ exit    if !defined($_[0]);
 sub whatsnew
 {
   my $whatsnew=<<EOF6;
-What's new in collectl:
+What's new in collectl?
+
+Version 3.4.2
+- new switches
+  -- dskfilt filters disk detail data on output
+- new functionality
+  - enhancement to --procfilt to select processes in uid range
+  - added systot and usertot to lexpr
+  - added memory field SUnreclaim to plot and lexpr output
+  - now detects CPUs going offline/online
+    - added number of disabled CPUs to file header when non-zero
 
 Version 3.4.1
 - new switches

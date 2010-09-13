@@ -3,9 +3,11 @@
 # NOTE - by default, this module only collectl data once a minute, which you can change
 # with the i=x parameter (eg --import misc,i=x).  Regardless of the collection interval,
 # date will be reported every interval in brief/verbose formats to provide a consisent 
-# set of output each monitoring cycle.  However, --export output will only be displayed
-# when collected, based in i=.  To report --export data during ALL samples, in case the
-# listener expects it, include the a switch (eg misc,a).
+# set of output each monitoring cycle.  However, --export lexpr will report light-weight
+# counters every interval but heavy-weight ones (currenly only logins) based in i=.  
+# sexpr and gexpr will report all 4 counters every interval independent of when sampled.
+# To report --export data in ALL lexpr samples, in case the listener expects it, include 
+# the a switch (eg misc,a).
 
 #    M i s c e l l a n e u o s    C o u n t e r
 
@@ -59,11 +61,14 @@ sub miscUpdateHeader
 
 sub miscGetData
 {
-  return    if ($miscSampleCounter++ % $miscImportCount)!=0;
-
   getProc(0, '/proc/uptime', 'misc-uptime');
   grepData(1, '/proc/cpuinfo', 'MHz', 'misc-mhz');
   grepData(2, '/proc/mounts', ' nfs ', 'misc-mounts');
+
+  # we only retrieve heavy-weight counters at the misc sampling interval
+  # as specified by "i=" or the default value of 60.
+  return    if ($miscSampleCounter++ % $miscImportCount)!=0;
+
   getExec(4, '/usr/bin/who -s -u', 'misc-logins');
 }
 
@@ -169,19 +174,19 @@ sub miscPrintPlot
 
 sub miscPrintExport
 {
-  return    if !$miscAllFlag && (($miscSampleCounter-1) % $miscImportCount)!=0;
-
   my $type=   shift;
   my $ref1=   shift;
   my $ref2=   shift;
   my $ref3=   shift;
 
+  # The light-weight counters are reported every sampling interval but since I think sexpr
+  # needs to be contant, we'll always report all even if some only sampled periodically.
+  # Same thing for gexpr, at least for now.
   if ($type eq 'l')
   {
      push @$ref1, "misc.uptime";   push @$ref2, sprintf("%d", $miscUptime/86400);
      push @$ref1, "misc.cpuMHz";   push @$ref2, sprintf("%d", $miscMHz);
      push @$ref1, "misc.mounts";   push @$ref2, sprintf("%d", $miscMounts);
-     push @$ref1, "misc.logins";   push @$ref2, sprintf("%d", $miscLogins);
   }
   elsif ($type eq 's')
   {
@@ -195,6 +200,14 @@ sub miscPrintExport
      push @$ref1, "misc.cpuMHz";   push @$ref3, sprintf("%d", $miscMHz);
      push @$ref1, "misc.mounts";   push @$ref3, sprintf("%d", $miscMounts);
      push @$ref1, "misc.logins";   push @$ref3, sprintf("%d", $miscLogins);
+  }
+
+  # Heavy-weight lexpr counters are only returned based on "i=" or default of 60 seconds
+  return    if !$miscAllFlag && (($miscSampleCounter-1) % $miscImportCount)!=0;
+
+  if ($type eq 'l')
+  {
+     push @$ref1, "misc.logins";   push @$ref2, sprintf("%d", $miscLogins);
   }
 }
 

@@ -115,6 +115,10 @@ sub lexpr
       $cpuSumString.=sendData("cputotals.steal", $stealP[$i]);
       $cpuSumString.=sendData("cputotals.idle",  $idleP[$i]);
 
+      # These 2 are redundant, but also handy
+      $cpuSumString.=sendData("cputotals.systot",  $sysP[$i]+$irqP[$i]+$softP[$i]+$stealP[$i]);
+      $cpuSumString.=sendData("cputotals.usertot", $userP[$i]+$niceP[$i]);
+
       $cpuSumString.=sendData("ctxint.ctx",  $ctxt/$intSecs);
       $cpuSumString.=sendData("ctxint.int",  $intrpt/$intSecs);
 
@@ -140,6 +144,9 @@ sub lexpr
         $cpuDetString.=sendData("cpuinfo.steal.cpu$i",  $stealP[$i]);
         $cpuDetString.=sendData("cpuinfo.idle.cpu$i",   $idleP[$i]);
         $cpuDetString.=sendData("cpuinfo.intrpt.cpu$i", $intrptTot[$i]);
+
+        $cpuSumString.=sendData("cputotals.systot.cpu$i",  $sysP[$i]+$irqP[$i]+$softP[$i]+$stealP[$i]);
+        $cpuSumString.=sendData("cputotals.usertot.cpu$i", $userP[$i]+$niceP[$i]);
       }
     }
   }
@@ -246,6 +253,7 @@ sub lexpr
     $memString.=sendData("meminfo.hugetot", $memHugeTot);
     $memString.=sendData("meminfo.hugefree", $memHugeFree);
     $memString.=sendData("meminfo.hugersvd", $memHugeRsvd);
+    $memString.=sendData("meminfo.sunreclaim", $memSUnreclaim);
     $memString.=sendData("swapinfo.total", $swapTotal);
     $memString.=sendData("swapinfo.free", $swapFree);
     $memString.=sendData("swapinfo.used", $swapUsed);

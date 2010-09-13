@@ -2,7 +2,7 @@
 .SH NAME
 
 .B collectl
-- Collects data that describes the current system status.
+collectl - Collects data that describes the current system status.
 
 .SH SYNOPSIS
 Record Mode - read data from live system and write to file or display on terminal
@@ -53,12 +53,12 @@ All data is then written to that socket prefaced with the current host
 name at the named address and port until
 the socket is closed, at which time collectl will exit.
 
-In the second form one enters the text 'server' and optional port.  
+In the second form one enters the text "server" and optional port.  
 In this form, collectl runs as a server, waiting for a connection and 
 once established writes data on that socket.  The key difference here is
 if the client exists collectl keeps running and will again look for a
 new connection, allowing it to survive client restarts or crashes.
-If collectl receives the text 'exit' from the client, it will shut down.
+If collectl receives the text "exit" from the client, it will shut down.
 
 The default port is set at 2655 but can be changed - see collectl.conf.  
 
@@ -102,11 +102,11 @@ caveat about this mode is you can only run one copy.
 .RS
 This requests that collectl does not print anything on the terminal (or
 send it to a socket) using the standard brief/verbose/plot formats.
-Instead it executes a perl 'require' on the named file, using an extension of 
+Instead it executes a perl "require" on the named file, using an extension of 
 ph if not specified.  It first looks in the current directory and if not
 there the directory the executable is in.  It then calls the
-function 'file'Init(options) towards the beginning of collectl and again as 
-simply  'file'(@options) to generate the exported formatted output.  See the document
+function "file"Init(options) towards the beginning of collectl and again as 
+simply  "file"(@options) to generate the exported formatted output.  See the document
 sections on Exporting Custom Output and Logging for more details.
 .RE
 
@@ -146,7 +146,7 @@ with the usual -o options and can even select the timeframe with --from and --th
 .B -G, --group
 .RS
 Treat process data as an entirely separate group of data, writing it into its own raw file, named
-'rawp'.  These separate process files can be played back and processed just like any other 
+"rawp".  These separate process files can be played back and processed just like any other 
 collectl raw files and in fact one can even play back both at the same time if that is what is
 desired.  The only real purpose of this switch is that on some systems with many processes, it is
 possible to generate huge raw files (some have been observerd to be >250MB!) and while collectl
@@ -237,7 +237,7 @@ set it to a colon.
 .B -S, --ssh
 .RS
 This is typically used when starting collectl on another system via ssh or
-rsh.  It causes collectl to 'watch' for its parent (who started it locally) to
+rsh.  It causes collectl to "watch" for its parent (who started it locally) to
 exit at which point it will exit as well.  The reason for this switch is that
 when the remote command that started collectl exists, collectl's parent will exit
 as well but NOT collectl, unless -S is specified.
@@ -479,14 +479,14 @@ stamp, the date being in yyyymmdd format.
 .RS
 For use with terminal output and brief mode.   When displaying values of 1G or greater
 there is limited precision for 1 digit values.  This options provides a way to display
-additional digits for more granularity by substituting a 'g' for the decimal point
-rather than the trailing 'G'.
+additional digits for more granularity by substituting a "g" for the decimal point
+rather than the trailing "G".
 .RE
 
 .B G
 .RS
-For use with terminal output and brief mode.  This is similar to 'g' but preserves
-the trailing 'G' by sacrificing a digit of granularity.
+For use with terminal output and brief mode.  This is similar to "g" but preserves
+the trailing "G" by sacrificing a digit of granularity.
 .RE
 
 .B m
@@ -584,10 +584,10 @@ which are a subset of this full list,
 use -h.
 
 You can also use + or - to add or subtract subsystems to/from the default values. 
-For example, '-s-cdn+N'< will remove cpu, disk and network monitoring from the
+For example, "-s-cdn+N"< will remove cpu, disk and network monitoring from the
 defaults while adding network detail.
 
-The default is 'cdn', which stands for CPU, Disk and Network data.
+The default is "cdn", which stands for CPU, Disk and Network data.
 
 SUMMARY SUBSYSTEMS
 
@@ -624,8 +624,7 @@ This is the set of
 .BR detail
 data from which in most cases the corresponding summary data is
 derived.  There are currently 2 types that do not have corresponding summary
-data and those are 'Environmental' and 'Process' (in fact, 'Process' has its own
-manpage named 'collectl-process').  So, if one has 3 disks
+data and those are "Environmental" and "Process".  So, if one has 3 disks
 and chooses 
 .B -sd,
 one will only see a single total taken
@@ -723,15 +722,15 @@ is contemplated for some time in the future.
 
 In interactive mode and if not specified, the process
 monitoring interval will be set to that for other subsystems.  The screen will be cleared for each interval
-resulting in a display similar to the 'top' utility.  In playback more the screen will NOT be cleared.  You
-cannot use this switch in 'record' mode.
+resulting in a display similar to the "top" utility.  In playback more the screen will NOT be cleared.  You
+cannot use this switch in "record" mode.
 .RE
 
 
 .B "--umask mask"
 .RS
 Sets collectl's umask to control output file permissions.  Defaultis 0137.
-See 'man umask' for details.
+See "man umask" for details.
 .RE
 
 .B -v
@@ -807,11 +806,15 @@ systems and you want consistent column names.
 
 .RS
 .br
-D - For lustre MDSs and OSTs, collect disk block iostats
+B - For clients and servers, show buffer stats
 .br
-M - For lustre clients, collect metadata
+D - For MDSs and OSTs AND running earlier versions of HPSFS, collect disk block iostats
 .br
-R - For lustre client, collect readahead stats
+M - For clients, collect metadata
+.br
+O - For OSTs, show detail level stats
+.br
+R - For client, collect readahead stats
 .RE
 
 .B "--nfsfilt NFS Filters"
@@ -847,7 +850,7 @@ p - pid
 .br
 P - parent pid
 .br
-u - any process ownerd by this user's UID
+u - any process ownerd by this user's UID or in the range specifide by uxxx-yyy
 .br
 U - any process owned by this username
 .RE
@@ -960,7 +963,7 @@ collect tool, which collectl is based on.
 .SH AUTHOR
 This program was written by Mark Seger (mjseger@gmail.com).
 .br
-Copyright 2003-2008 Hewlett-Packard Development Company, LP
+Copyright 2003-2010 Hewlett-Packard Development Company, LP
 .br
 collectl may be copied only under the terms of either the Artistic License
 or the GNU General Public License, which may be found in the source kit

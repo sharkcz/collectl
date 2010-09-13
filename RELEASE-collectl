@@ -40,6 +40,57 @@ KNOWN PROBLEMS/RESTRICTIONS
 
 CHANGES
 
+3.4.2-5 July 21, 2010
+  - changed INSTALL to only execute commands like chkconfig OR update-rc
+    when $DESTDIR is / [thanks mike]
+
+3.4.2-4 July 09, 2010
+  - added --dskfilt
+  - added check for client-side OST uuid status 'DEACTIVATED', which seems to
+    have showed up somewhere in the 1.6 timeframe but now sure when, thanks Heiko
+
+3.4.2-3 June 25, 2010
+  - new memory field 'SUnreclaim' ONLY available in plot format and lexpr, 
+    just not enough room in terminal based output [thanks seb/fred]
+  - misc now considers uptime, mhz and mounts as 'lightweight' counters and will
+    sample every standard interval.  Only logins, which is heavy-weight, will be
+    sampled based on "i=" or the default of 60 seconds.  Further, all lightweight
+    samples will be returned every interval by lexpr whereas the heavy-weight ones
+    will only be returned when sampled. In order to keep sexpr/gexpr formats constant
+    (primarily because I don't know the effect of not doing so), they will report
+    all counters every interval.
+  - support for CPUs dynamically changing stats and going off/on-line
+    - NOTE -- can't detect this during interrupt processing unless also 
+      monitoring CPU data, which people typically do anyways
+
+3.4.2-2 June 15,2010
+  - not correctly handling discovery of new disks during playback
+  - new feature: select process by UID range [thanks mark]
+    - fixed bug in --procfile u/U processing while testing
+  - added systot and usertot to lexpr to report totals for all system and user
+    counters
+  - changed error message processing when trying to playback a file with process
+    when there isn't any or slabs data, etc.  Rather than only show the message
+    when -m, which could result in only a 'no files processed' message they will
+    be unconditionally displayed as they should
+
+3.4.2-1 May 21, 2010
+  - change default umask to 133 so that colplot can read files since webserver
+    doesn't have privs
+  - now that raw files are always compressed, the message about disabling it
+    with -oz when no compression no longer makes sense so the message has been
+    clarified to use --quiet with raw files and -oz with plot files
+  - added README-WINDOWS to src tarball
+  - cleaned up code that still expected [com] in $lustOpts instead of $lustreSvcs
+  - more cleanup and bug fixes to INSTALL for debian support.  thanks bernd
+    - change to /bin/sh
+    - do not use ANY explicit paths
+  - minor changes to man pages, also for debian restrictions
+  - wasn't reading NfsFilter correctly from header on playback
+  - save perfquery version and use it to drive the skipping of 'field 13' rather than
+    OFED versions which isn't always available
+  - do not issue 'stty' if !PC, running on terminal and !background.  missed a couple...
+
 3.4.1-5 Mar 30, 2010
   - new env options F/T converts temps to C or F
 

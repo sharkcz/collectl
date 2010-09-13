@@ -103,5 +103,11 @@ monitoring cycle which is considerable easier to read than /proc/interrupts itse
 </pre>
 </div>
 
+<h3>Restrictions</h3>
+If the number of CPUs change during processing, this can only be detected when monitoring CPU data
+at the same time.  If you are only monitoring interrupt data and there is a state change things will
+get very messy.  As users typically monitor Interrupts and CPU data at the same time it is not
+felt to be worth the extra effort or processng overhead to try and accommodate this rare case.
+
 </body>
 </html>

@@ -1,0 +1,16 @@
+collectl only runs in playback mode on windows so you
+will have to copy over one or more raw files to use it.
+You will also have to have perl installed.
+
+To Install
+- unpack src tarball, which can be done by most utilitis, into a 
+  temporary directory
+- create a directory to install collectl into, say \collectl
+- copy the following files into \collectl
+  - collectl
+  - collectl.conf
+  - *ph
+
+You're done!  To verify the installation run
+
+\collectl\collectl.pl -v

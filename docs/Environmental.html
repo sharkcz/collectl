@@ -1,7 +1,7 @@
 <html>
 <head>
 <link rel=stylesheet href="style.css" type="text/css">
-<title>IPMP/Environmental Monitoring</title>
+<title>IPMI/Environmental Monitoring</title>
 </head>
 
 <body>
@@ -72,14 +72,17 @@ This is done for several reasons:
 <ul>
 <li>The <i>ipmitool</i> interface involves running another process and adds to the load,
 using a less frequent interval helps minimize collectl's footprint</li>
-<li>This type of data changes at a slow enough rate as to not require monitoring too frequently</li>
+<li>This type of data changes at a slow enough rate as to not require monitoring too frequently
+although the <i>currenet</i> readings which have just been added to Version 3.1.2 do seem to
+change in nead real-time and so the monitoring interval may need to be rethought</li>
 </ul>
 
 Although you can run collectl to report this data interatively to report a single sample,
 its typical use is expected to be as a daemon.  When run as a daemon collectl and -sE 
 is specified, which is currently the default, it will first check to see if
 <i>ipmitool</i> is present and if a communications device of the form <i>/dev/ipmi*</i>
-is present.  If so it will start collecting ipmi data for fans and temperature sensors.  
+is present.  If so it will start collecting ipmi data for fans and temperature sensors.
+If it can detect a current sensor is present, it will report on that too.
 <p>
 You can control the way ipmi data is displayed in playback mode using <i>--envopts</i>
 and one of 3 switches that allow you to only report fan or temperature data and if you
@@ -87,20 +90,21 @@ are reporting both, which is the default, you can request the 2 types of data be
 on separate lines.  This latter option can be useful if you have a lot of devices on 
 which to report.
 <p>
-The following is an example of time-stamped output on an HP dl380-g5, first without any options
+The following is an example of time-stamped output on an HP BL460c Blade, first without any options
 
 <div class=terminal-wide13>
 <pre>
 collectl.pl -sE -i::1 -oT
 # ENVIRONMENTAL STATISTICS
-#            Fan1    Fan2    Fan3    Fan4    Fan5    Fan6     Fan   Temp1   Temp2   Temp3   Temp4   Temp5   Temp6   Temp7
-07:00:58   45.080  45.080  41.944  36.064  36.064  36.064       0      47      22      31      31      52      31      31
-07:00:59   45.080  45.080  41.944  36.064  36.064  36.064       0      47      22      31      31      52      31      31
-07:01:00   45.080  45.080  41.944  36.064  36.064  36.064       0      47      22      31      31      52      31      31
+#             VFan   Temp1   Temp2   Temp3   Temp4   Temp5   Temp6   Temp7   Temp8   Temp9   Power
+08:39:15    37.240      47      35      30      30      33      30      30      58      24     206
+08:39:16    37.240      47      35      30      30      33      30      30      58      24     206
+08:39:17    37.240      47      35      30      30      33      30      30      58      24     206
 </pre>
 </div>
-Here we see the effect of <i>--envopts M</i>, something I'm not particuarly a fan of since
-it does generate a lot more <i>noise</i> in the output.  It's main purpose is for dealing
+Here we see the effect of <i>--envopts M</i> when examining an HP DL380-G5.
+However it does also generate a lot more 
+<i>noise</i> in the output.  It's main purpose is for dealing
 with too much data to comfortably display on a single line.
 
 <div class=terminal-wide13>
@@ -301,6 +305,11 @@ etc
 but this means you need to specify each unique device name to remap and it will also result
 in <i>all</i> pattern matching statements to be executed for each device which will also
 result in slightly more overhead.
+<p>
+<h3>Power Monitoring</h3>
+Currently all the systems that power monitoring has been testing on report it as the field
+<i>Power Meter</i> and without more examples, the parsing is currently set up to specifically
+look for that field.
 <p>
 <h3>Restrictions</h3>
 Some systems report what appears to be device codes in the data field and the data in the 4th

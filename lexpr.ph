@@ -17,8 +17,8 @@ sub lexprInit
 
 sub lexpr
 {
-  my $sumFlag=$subsys=~/[cdfilmnstx]/ ? 1 : 0;
-  my $detFlag=$subsys=~/[CDN]/        ? 1 : 0;
+  my $sumFlag=$subsys=~/[cdfilmnstxE]/ ? 1 : 0;
+  my $detFlag=$subsys=~/[CDN]/         ? 1 : 0;
 
   my ($cpuSumString,$cpuDetString)=('','');
   if ($lexopts=~/c/i)
@@ -142,6 +142,8 @@ sub lexpr
     $memString.="meminfo.cached $memCached\n";
     $memString.="meminfo.slab $memSlab\n";
     $memString.="meminfo.map $memMap\n";
+    $memString.="swapinfo.total $swapTotal\n";
+    $memString.="swapinfo.used $swapUsed\n";
   }
 
   my ($netSumString,$netDetString)=('','');
@@ -217,10 +219,24 @@ sub lexpr
     $intString.=sprintf("iconnect.pktout %d\n", $pktOutT/$intSecs);
   }
 
+  my $envString='';
+  if ($lexopts=~/E/i)
+  {
+    foreach $key (sort keys %$ipmiData)
+    {
+      for (my $i=0; $i<scalar(@{$ipmiData->{$key}}); $i++)
+      {
+        my $name=$ipmiData->{$key}->[$i]->{name};
+        my $inst=($key!~/power/ && $ipmiData->{$key}->[$i]->{inst} ne '-1') ? $ipmiData->{$key}->[$i]->{inst} : '';
+        $envString.="env.$name$inst $ipmiData->{$key}->[$i]->{value}\n";
+      }
+    }
+  }
+
   my $lexprRec='';
   $lexprRec.="sample.time $lastSecs\n"    if $sumFlag;
   $lexprRec.="$cpuSumString$diskSumString$nfsString$inodeString$memString$netSumString";
-  $lexprRec.="$lusSumString$sockString$tcpString$intString";
+  $lexprRec.="$lusSumString$sockString$tcpString$intString$envString";
 
   $lexprRec.="sample.time $lastSecs\n"   if !$sumFlag;
   $lexprRec.="$cpuDetString$diskDetString$netDetString";

@@ -86,8 +86,9 @@ $PerlVers=$Memory=$Swap=$Hyper=$Distro='';
 $CpuVendor=$CpuMHz=$CpuCores=$CpuSiblings='';
 $PQuery=$PCounter=$VStat=$VoltaireStats=$IBVersion=$HCALids=$OfedInfo='';
 $numBrwBuckets=$cfsVersion=$sfsVersion='';
-$Resize=$IpmiCache='';
+$Resize=$IpmiCache=$IpmiTypes=$ipmiExec='';
 $i1DataFlag=$i2DataFlag=$i3DataFlag=0;
+$lastSecs=$interval2Print=0;
 
 # Find out ASAP if we're linux or WNT based as well as whether or not XC based
 $PcFlag=($Config{"osname"}=~/MSWin32/) ? 1 : 0;
@@ -104,7 +105,7 @@ if ($PerlVers lt '5.08.00')
   print "See /opt/hp/collectl/docs/FAQ-collectl.html for details.\n";
 }
 
-$Version=  '3.1.1-5';
+$Version=  '3.1.2-4';
 $Copyright='Copyright 2003-2008 Hewlett-Packard Development Company, L.P.';
 $License=  "collectl may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
@@ -245,7 +246,7 @@ $SubsysExcore="fy";
 $BriefSubsys="cdfFijlmnstxy";    # note - use of y requires SAME intervals!
 
 # And the default environmentals
-$envOpts='ft';
+$envOpts='cft';
 $envRules='';
 $envDebug=0;
 $envTestFile='';
@@ -396,8 +397,8 @@ GetOptions('align!'     => \$alignFlag,
            'all!'          => \$allFlag,
            'export=s'      => \$export,
            'expdir=s'      => \$expDir,
-	   'from=s'        => \$fromTime,
-	   'thru=s'        => \$thruTime,
+	   'from=s'        => \$from,
+	   'thru=s'        => \$thru,
 	   'headerrepeat=i'=> \$headerRepeat,
            'hr=i'          => \$headerRepeat,
            'lustopts=s'    => \$lustOpts,
@@ -432,7 +433,7 @@ GetOptions('align!'     => \$alignFlag,
 # around waiting for someone to connect to that socket!  This way we connect,
 # report the error and exit and the caller is able to detect it.
 
-$sockFlag=$clientFlag=$serverFlag=$connectedFlag=0;
+$sockFlag=$clientFlag=$serverFlag=0;
 if ($address ne '')
 {
   $sockFlag=1;
@@ -449,7 +450,8 @@ if ($address ne '')
               error("Could not create socket to $address:$port")
         if !defined($socket);
     print "Socket opened on $address:$port\n"    if $debug & 64;
-    $clientFlag=$connectedFlag=1;   # clients are ALWAYS connected
+    push @sockets, $socket;
+    $clientFlag=1;
   }
   elsif ($address=~/^server/i)
   {
@@ -514,8 +516,10 @@ error('-sLL replaced with -sL --lustopts O')           if $userSubsys=~/LL/;
 
 # allow either -O or --nfs/lust opts and make sure all 3 are self-consistent
 error('-O or --nfsopts/--lustopts but not both')       if $subOpts ne '' && ($lustOpts ne '' || $nfsOpts ne '');
+error("--nfsopts does not apply to -p")                if $nfsOpts ne '' && $playback ne '';
 error('invalid value for --nfsopts')                   if $nfsOpts ne '' && $nfsOpts!~/^[23C]+$/;
 error('invalid value for --lustopts')                  if $lustOpts ne '' && $lustOpts!~/^[BDMORcom]+$/;
+
 
 # if -sf, one of these 2 needs to contain a 2 or the default of 3
 # Ultimately $subOpts needs to be the same as the combination of nfs/lust opts
@@ -661,10 +665,6 @@ $temp=~s/YZ//;
 $detailFlag=($subsys=~/[$temp]/) ? 1 : 0;
 if ($topOpts ne '')
 {
-  # --top does NOT support detail data other than Z
-  $temp=$SubsysDet;
-  $temp=~s/Z//;
-
   # Don't diddle original setting in '$userSubsys', use a copy!
   # Subtle - the verbose flag wouldn't have been set if ONLY processes or slabs and 
   # it should be.  Similarly, Y/Z should not be considered when looking to see is 
@@ -685,9 +685,10 @@ if ($topOpts ne '')
     }
     else
     {
-      # multi-subsys verbose mode is driven by the number of subsystems and if 
+      # multi-subsys verbose mode is driven by the number of subsystems but if 
       # there are any details, it's up to the users choice of --hr
       $subsysSize=length($tempSubsys)*3;
+      $subsysSize++                if $tempSubsys=~/m/;
       $subsysSize=$headerRepeat    if $detailFlag;
     }
     $scrollEnd=$subsysSize+1;
@@ -1088,22 +1089,26 @@ if ($playback ne "")
 # end time
 $purgeDays=0;
 
-if (defined($fromTime) || defined($thruTime))
+if (defined($from) || defined($thru))
 {
   error("--from/--thru only apply to -p")
       if $playback eq '';
   error("do not specify 2 times with --thru")
-      if defined($thruTime) && index($thruTime, '-')!=-1;
+      if defined($thru) && index($thru, '-')!=-1;
   error("do not specify 2 times with --from and also use --thru")
-      if defined($fromTime) && defined($thruTime) && index($fromTime, '-')!=-1;
+      if defined($from) && defined($thru) && index($from, '-')!=-1;
 
-  ($fromTime, $thruTime)=split(/-/, $fromTime)
-      if !defined($thruTime);
-  $fromTime="0$fromTime"          if defined($fromTime) && $fromTime=~/^\d:/;
-  $thruTime="0$thruTime"          if defined($thruTime) && $thruTime=~/^\d:/;
-  checkTime('from', $fromTime)    if defined($fromTime);
-  checkTime('thru', $thruTime)    if defined($thruTime);
+  # Parse switches and handle those that only specify a date
+
+  ($from, $thru)=split(/-/, $from)                    if !defined($thru);
+  ($fromDate,$fromTime)=checkTime('--from', $from)    if defined($from);
+  ($thruDate,$thruTime)=checkTime('--thru', $thru)    if defined($thru);
 }
+$fromDate=0           if !defined($fromDate);    # 0 means all dates
+$thruDate=0           if !defined($thruDate);
+$fromTime='000000'    if !defined($fromTime);
+$thruTime='235959'    if !defined($thruTime);
+print "From: $fromDate $fromTime  Thru: $thruDate $thruTime\n"    if $debug & 1;
 
 $endSecs=0;
 if ($runTime ne "")
@@ -1236,12 +1241,58 @@ if ($sshFlag)
 
 if ($playback ne '')
 {
+  # Select all files that need to be processed based on dates
+  my $numSelected=0;
+  my ($firstFileDate, $lastFileDate, $lastFileTime)=(0,0,'');
+
+  while (my $file=glob($playback))
+  {
+    next    if $file!~/(\d{8})-(\d{6})\.raw/;
+
+    my $fileDate=$1;
+    my $fileTime=$2;
+    $firstFileDate=$fileDate    if $firstFileDate==0;
+    $numSelected++;
+
+    # Here we do a coarse filter ignoring files outside the from/thru IF either
+    # date is non-zero.
+    next    if (($fromDate ne 0) &&  ($fileDate < $fromDate)) ||
+               (($thruDate ne 0) && (($fileDate > $thruDate) ||
+                                     ($fileDate == $thruDate) && $fileTime > $thruTime));
+ 
+    # one more if filter is NO dates specified
+    next    if $fromDate==0 && $thruDate==0 && ($fileTime > $thruTime);
+
+    # This is the magic AND there are 3 cases all of which have the common test of
+    # there needing to be something on the stack and the current file is < $fromTime,
+    # in which case we might NOT want to process the file on the stack under the 
+    # the following cases:
+    # - if we have a from date this only applies to files for the from date
+    # - if no from date but a thru date, apply time to files of first date
+    # - if no from AND thru dates this test applies to ALL dates but only
+    #   pop files for the same date which are by definition too 'young'
+    if (($lastFileDate!=0) && ($fileTime<$fromTime))
+    {
+      pop @playbackList
+	  if ($fromDate!=0 && $fileDate==$fromDate) ||
+             ($fromDate==0 && $thruDate!=0 && $fileDate==$firstFileDate) ||
+	     ($fromDate==0 && $thruDate==0 && $fileDate==$lastFileDate);
+    }
+
+    push @playbackList, $file;
+    #print "PUSHED $file  DATE: $fileDate/$lastFileDate  TIME: $fileTime/$fromTime\n";
+
+    $lastFileDate=$fileDate;
+    $lastFileTime=$lastFileTime;
+  }
+  #print "SELECTED\n"; foreach my $file (@playbackList) { print "$file\n"; }
+
   $numProcessed=0;
   $elapsedSecs=0;
-  $preprocFlags=preprocessPlayback($playback);
+  $preprocFlags=preprocessPlayback(\@playbackList);
 
   $lastPrefix=$prefixPrinted='';
-  while ($file=glob($playback))
+  foreach $file (@playbackList)
   {
     # Unfortunately we need a more unique global name for the file we're doing
     $playbackFile=$file;
@@ -1296,7 +1347,6 @@ if ($playback ne '')
     # we need to initialize a bunch of stuff including these variables and the
     # starting time for the file as well as the corresponding UTC seconds.
     ($recVersion, $recDate, $recTime, $recSecs, $recTZ, $recInterval, $recSubsys)=initFormat($file);
-    print "  ignoring redundant pre-collectl 1.3.0 -sd in favor of -sp in $file\n"    if $IgnoreDiskData;
 
     # We can only do this test after figuring out what's in the header.
     error("-sj or -sJ with -P also requires CPU details so add C or remove J.")
@@ -1401,13 +1451,15 @@ if ($playback ne '')
 
     # When playing back multiple hosts, some structures need to be reinitialized
     # every time we change hosts
-    $lastHost=$Host    if !defined($lastHost);
-    if ($Host ne $lastHost)
+    $sameHostFlag=(defined($lastHost) && $Host eq $lastHost) ? 1 : 0;
+    if (!$sameHostFlag)
     {
+      $lastHost=$Host;
       undef %slabTotalMemLast;
       undef %slabMemTotMin;
       undef %slabMemTotMax;
       undef %slabMemTotLast;
+      $headersPrinted=$totalCounter=$separatorCounter=0;
     }
 
     # we get a new output file (if writing to a file) for each prefix-date
@@ -1420,31 +1472,35 @@ if ($playback ne '')
     {
       print "Prefix: $prefix  Host: $Host\n"    
 	  if ($debug & 1) && !$logToFileFlag;
-      $headersPrinted=$headersPrintedProc=$totalCounter=$separatorCounter=$prcFileCount=0;
+      $headersPrintedProc=$headersPrintedSlab=$prcFileCount=0;
       $newOutputFile=($filename ne '') ? 1 : 0;
       $playback{$key}=1;
     }
     $prcFileCount++    if $subsys=~/Z/;
     #print "NEW PREFIX: $newPrefixDate  NEW FILE: $newOutputFile\n";
 
-    # set from/thru dates to that of collection file if none specified.  Note
-    # that since the first interval is never reported, but rather used for base
-    # point, we need to reduce begin time by 1 interval (if possible) so that 
-    # the first interval reported matches the time we chose.
+    # We only care about intervals if --from OR --thru specified
     $fromSecs=$thruSecs=0;
-    if (defined($fromTime))
+    if (defined($from) || defined($thru))
     {
-      $temp=$recDate;
-      $temp=~s/-.*//;    # get rid of time
-      $fromTime="$temp-$fromTime"    if $fromTime!~/-/;
-      $fromSecs=getSeconds($fromTime)-$interval;
-    }
-    if (defined($thruTime))
-    { 
-      $temp=$recDate;
-      $temp=~s/-.*//;    # get rid of time
-      $thruTime="$temp-$thruTime"        if $thruTime!~/-/;
-      $thruSecs=getSeconds($thruTime).'.999';   # to catch fractional times
+      # when neither date is specfied we always use date of file(s) being
+      # processed.  this is THE most common usage, at least for me!  otherwise
+      # use the actual from/thru dates as the range to look at
+      if (($fromDate eq '0') && ($thruDate eq '0'))
+      {
+        $tempDate=$recDate;
+        $tempDate=~s/-.*//;    # get rid of time
+        $tempFromDate=$tempThruDate=$tempDate;
+      }
+      else
+      {
+        $tempFromDate=($fromDate!=0) ? $fromDate : 20000101;
+        $tempThruDate=($thruDate!=0) ? $thruDate : 20380101;  # linux limit is Jan 19th
+      }
+
+      # Need .999 to catch fractional times
+      $fromSecs=getSeconds($tempFromDate, $fromTime)-$interval;
+      $thruSecs=getSeconds($tempThruDate, $thruTime).'.999';
     }
 
     if ($zInFlag)
@@ -1510,14 +1566,18 @@ if ($playback ne '')
       resetBriefCounters();
     }
     
-    # if a from time, we start out in skip mode.
-    # we need to init $newSeconds so debugging won't gen uninits on 1st pass
-    $firstTime=1;
-    $skip=($fromSecs) ? 1 : 0;
+    # Whenever a from time specified AND we're doing a new host, we need to start out in
+    # skip mode.  In all other cases we read ALL the records.  Since --from with no date
+    # applies to all files, that will also trigger starting out in 'skip' mode.
+    $skip=($fromSecs && ($fromDate==0 || !$sameHostFlag)) ? 1 : 0;
+
+    # we need to init $newSeconds so debugging won't gen 'uninits' on 1st pass
+    $firstTime=$firstTime2=1;  # tracks int1 and int2 first time processing
     undef($fileFrom);
     $fileThru=0;
     $newMarkerWritten=0;
-    $lastSeconds=$newInterval=$newSeconds=0;
+    $timestampFlag=0;
+    $timestampCounter=0;
     $bytes=1;  # so no compression error on non-zipped files
     while (1)
     {
@@ -1539,8 +1599,10 @@ if ($playback ne '')
       # if this isn't a valid interval marker the file somehow got corrupted
       # which was seen one time before flush error handling was put in.  Don't
       # if that was the problem or not so we'll keep this extra test.
+      $timestampFlag=0;
       if ($line=~/^>>>/)
       {
+        $timestampFlag=1;
         if ($line!~/^>>> (\d+\.\d+) <<</)
         {
  	  logmsg("E", "Corrupted file do to invalid time marker in '$file'\n".
@@ -1548,11 +1610,29 @@ if ($playback ne '')
 	  next;
         }
 
-        $lastSeconds=$newSeconds;
+        # At this point, $newSeconds is actually pointing to the last interval
+        my $thisSeconds=$1;
+        $lastSeconds=(defined($newSeconds)) ? $newSeconds : 0;
+  	$skip=0    if $fromSecs && $thisSeconds>=$fromSecs;
+        last       if $thruSecs && $lastSeconds>$thruSecs;
+
+        $timestampCounter++    if !$skip;
+        if ($timestampCounter==1)
+        {
+          # If a second (or more) file for same host, are their timstamps consecutive?
+          # If NOT consecutive (or first file for a host), init 'last' variables
+          $consecutiveFlag=($sameHostFlag && $thisSeconds==$newSeconds) ? 1 : 0;
+          $newSeconds=$thisSeconds;
+          if (!$consecutiveFlag)
+          {
+	    initLast();
+            $lastSecs=$thisSeconds;
+	  }
+	  print "ConsecFlag: $consecutiveFlag\n"    if $debug & 1;
+
+          next;
+	}
         $newSeconds=$1+$timeAdjust;
-        $newInterval=1;
-  	$skip=0    if $fromSecs && $newSeconds>=$fromSecs;
-        last       if $thruSecs && $newSeconds> $thruSecs;
 
         # track thru times for each file to be used for totals/averages
         # in terminal mode
@@ -1571,44 +1651,55 @@ if ($playback ne '')
 	  $datetime=sprintf("%02d:%02d:%02d", $hh, $mm, $ss);
 	  $datetime=sprintf("%02d/%02d %s", $mon+1, $mday, $datetime)                   if $options=~/d/;
 	  $datetime=sprintf("%04d%02d%02d %s", $year+1900, $mon+1, $mday, $datetime)    if $options=~/D/;
-	  $datetime.=".$msec"                                                          if ($options=~/m/);
+	  $datetime.=".$msec"                                                           if ($options=~/m/);
 	  print "$datetime $line";
         }
 	next;
       }
 
-      # when new interval, since we don't have an end-of-interval marker,
-      # print data for last one (except first time through)
-      printf "PLAYBACK [%s]: $line", getTime($newSeconds)    if $debug & 64;
-      intervalEnd($lastSeconds)    if  $newInterval && !$firstTime;
-
-      # Skip redundant disk data in pre-1.3.0 raw file
-      next    if $IgnoreDiskData && $line=~/^disk/;
       print $line    if $debug & 4;
-
-      dataAnalyze($subsys, $line)  if !$newInterval;
-
-      $newInterval=$firstTime=0;
+      # Either we're processing a timestamp marker OR data entries
+      if ($timestampFlag)
+      {
+        # We already skipped first interval marker.  As for the second one, which indicates the end of
+        # a complete set of data, we only process that if we have consecutive files in which case
+        # we get to use the last file's data for the previous interval's data.  BUT we have to make
+        # sure 'initInterval' called for second interval which may have been skipped.
+        my $saveI2P=$interval2Print;    # gets reset to 0 during intervalEnd()
+        intervalEnd($lastSeconds)    if $consecutiveFlag || $timestampCounter>2;
+        initInterval()               if $timestampCounter==2;
+        $firstTime2=0                if $saveI2P;
+      }
+      else
+      {
+        dataAnalyze($subsys, $line);
+      }
+      $firstTime=0;
     }
-    if ($firstTime && $grepPattern eq '')
+
+    # We really only need message when -p specifies single file
+    if ($firstTime && $numSelected==1 && $grepPattern eq '')
     {
-      print "No records selected for playback!  Are -b/-e wrong?\n";
+      print "No records selected for playback!  Are --from/--thru` wrong?\n";
       next;
     }
 
-    # normally samples will end on interval marker (even if last interval)
-    intervalEnd($lastSeconds)    if $newInterval;
+    # normally samples will end on timestamp marker (even if last interval) and therefore
+    # processed above.  However in pre-3.1.2 releases timestamps weren't written when 
+    # logs rolled and so we need to process the last interval in those cases as well.
+    intervalEnd($newSeconds)     if !$timestampFlag && $recVersion lt '3.1.2';
 
     $ZPLAY->gzclose()    if  $zInFlag;
     close PLAY           if !$zInFlag;
 
-    # if we reported data from this file (we may have skipped it entirely if -b
-    # used with multiple files), calculate how many seconds reported on.
+    # if we reported data from this file (we may have skipped it entirely if --from
+    # used with multiple files), calculate how many seconds reported on in for 
+    # stats reporting with -oA
     if (!$skip)
     {
       # we always skip the beginning interval and if we terminated by hitting
       # our ending interval we need to add one back on because when we hit 
-      # the end of the file without -e, the THRU date is pointing to the 
+      # the end of the file without --thru, the THRU date is pointing to the 
       # start of the next interval which has no data.
       $playbackSecs=$fileThru-$fileFrom-$interval;
       $playbackSecs+=$interval    if $thruSecs && $newSeconds>$thruSecs;
@@ -1679,6 +1770,7 @@ loadSlabs($slabFilt)    if $subsys=~/y/i;
 
 # In case displaying output.  We also need the recorded version to match ours.
 initFormat();
+initLast();
 $recVersion=$Version;
 
 # This has to go after initFormat() since it loads '$envRules' and may init
@@ -1929,12 +2021,10 @@ $doneFlag=0;
 for (; $count!=0 && !$doneFlag; $count--)
 {
   # When in server mode we always need to check for readable socket
-  # since this is the way we can tell is it went away
+  # but be sure to do without any timeout
   if ($serverFlag)
   {
     print "Looking for connection...\n"    if $debug & 64;
-    # The assumption here is only one client can connect because our
-    # send logic assumes only one 
     if ($newHandle=($select->can_read(0))[0])
     {
       print "Socket 'can read'\n"    if $debug & 64;
@@ -1942,38 +2032,27 @@ for (; $count!=0 && !$doneFlag; $count--)
       {
         $socket=$sockServer->accept() || logmsg('F', "Couldn't accept socket request");
 	$select->add($socket);
-	$connectedFlag=1;
+        push @sockets, $socket;
         my $client=inet_ntoa((sockaddr_in(getpeername($socket)))[1]);
 	logmsg('I', "New socket connection from $client");
-
-        # By close listening socket we don't have to worry about any stray
-        # connection attempts.
-	$select->remove($sockServer);
-	$sockServer->close();
       }
       else
       {
+        $socket=$newHandle;
         my $message=<$socket>;
         if (!defined($message))
         {
           logmsg('W', "Client closed socket");
+ 	  for (my $i=0; $i<scalar(@sockets); $i++)
+	  {
+	    splice @sockets, $i, 1    if $sockets[$i]==$socket;
+	  }
           $select->remove($socket);
           $socket->close();
-          $connectedFlag=0;
-
-	  # Now that the client closed down, we can reopen the listener
-          $sockServer = new IO::Socket::INET(
-	      Type=>SOCK_STREAM,
-              Reuse=>1, Listen => 1,
-              LocalPort => $port) ||
-                   error("Could not create local socket on port $port");
-          print "Server socket re-opened on port $port\n"    if $debug & 64;
-	  $select=new IO::Select($sockServer);
         }
         else
         {
   	  print "Received: $message"    if $debug & 64;
-	  last   if $message=~/exit/i;
         }
       }
     }
@@ -2412,8 +2491,7 @@ for (; $count!=0 && !$doneFlag; $count--)
     }
 
     # About the same overhead to invoke ipmitool twice but much less elapsed time.
-    getExec(3, "$Ipmitool -c -S $IpmiCache sdr type fan", 'ipmi');
-    getExec(3, "$Ipmitool -c -S $IpmiCache sdr type temp", 'ipmi');
+    getExec(3, "$Ipmitool -c -S $IpmiCache exec $ipmiExec", 'ipmi');
     $counted3=0;
   }
 
@@ -2464,11 +2542,12 @@ else
 record(1, sprintf(">>> %.3f <<<\n", $fullTime))               if $recFlag0;
 record(1, sprintf(">>> %.3f <<<\n", $fullTime), undef, 1)     if $recFlag1;
 
-# close logs cleanly and turn echo back on because in -M1 we turned it off.
+# close logs cleanly and turn echo back on because when 'brief' we turned it off.
 closeLogs();
 unlink $PidFile       if $daemonFlag;
 `stty echo`           if !$PcFlag && $termFlag;
 printf("%c[r", 27)    if $numTop && $userSubsys ne '';
+printf "%c[%d;H\n", 27, $scrollEnd+$numTop+2    if $numTop;
 logmsg("I", "Terminating...");
 logsys("Terminating...");
 
@@ -2511,7 +2590,7 @@ sub preprocSwitches
 #        require to change command options
 sub preprocessPlayback
 {
-  my $filespec=shift;
+  my $playbackref=shift; 
   my ($selected, $header, $i);
   my ($lastPrefix, $thisSubSys, $thisInterval, $mergedInterval);
   my ($lastSubSys, $lastSubOpt, $lastNfs, $lastLustreConfig, $lastLustreSubSys);
@@ -2521,7 +2600,7 @@ sub preprocessPlayback
   $selected=0;
   $configChange=0;
   $lastPrefix=$lastLustreConfig=$mergedInterval="";
-  while ($file=glob($playback))
+  foreach $file (@$playbackref)
   {
     print "Preprocessing: $file\n"    if $debug & 2048;
 
@@ -2788,15 +2867,8 @@ sub checkSubsysOpts
 {
   error("you cannot mix --slabopts with --top")  if $slabOpts ne '' && $topSlabFlag;
   error("invalid slab option in '$slabOpts'")    if $slabOpts ne '' && $slabOpts!~/^[sS]+$/;
-  error("invalid env option in '$envOpts")       if $envOpts ne ''  && $envOpts!~/^[ftM]+$/;
-
-  # When in playback, $nfsOpts is set to header values and we don't know what
-  # the user typed (not do we care)
-  if ($nfsOpts ne '' && $playback eq '')
-  {
-    error("--nfsopts does not apply to -P")   if $plotFlag;
-    error("--nfsopts only applies to nfs")    if $subsys!~/f/i;
-  }
+  error("invalid env option in '$envOpts")       if $envOpts ne ''  && $envOpts!~/^[cftM]+$/;
+  error("--nfsopts only applies to nfs")         if $nfsOpts ne ''  && $subsys!~/f/i;
 
   if ($procOpts ne '')
   {
@@ -3472,6 +3544,15 @@ sub newLog
 
   if ($rawFlag)
   {
+    # on subsequent file creates (this is new for V3.1.3) write a terminating time
+    # stamp, noting this will be the SAME starting timestamp of the new file.
+    if (!$firstPass)
+    {
+      my $fullTime=sprintf("%d.%06d", $intSeconds, $intUsecs);
+      record(1, sprintf(">>> %.3f <<<\n", $fullTime))               if $recFlag0;
+      record(1, sprintf(">>> %.3f <<<\n", $fullTime), undef, 1)     if $recFlag1;
+    }
+
     # In some cases, such as when using --rawtoo (and other situations as well),
     # the default filename may only have a datestamp put time back in.
     my $rawFilename=$filename;
@@ -3518,7 +3599,7 @@ sub newLog
 	logmsg("F", "Couldn't open '$filename.tab.gz'")       if $zFlag;
       open $LOG, "$mode$filename.tab"  or
 	logmsg("F", "Couldn't open '$filename.tab'")          if !$zFlag;
-      $headersPrinted=$headersPrintedProc=0;
+      $headersPrintedProc=$headersPrintedSlab=0;
     }
 
     open BLK, "$mode$filename.blk" or 
@@ -4054,18 +4135,16 @@ sub setFlags
 
 sub getSeconds
 {
-  my $datetime=shift;
+  my $date=shift;
+  my $time=shift;
   my ($year, $mon, $day, $hh, $mm, $ss, $seconds);
 
-  # missing 'seconds' field?
-  $datetime.=":00"    if length($datetime)<15;
-
-  $year=substr($datetime, 0,  4);
-  $mon= substr($datetime, 4,  2);
-  $day= substr($datetime, 6,  2);
-  $hh=  substr($datetime, 9,  2);
-  $mm=  substr($datetime, 12, 2);
-  $ss=  substr($datetime, 15, 2);
+  $year=substr($date, 0,  4);
+  $mon= substr($date, 4,  2);
+  $day= substr($date, 6,  2);
+  $hh=  substr($time, 0,  2);
+  $mm=  substr($time, 2, 2);
+  $ss=  substr($time, 4, 2);
 
   return(timelocal($ss, $mm, $hh, $day, $mon-1, $year-1900));
 }
@@ -4076,25 +4155,28 @@ sub checkTime
 {
   my $switch=  shift;
   my $datetime=shift;
-  my ($date, $time, $day, $mon, $year);
 
-  # Make sure format correct. minimal being HH:MM. supply date and/or ":ss"
-  $datetime.=":00"    if $datetime!~/\d{2}:\d{2}:\d{2}/;
-
-  if (length((split(/:/,$datetime))[0])!=4)
+  my $date=0;   # can't return ''
+  my $time=$datetime;
+  if (length((split(/:/,$datetime))[0])>2)
   {
-    ($day, $mon, $year)=(localtime(time))[3,4,5];
-    $date=sprintf("%d%02d%02d", $year+1900, $mon+1, $day);
-    $datetime="$date:$datetime";
+    $datetime=~s/^(\d+):?(.*)//;
+    $date=$1;
+    $time=$2;
   }
+  $time=($switch eq '--from') ? '00:00:00' : '23:59:59'    if $time eq '';
+  error("Date portion of $switch must be exactly 8 digits")
+      if $date!=0 && length($date)!=8;
 
-  error("'$switch' must be in [yyyymmdd:]hh:mm[:ss] format")
-      if ($datetime=~/-/ && $datetime!~/\d{8}:\d{2}:\d{2}:\d{2}/);
+  # Make sure time format correct. minimal being HH:MM. supply date and/or ":ss"
+  $time="0$time"    if $time=~/^\d{1}:/;
+  $time.=":00"      if $time!~/^\d{2}:\d{2}:\d{2}$/;
+  error("$switch time format must be hh:mm[:ss]")    if ($time!~/^\d{2}:\d{2}:\d{2}$/);
 
-  ($date, $hh, $mm, $ss)=split(/:/, $datetime);
-  error("time portion of '$switch' incomplete")    if !defined($ss);
-  error("'$switch' specifies invalid date")        if length($date)!=8;
-  error("'$switch' specifies invalid time")        if ($hh>23 || $mm >59 || $ss>59);
+  ($hh, $mm, $ss)=split(/:/, $time);
+  error("$switch specifies invalid time")    if ($hh>23 || $mm >59 || $ss>59);
+
+  return(($date,"$hh$mm$ss"));
 }
 
 sub checkHiRes
@@ -4308,6 +4390,7 @@ sub loadConfig
       $resizePath=$value       if $param=~/^Resize/;
       $ipmitoolPath=$value     if $param=~/^Ipmitool/;
       $IpmiCache=$value        if $param=~/^IpmiCache/;
+      $IpmiTypes=$value        if $param=~/^IpmiTypes/;
 
       # For Infiniband
       $PCounter=$value         if $param=~/^PCounter/;
@@ -4345,7 +4428,7 @@ sub loadConfig
   logmsg('I', "Couldn't find 'resize' so assuming terminal height of 24")
       if $Resize eq '';
 
-  # Just in case using an older collectl.conf file.  Only a problem is
+  # Just in case using an older collectl.conf file.  Only a problem if
   # someone wants to collect IPMI data.
   if (!defined($ipmitoolPath))
   {
@@ -4986,12 +5069,12 @@ Various types of help
   -h, --help                  print this text
   -v, --version               print version
   -V, --showdefs              print operational defaults
-  -x, --helpextend            extended help, more details descritions too
+  -x, --helpextend            extended help, more details descriptions too
   -X, --helpall               shows all help concatenated together
 
   --showoptions               show all the options
   --showsubsys                show all the subsystems
-  --showsubopts               show all substem specific options
+  --showsubopts               show all subsystem specific options
   --showtopopts               show --top options
 
   --showheader                show file header that 'would be' generated
@@ -5190,10 +5273,11 @@ Options typically effect the type of data collectl and filters effect the way
 it is displayed.  In the case of lustre there are also 'services'
 
 Environmental
-  --envopts [def=ft]
+  --envopts [def=cft]
+      c - display current data
       f - display fan data
       t - display temperature data
-      M - display data on multiple lines (useful when too much to see on 1 line)
+      M - display data on multiple lines (useful when too much data)
 
   The following are for those needed to develop/debug remapping rules.
   See online documentation OR Ipmi.html in docs/

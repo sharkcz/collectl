@@ -185,7 +185,8 @@ sub sexprRaw
   {
     $memString= "$pad(meminfo (memtot $memTot) (memused $memUsed) (memfree $memFree) ";
     $memString.="(memshared $memShared) (membuf $memBuf) (memcached $memCached) ";
-    $memString.="(memslab $memSlab) (memmap $memMap))\n";
+    $memString.="(memslab $memSlab) (memmap $memMap) ";
+    $memString.="(swaptot $swapTotal) (swapused $swapUsed))\n";
   }
 
   my $netSumString=$netDetString='';
@@ -264,6 +265,22 @@ sub sexprRaw
     $intString="$pad(iconnect (intkbin $kbInT) (intpktin $pktInT) (intkbout $kbOutT) (intpktout $pktOutT))\n";
   }
 
+  my $envDetString='';
+  if ($subsys=~/E/i)
+  {
+    foreach $key (sort keys %$ipmiData)
+    {
+      $envDetString.="(env$key";
+      for (my $i=0; $i<scalar(@{$ipmiData->{$key}}); $i++)
+      {
+        my $name=$ipmiData->{$key}->[$i]->{name};
+        my $inst=($key!~/power/ && $ipmiData->{$key}->[$i]->{inst} ne '-1') ? $ipmiData->{$key}->[$i]->{inst} : '';
+        $envDetString.=" ($name$inst $ipmiData->{$key}->[$i]->{value})";
+      }
+      $envDetString.=")\n";
+    }
+  }
+
   # Build up as a single string
   $sexprRec='';
   $sexprRec.="(collectl_summary\n"    if $XCFlag && $sumFlag;
@@ -274,7 +291,7 @@ sub sexprRaw
 
   $sexprRec.="(collectl_detail\n"     if $XCFlag && $detFlag;
   $sexprRec.="$pad(sample (time $lastSecs))\n"    if !$sumFlag;
-  $sexprRec.="$cpuDetString$diskDetString$netDetString";
+  $sexprRec.="$cpuDetString$diskDetString$netDetString$envDetString";
   $sexprRec.=")\n"                    if $XCFlag && $detFlag;
 
   # Either send data over socket or print to terminal OR write to
@@ -427,7 +444,8 @@ sub sexprRate
   {
     $memString= "$pad(meminfo (memtot $memTot) (memused $memUsed) (memfree $memFree) ";
     $memString.="(memshared $memShared) (membuf $memBuf) (memcached $memCached) ";
-    $memString.="(memslab $memSlab) (memmap $memMap))\n";
+    $memString.="(memslab $memSlab) (memmap $memMap) ";
+    $memString.="(swaptot $swapTotal) (swapused $swapUsed))\n";
   }
 
   my $netSumString=$netDetString='';
@@ -500,6 +518,22 @@ sub sexprRate
 	$kbInT/$intSecs, $pktInT/$intSecs, $kbOutT/$intSecs, $pktOutT/$intSecs);
   }
 
+  my $envDetString='';
+  if ($subsys=~/E/i)
+  {
+    foreach $key (sort keys %$ipmiData)
+    {
+      $envDetString.="(env$key";
+      for (my $i=0; $i<scalar(@{$ipmiData->{$key}}); $i++)
+      {
+        my $name=$ipmiData->{$key}->[$i]->{name};
+        my $inst=($key!~/power/ && $ipmiData->{$key}->[$i]->{inst} ne '-1') ? $ipmiData->{$key}->[$i]->{inst} : '';
+        $envDetString.=" ($name$inst $ipmiData->{$key}->[$i]->{value})";
+      }
+      $envDetString.=")\n";
+    }
+  }
+
   $sexprRec='';
   $sexprRec.="(collectl_summary\n"    if $XCFlag && $sumFlag;
   $sexprRec.="$pad(sample (time $lastSecs))\n"    if $sumFlag;
@@ -509,7 +543,7 @@ sub sexprRate
 
   $sexprRec.="(collectl_detail\n"     if $XCFlag && $detFlag;
   $sexprRec.="$pad(sample (time $lastSecs))\n"    if !$sumFlag;
-  $sexprRec.="$cpuDetString$diskDetString$netDetString";
+  $sexprRec.="$cpuDetString$diskDetString$netDetString$envDetString";
   $sexprRec.=")\n"                    if $XCFlag && $detFlag;
 
   # Either send data over socket or print to terminal OR write to
@@ -625,7 +659,7 @@ sub sexprHeaderPrint
   if ($expDir ne '')
   {
     open  SEXPR, ">$expDir/#" or logmsg("F", "Couldn't create '$expDir/#'");
-    print SEXPR  $sexprRec;
+    print SEXPR  $sexprHdr;
     close SEXPR;
   }
 }

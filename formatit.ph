@@ -237,7 +237,7 @@ sub initRecord
               logmsg('W', "Couldn't find 'ofed_info'.  Won't be able to determine OFED version")
 	          if $OfedInfo eq '';
             }
-            $IBVersion=(`$OfedInfo|head -n1`=~/OFED-(.*)/) ? $1 : '???';
+            $IBVersion=($OfedInfo ne '' && `$OfedInfo|head -n1`=~/OFED-(.*)/) ? $1 : '???';
 	    print "OFED V$IBVersion\n"    if $debug & 2;
 	  }
         }
@@ -257,12 +257,13 @@ sub initRecord
     # where it may not always catch exception, one can override checking in .conf
     if ($IbDupCheckFlag && $mellanoxFlag)
     {
+      my $myppid=getppid();
       $command="$Ps axo pid,cmd | $Grep collectl | $Grep -vE 'grep|ssh'";
       foreach my $line (`$command`)
       {
         $line=~s/^\s+//;    # some pids have leading white space
         my ($pid, $procCmd)=split(/ /, $line, 2);
-        next    if $pid==$$;
+        next    if $pid==$$ || $pid==$myppid;   # check ppid in case started by a script
 
         # There are just too many ways one can specify the subsystems whether it's
         # overriding the DaemonCommands or SubsysCore in collectl.conf, using an
@@ -360,8 +361,28 @@ sub initRecord
       logmsg('I', "Initialized ipmitool cache file '$IpmiCache'");
       my $command="$Ipmitool sdr dump $IpmiCache";
       `$command`;
+
+      # Create 'exec' option file in save directory as cache, but only for
+      # those options that actually return data
+      my $cacheDir=dirname($IpmiCache);
+      $ipmiExec="$cacheDir/collectl-ipmiexec";
+      if (open EXEC, ">$ipmiExec")
+      {
+        foreach my $type (split(/,/, $IpmiTypes))
+        {
+      	  my $command="$Ipmitool -S $IpmiCache sdr type $type";
+          next    if `$command` eq '';
+          print EXEC "sdr type $type\n";
+        }
+        close EXEC;
+      }
+      else
+      {
+        $message="Couldn't create '$ipmiExec'";
+      }
     }
-    else
+
+    if ($message ne '')
     {
       logmsg("W", "$message so -sE disabled");
       $subsys=~s/E//;
@@ -614,7 +635,7 @@ sub initFormat
   my ($day, $mon, $year, $i, $recsys, $host);
   my ($version, $datestamp, $timestamp, $interval);
 
-  $headersPrinted=$procAnalCounter=0;
+  $procAnalCounter=0;
 
   $temp=(defined($playfile)) ? $playfile : '';
   print "initFormat($temp)\n"    if $debug & 1;
@@ -1063,89 +1084,6 @@ sub initFormat
   initLustre('c',  0, $NumLustreFS);
   initLustre('c2', 0, $NumLustreCltOsts)    if $NumLustreCltOsts ne '-';
 
-  #    I n i t i a l i z e    ' L a s t '    V a r i a b l e s
-
-  # Since dynamically defined need to start clean.
-  undef(%intrptType);
-
-  $ctxtLast=$intrptLast=$procLast=0;
-  $rpcCallsLast=$rpcBadAuthLast=$rpcBadClntLast=0;
-  $rpcRetransLast=$rpcCredRefLast=0;
-  $nfsPktsLast=$nfsUdpLast=$nfsTcpLast=$nfsTcpConnLast=0;
-  $pageinLast=$pageoutLast=$swapinLast=$swapoutLast=0;
-  $opsLast=$readLast=$readKBLast=$writeLast=$writeKBLast=0;
-
-  for ($i=0; $i<18; $i++)
-  {
-    $nfs2ValuesLast[$i]=0;
-  }
-
-  for ($i=0; $i<22; $i++)
-  {
-    $nfsValuesLast[$i]=0;
-  }
-
-  for ($i=0; $i<=$NumCpus; $i++)
-  {
-    $userLast[$i]=$niceLast[$i]=$sysLast[$i]=$idleLast[$i]=0;
-    $waitLast[$i]=$irqLast[$i]=$softLast[$i]=$stealLast[$i]=0;
-  }
-
-  # ...and disks
-  for ($i=0; $i<$NumDisks; $i++)
-  {
-    $dskOpsLast[$i]=0;
-    $dskReadLast[$i]=$dskReadKBLast[$i]=$dskReadMrgLast[$i]=$dskReadTicksLast[$i]=0;
-    $dskWriteLast[$i]=$dskWriteKBLast[$i]=$dskWriteMrgLast[$i]=$dskWriteTicksLast[$i]=0;
-    $dskInProgLast[$i]=$dskTicksLast[$i]=$dskWeightedLast[$i]=0;
-
-    # 2.6 kernel uses @dskFieldslast
-    for ($j=0; $j<11; $j++)
-    {
-      $dskFieldsLast[$i][$j]=0;
-    }
-  }
-
-  for ($i=0; $i<$NumNets; $i++)
-  {
-    $netRxKBLast[$i]=$netRxPktLast[$i]=$netTxKBLast[$i]=$netTxPktLast[$i]=0;
-    $netRxErrLast[$i]=$netRxDrpLast[$i]=$netRxFifoLast[$i]=$netRxFraLast[$i]=0;
-    $netRxCmpLast[$i]=$netRxMltLast[$i]=$netTxErrLast[$i]=$netTxDrpLast[$i]=0;
-    $netTxFifoLast[$i]=$netTxCollLast[$i]=$netTxCarLast[$i]=$netTxCmpLast[$i]=0;
-  }
-
-  $NumTcpFields=65;
-  for ($i=0; $i<$NumTcpFields; $i++)
-  {
-    $tcpLast[$i]=0;
-  }
-
-  # and interconnect
-  for ($i=0; $i<$NumXRails; $i++)
-  {
-    $elanSendFailLast[$i]=$elanNeterrAtomicLast[$i]=$elanNeterrDmaLast[$i]=0;
-    $elanRxLast[$i]=$elanRxMBLast[$i]=$elanTxLast[$i]=$elanTxMBLast[$i]=0;
-    $elanPutLast[$i]=$elanPutMBLast[$i]=$elanGetLast[$i]=$elanGetMBLast[$i]=0;
-    $elanCompLast[$i]=$elanCompMBLast[$i]=0;
-  }
-
-  # IB
-  for ($i=0; $i<$NumHCAs; $i++)
-  {
-    for ($j=0; $j<16; $j++)
-    {
-      # There are 2 ports on an hca, numbered 1 and 2
-      $ibFieldsLast[$i][1][$j]=$ibFieldsLast[$i][2][$j]=0;
-    }
-  }
-
-  # slabs
-  for ($i=0; $i<$NumSlabs; $i++)
-  {
-    $slabObjActLast[$i]=$slabObjAllLast[$i]=0;
-    $slabSlabActLast[$i]=$slabSlabAllLast[$i]=0;
-  }
-
   #    I n i t    ' C o r e '    V a r i a b l e s
 
   # when we're generating plot data and we're either not collecting
@@ -1189,13 +1127,16 @@ sub initFormat
   $nfsFsinfo=$nfsPathconf=$nfsCommit=$nfsMeta=0;
 
   # tcp - just do them all!
+  $NumTcpFields=65;
   for ($i=0; $i<$NumTcpFields; $i++)
   {
     $tcpValue[$i]=0;
   }
 
-  # finally get ready to process first interval.
-  $lastSecs=$intFirstSeen=0;
+  # get ready to process first interval noting '$lastSecs' gets initialized 
+  # when the data file is read in playback mode
+  $lastSecs=0    if $playback eq '';
+  $intFirstSeen=0;
   initInterval();
 
   #    I n i t    ' E x t e n d e d '    V a r i a b l e s
@@ -1295,6 +1236,90 @@ sub initFormat
 
   return(($version, $datestamp, $timestamp, $timesecs, $timezone, $interval, $recSubsys))
     if defined($playfile);
+}
+
+#    I n i t i a l i z e    ' L a s t '    V a r i a b l e s
+sub initLast
+{
+  # Since dynamically defined need to start clean.
+  undef(%intrptType);
+
+  $ctxtLast=$intrptLast=$procLast=0;
+  $rpcCallsLast=$rpcBadAuthLast=$rpcBadClntLast=0;
+  $rpcRetransLast=$rpcCredRefLast=0;
+  $nfsPktsLast=$nfsUdpLast=$nfsTcpLast=$nfsTcpConnLast=0;
+  $pageinLast=$pageoutLast=$swapinLast=$swapoutLast=0;
+  $opsLast=$readLast=$readKBLast=$writeLast=$writeKBLast=0;
+
+  for ($i=0; $i<18; $i++)
+  {
+    $nfs2ValuesLast[$i]=0;
+  }
+
+  for ($i=0; $i<22; $i++)
+  {
+    $nfsValuesLast[$i]=0;
+  }
+
+  for ($i=0; $i<=$NumCpus; $i++)
+  {
+    $userLast[$i]=$niceLast[$i]=$sysLast[$i]=$idleLast[$i]=0;
+    $waitLast[$i]=$irqLast[$i]=$softLast[$i]=$stealLast[$i]=0;
+  }
+
+  # ...and disks
+  for ($i=0; $i<$NumDisks; $i++)
+  {
+    $dskOpsLast[$i]=0;
+    $dskReadLast[$i]=$dskReadKBLast[$i]=$dskReadMrgLast[$i]=$dskReadTicksLast[$i]=0;
+    $dskWriteLast[$i]=$dskWriteKBLast[$i]=$dskWriteMrgLast[$i]=$dskWriteTicksLast[$i]=0;
+    $dskInProgLast[$i]=$dskTicksLast[$i]=$dskWeightedLast[$i]=0;
+
+    # 2.6 kernel uses @dskFieldslast
+    for ($j=0; $j<11; $j++)
+    {
+      $dskFieldsLast[$i][$j]=0;
+    }
+  }
+
+  for ($i=0; $i<$NumNets; $i++)
+  {
+    $netRxKBLast[$i]=$netRxPktLast[$i]=$netTxKBLast[$i]=$netTxPktLast[$i]=0;
+    $netRxErrLast[$i]=$netRxDrpLast[$i]=$netRxFifoLast[$i]=$netRxFraLast[$i]=0;
+    $netRxCmpLast[$i]=$netRxMltLast[$i]=$netTxErrLast[$i]=$netTxDrpLast[$i]=0;
+    $netTxFifoLast[$i]=$netTxCollLast[$i]=$netTxCarLast[$i]=$netTxCmpLast[$i]=0;
+  }
+
+  for ($i=0; $i<$NumTcpFields; $i++)
+  {
+    $tcpLast[$i]=0;
+  }
+
+  # and interconnect
+  for ($i=0; $i<$NumXRails; $i++)
+  {
+    $elanSendFailLast[$i]=$elanNeterrAtomicLast[$i]=$elanNeterrDmaLast[$i]=0;
+    $elanRxLast[$i]=$elanRxMBLast[$i]=$elanTxLast[$i]=$elanTxMBLast[$i]=0;
+    $elanPutLast[$i]=$elanPutMBLast[$i]=$elanGetLast[$i]=$elanGetMBLast[$i]=0;
+    $elanCompLast[$i]=$elanCompMBLast[$i]=0;
+  }
+
+  # IB
+  for ($i=0; $i<$NumHCAs; $i++)
+  {
+    for ($j=0; $j<16; $j++)
+    {
+      # There are 2 ports on an hca, numbered 1 and 2
+      $ibFieldsLast[$i][1][$j]=$ibFieldsLast[$i][2][$j]=0;
+    }
+  }
+
+  # slabs
+  for ($i=0; $i<$NumSlabs; $i++)
+  {
+    $slabObjActLast[$i]=$slabObjAllLast[$i]=0;
+    $slabSlabActLast[$i]=$slabSlabAllLast[$i]=0;
+  }
 }
 
 # when playing back lustre data, the indexes on the detail stats may be shifted 
@@ -1563,12 +1588,10 @@ sub intervalEnd
   # fields as they're read but NOT process them
   return()    if $debug & 32;
 
-  # we need to know how long the interval was (integer for now, but this is the
-  # place to handle finer grained time if we change our mind)
-  # note that during development/testing, it's sometimes useful to set the
-  # interval to 0 to simulate a day's processing.  however, we can't use 0 in
-  # calculations.
-  $lastSecs=$seconds    if !$intFirstSeen;
+  # we need to know how long the interval was, noting that when testing with -i0 we
+  # can't divide by 0 and so set the interval to 1 to make it work even though the
+  # numbers will be bogus.  NOTE in interactive mode, first pass through '$lastSecs'
+  # is 0, but that's ok because we don't generate any output
   $intSecs= $seconds-$lastSecs;
   $intSecs=1            if $options=~/n/ || !$intSecs;
   $lastSecs=$seconds;
@@ -1589,8 +1612,9 @@ sub intervalEnd
     $lastInt2Secs=$seconds;
   }
 
-  # the first interval only provides baseline data and so never call print
-  intervalPrint($seconds)           if $intFirstSeen;
+  # during interactive processing, the first interval only provides baseline data
+  # and so never call print
+  intervalPrint($seconds)           if $playback ne '' || $intFirstSeen;
 
   # need to reinitialize all relevant variables at end of each interval.
   initInterval();
@@ -1619,7 +1643,7 @@ sub dataAnalyze
   # if user requested -sd, we had to force -sc so we can get 'jiffies'
   # NOTE - 2.6 adds in wait, irq and softIrq.  2.6 disk stats also need
   # cpu to get jiffies for micro calculations
-  if ($type=~/^cpu/ && $subsys=~/c|d|p/i)
+  if ($type=~/^cpu/ && $subsys=~/c|d/i)
   {
     $type=~/^cpu(\d*)/;   # can't do above because second "~=" kills $1
     $cpuIndex=($1 ne "") ? $1 : $NumCpus;    # only happens in pre 1.7.4
@@ -2177,9 +2201,9 @@ sub dataAnalyze
 	    if $premap ne $fields[0] && $envDebug;
     }
 
-    # matches: Virtual Fan | Fan n | Fans | xxx FANn
+    # matches: Virtual Fan | Fan n | Fans | xxx FANn | Power Meter
     # Not really sure why I need the '\s*' but it won't work without it!
-    if ($fields[0]=~/^(.*)(fan.*?|temp.*?)\s*(\d*)(.*)$/i)
+    if ($fields[0]=~/^(.*)(fan.*?|temp.*?|power meter.*?)\s*(\d*)(.*)$/i)
     {
       $prefix=  defined($1) ? $1 : '';
       $name=$2;
@@ -2188,11 +2212,15 @@ sub dataAnalyze
       printf "  Prefix: %s  Name: %s  Instance: %s  Suffix: %s\n",
 		$prefix, $name, $instance, $suffix    if $envDebug;
 
-      $type=($name=~/fan/i) ? 'fan' : 'temp';
+      $name=~s/Power Meter/Power/;
+      $type='fan'      if $name=~/fan/i;
+      $type='temp'     if $name=~/temp/i;
+      $type='power'    if $name=~/power/i;
       $name=~s/\s+$//;
 
       # If a pattern such as 'Fan1A (xxx)', the suffix will actually be set to '1 (xxx)' so
       # make 'xxx' the prefix and everything after the '1' will be dropped later anyway
+      # Power doesn't have a prefix, at least I haven't found any that do yet.
       $prefix=$1    if $fields[0]=~/(^fan|^temp)/i && $suffix=~/\((.*)\)/;
 
       # If an instance, append the first 'word' of the suffix as a modifier
@@ -2229,7 +2257,10 @@ sub dataAnalyze
 	    if $name=~s/$f1/$f2/ && $envDebug;
       }
 
-      my $index=($type eq 'fan') ? $envFanIndex++ : $envTempIndex++;
+      my $index;
+      $index=$envFanIndex++     if $type eq 'fan';
+      $index=$envTempIndex++    if $type eq 'temp';
+      $index=0                  if $type eq 'power';
       $ipmiData->{$type}->[$index]->{name}=  $name;
       $ipmiData->{$type}->[$index]->{inst}=  $instance;
       $ipmiData->{$type}->[$index]->{value}= ($fields[1]!~/h$/) ? $fields[1] : $fields[3];
@@ -3418,9 +3449,11 @@ sub printHeaders
     {
       for (my $i=0; $i<scalar(@{$ipmiData->{$key}}); $i++)
       {
-        my $name=  $ipmiData->{$key}->[$i]->{name};
-        my $inst=  $ipmiData->{$key}->[$i]->{inst};
-        $envHeaders.=sprintf("[ENV:$name%s]%s$SEP", ($inst ne '-1') ? $inst : '', $key=~/fan/ ? 'Speed' : 'Temp');
+        my $name=$ipmiData->{$key}->[$i]->{name};
+        my $inst=($key!~/power/ && $ipmiData->{$key}->[$i]->{inst} ne '-1') ? $ipmiData->{$key}->[$i]->{inst} : '';
+        $envHeaders.=sprintf("[ENV:$name$inst]Speed$SEP")   if $key=~/fan/;
+        $envHeaders.=sprintf("[ENV:$name$inst]Temp$SEP")    if $key=~/temp/;
+        $envHeaders.=sprintf("[ENV:$name]Watts$SEP")        if $key=~/power/;
       }
     }
     writeData(0, $ch, \$envHeaders, ENV, $ZENV, 'env', \$headersAll);
@@ -3649,8 +3682,8 @@ sub intervalPrint
 
   printPlot($seconds, $usecs)     if  $plotFlag && $tempSubsys ne '';
   printTerm($seconds, $usecs)     if !$plotFlag && $expName eq '';
-  procAnalyze($seconds, $usecs)   if  $procAnalFlag && $interval2Print;  # only if process data seen
-  slabAnalyze($seconds, $usecs)   if  $slabAnalFlag && $interval2Print;  # only if slab data seen
+  procAnalyze($seconds, $usecs)   if  $procAnalFlag && $interval2Print;
+  slabAnalyze($seconds, $usecs)   if  $slabAnalFlag && $interval2Print;
   &$expName($expOpts)             if  $expName ne '';
 }
 
@@ -4277,7 +4310,7 @@ sub writeData
     print "$datetime$$strall\n";
   }
 
-  if ($sockFlag && $connectedFlag)
+  if ($sockFlag && scalar(@sockets))
   {
     # If a data line, preface with timestamp
     $$strall="$datetime$$strall"    if $strall!~/^#/;
@@ -4286,21 +4319,26 @@ sub writeData
     # with hostname and write to socket
     $$strall=~s/^(.*)$/$Host $1/mg    if !$serverFlag;
 
+    # we need to write to each listening socket, though there are probably rarely
+    # more than 1
     $$strall.="\n";
-    my $length=length($$strall);
-    for (my $offset=0; $offset<$length;)
+    foreach my $socket (@sockets)
     {
-      # Note - if there is a socket write error, writeData returns 0, but we're
-      # exiting this routine anyway and since '$doneFlag' is hopefully set because
-      # of a broken socket, the calling routines should exit cleanly.
-      my $bytes=syswrite($socket, $$strall, $length, $offset);
-      if (!defined($bytes))
+      my $length=length($$strall);
+      for (my $offset=0; $offset<$length;)
       {
-        logmsg('E', "Error '$!' writing to socket");
-        return(0);
+        # Note - if there is a socket write error, writeData returns 0, but we're
+        # exiting this routine anyway and since '$doneFlag' is hopefully set because
+        # of a broken socket, the calling routines should exit cleanly.
+        my $bytes=syswrite($socket, $$strall, $length, $offset);
+        if (!defined($bytes))
+        {
+          logmsg('E', "Error '$!' writing to socket");
+          return(0);
+        }
+        $offset+=$bytes;
+        $length-=$bytes;
       }
-      $offset+=$bytes;
-      $length-=$bytes;
     }
   }
   return(1);
@@ -5261,8 +5299,9 @@ sub printTerm
     my $keyCounter=0;
     foreach $key (sort keys %$ipmiData)
     {
-      next    if $key=~/fan/  && $envOpts!~/f/;
-      next    if $key=~/temp/ && $envOpts!~/t/;
+      next    if $key=~/fan/   && $envOpts!~/f/;
+      next    if $key=~/temp/  && $envOpts!~/t/;
+      next    if $key=~/power/ && $envOpts!~/c/;
 
       $keyCounter++;
       if ($keyCounter==1 || $envOpts=~/M/)
@@ -5424,15 +5463,10 @@ sub printTerm
     }
   }
 
-  if ($subsys=~/Y/ && $interval2Print)
-  {
-    printTermSlab();
-  }
-
-  if ($subsys=~/Z/ && $interval2Print)
-  {
-    printTermProc();
-  }
+  # Since slabs/processes both report rates, we need to skip first printable interval
+  # unless we're doing consecutive files
+  printTermSlab()    if $subsys=~/Y/ && $interval2Print && (!$firstTime2 || $consecutiveFlag);
+  printTermProc()    if $subsys=~/Z/ && $interval2Print && (!$firstTime2 || $consecutiveFlag);
 
   # in --top mode we might have junk in the rest of the display when processes come/go
   # so clear from the current location to the end of the display and reset $clscr so
@@ -5618,8 +5652,7 @@ sub printTermSlab
 
 sub printTermProc
 {
-    # given the rearranged way the interval counters now work in filtering mode, if
-    # a process is discovered AFTER we start, this routine gets called called the first
+    # if a process is discovered AFTER we start, this routine gets called called the first
     # time a process is seen and '$interval2Secs' will be 0!  In that one special case
     # we need to wait for the next interval before printing.
     return    if !$interval2Secs;
@@ -5998,7 +6031,10 @@ sub cvtP
   my $jiffies=shift;
   my ($secs, $percent);
 
+  # when using --from, we sometimes have not set $interval2SecsReal for the
+  # first sample so use i2 which is a good approximation
   $secs=$jiffies/$HZ;
+  $interval2SecsReal=$interval2    if $interval2SecsReal==0;
   $percent=sprintf("%3d", 100*$secs/$interval2SecsReal);
   return($percent);
 }
@@ -6013,22 +6049,25 @@ sub printText
 
   # just like in writeData, we need to make sure each line preceed
   # with host name if not in server mode.
-  if ($sockFlag && $connectedFlag)
+  if ($sockFlag && scalar(@sockets))
   {
     $text=~s/^(.*)$/$Host $1/mg    if !$serverFlag;
 
     $text.=">>><<<\n"    if defined($eol);
-    my $length=length($text);
-    for (my $offset=0; $offset<$length;)
+    foreach my $socket (@sockets)
     {
-      my $bytes=syswrite($socket, $text, $length, $offset);
-      if (!defined($bytes))
+      my $length=length($text);
+      for (my $offset=0; $offset<$length;)
       {
-        logmsg('E', "Error '$!' writing to socket");
-        last;
+        my $bytes=syswrite($socket, $text, $length, $offset);
+        if (!defined($bytes))
+        {
+          logmsg('E', "Error '$!' writing to socket");
+          last;
+        }
+        $offset+=$bytes;
+        $length-=$bytes;
       }
-      $offset+=$bytes;
-      $length-=$bytes;
     }
   }
 }
@@ -6948,7 +6987,7 @@ sub procAnalyze
   my ($vmSize, $vmLck, $vmRSS, $vmData, $vmStk, $vmLib, $vmExe);
   my ($rkb, $wkb, $rkbc, $wkbc, $rsys, $wsys, $cncl);
 
-  # Would have been nice to use $interval2Counter, but that only increments when
+  # Would have been nice to use $interval2Counter, but that only increments
   # during terminal output.
   $procAnalCounter++;
 

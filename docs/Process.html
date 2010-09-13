@@ -61,8 +61,11 @@ delimited data, one process per line.
 <p>
 <h3>Options</h3>
 As stated earlier, you can specify options specific to process monitoring.  These
-apply to all forms of process output unless otherwise noted.
+apply to all forms of process output unless otherwise noted, including <i>--top</i>
+and <i>--procanalyze</i>
 <ul>
+<li>c: include cpu times of children who have exited with their parent</li>
+<li>f: use cumulative totals for maj/min page faults</li>
 <li>i: Show alternate format which includes <i>all</i> io counters</li>
 <li>m: Show alternate format which includes <i>all</i> memory sizes</li>
 <li>p: Never look for new pids or threads after startup (improves performance)</li>
@@ -310,6 +313,128 @@ the process and other data, you can change the size of the process section
 by including the number of lines to display as the second argument to 
 <i>--top</i>.  You can also control the size of the subsystem data with
 <i>--hr lines</i>, a synonym for <i>--headerrpeat lines</i>.
+
+<p>
+<h3>Experimental <i>--export proctree</i></h3>
+This is an experimental (meaning subject to change) alternate format for displaying
+process data.  Rather than simply show processes in the defaut PID order or sorted 
+by a particular field when using the --top format, this format displays processes
+in a parent/child relationship.  As with all <i>--export</i> formats, one can use 
+this interactively, when playing
+back data or to send the data over a socket when using <i>--address</i>.
+At the very least, this could offer a good
+starting point for developing your own alternative process output formats.
+<p>
+There are actually 2 main functional components to this format, the main one 
+being to determine the parent child relationship between all processes (there IS 
+some additional overhead involved here).  A second function is the aggregation of
+various counters and meters.  
+<p>
+Proctree can also be combined with --top to limit the number of processes display OR
+in playback mode with or without --top.  Consider the following output when playing 
+back a file with <i>--top --export proctree</i>:
+
+<div class=terminal-wide14>
+<pre>
+#  PID       PPID User     PR S   VSZ   RSS CP  SysT  UsrT Pct  AccuTime MajF MinF Command
+00001           0 root     15 S    2G  108M  0  0.03  0.03   0   0:18.21    0    0 init
+ 05535          1 root     15 R  106M   15M  2  0.01  0.03   0   0:07.68    0    0  /usr/bin/perl
+ 05452          1 haldaemo 15 S   85M    7M  1  0.02  0.00   0   0:06.99    0    0  hald
+  05453      5452 root     15 S   55M    3M  0  0.02  0.00   0   0:05.42    0    0   hald-runner
+   05474     5453 root     16 S    9M  652K  0  0.02  0.00   0   0:05.41    0    0    hald-addon-storage:
+</pre></div>
+
+One can quickly see that the total CPU consumption for this monitoring interval is 0.03 of
+both system and user time by simply looking at root process 1.  Furthermore, of the system time
+0.01 is consumed by 05535 while the other 0.02 is consumed by one of the children of 05452, actually
+the grandchild 05474.  One should also note that any processes with no CPU time will be excluded
+from the display to keep the output reasonable dense.  Without --top all processes are shown.
+<p>
+One can also use most of the process options as well (see --showsubopts for the complete set).
+<p>
+<b>Additional interactive --top options</b>
+<br>
+Proctree was really developed for real-time display with <i>--top</i> and so there are more available
+options, the main one to consider is the suppression of fields with zero in them.  In the previous
+example, fields with 0 CPU were suppressed because by default <i>--top</i> sorts by CPU (even though
+we're not sorting).  If one were to choose a different sort field with <i>--top</i>, proctree will 
+use that field to suppress entries with zero in them.  In fact, there are a number
+of different switches one can select interactively, one of which is to change the suppression
+value from 0 to something else.
+<p>
+So let's take a closer look at running in interactive mode by typing the command
+<pre>
+collectl --top --export proctree
+</pre>
+and at some time after the first data screen is displayed, type RETURN.  You will now see
+a menu like this:
+
+<div class=terminal>
+<pre>
+Enter a command and RETURN while in display mode:
+  pid    only display this pid and its children
+  a      toggle aggregation between 'on' and 'off'
+  dxx    change display hierarchy depth to xx
+  i      change display format to 'I/O'
+  k      toggle multiplication of I/O numbers by 1024 between 'on' and 'off'
+  m      change display format to 'memory'
+  p      change display format to 'process'
+  h      show this menu
+  stype  where 'type' is a valid sorting type (see --showtopopts)
+         entries with 0s in those field(s) will be skipped
+  wxx    max width for display of command arguments
+  z      toggle 'skip' logic between 'on' and 'off'
+  Zxx    when skipping, only keep entries with I/O fields > xxKB
+Press RETURN to go back to display mode...
+</pre></div>
+
+This list shows a number of <i>commands</i> which will change the display contents and/or 
+format much in the way you can do with the standard linux <i>top</i> command.  First type
+RETURN to get back into real-time display mode and then simply type
+a command at any time while collectl is running and the command will take effect on the 
+next display cycle.
+<p>
+These commands fall into several categories, one being those that <i>toggle</i> behavior 
+such as aggregation, multiplication and the skip logic.  By default, all values are
+aggregated up through their parent hierarchy and typing the a command followed by a
+RETURN will turn this
+behavior off.  Similarly, when the values of the I/O counters are too large to easily read
+you can force their division by 1K with the k command.  And finally, you can disable the
+logic that skips zero-based entries with the z command.  If you'd rather skip on some
+value other 0 you can set the skip value with Zxxx.
+<p>
+Look at the display line above the following process data:
+
+<div class=terminal-wide14>
+<pre>
+Process Tree 09:06:03 [skip when 'time'<=0 is 'on' aggr: 'on' x1024: 'off' depth 5]
+#  PID       PPID User     PR S   VSZ   RSS CP  SysT  UsrT Pct  AccuTime MajF MinF Command
+00001           0 root     15 S  674M  272M  1  0.00  0.06   6   0:09.96    0    0 init
+ 01766          1 root     15 S   50M   24M  0  0.00  0.06   6   0:01.30    0    0  /usr/sbin/sshd
+  02142      1766 root     15 S   25M   14M  1  0.00  0.06   6   0:00.88    0    0   /usr/sbin/sshd
+   02144     2142 root     15 S   18M   12M  1  0.00  0.06   6   0:00.87    0    0    -bash
+    02229    2144 root     19 R   14M   10M  0  0.00  0.06   6   0:00.84    0    0     /usr/bin/perl
+</pre></div>
+
+Following the time field you can see what the toggle states are of the three fields as well
+as the skip value and display depth.  By default you only see 5 levels of the process 
+hierarchy but can change this with the d switch.  For example d7 will set the depth to 7.
+<p>
+As with other process displays, you can also choose whether you want to see the default display, one
+that shows all I/O fields or one focused on memory using the p, i or m commands.  You can easily
+switch between these formats at any time.
+<p>
+If you enter a number as a command, this is interpretted as
+a process PID and the display will be adjusted such that this becomes the first entry in the
+display.  If you would like to skip on something other than the current field, you can easily
+change that with the s command immediately following by one of the sort field names listed with
+<i>--showtop</i>.  Finally, if using the wide command option with <i>--procopts w</i>, long command
+string will cause wrapping and make the display unreadable.  The w command can be used to set
+the maximum width of the command field.
+<p>
+As with other collectl options, there are simply far too many combinations to describe which
+are appropriate for a particular situation (such as using --procopt) so it is recommended 
+you experiment to better understand the many capabilities of <i>proctree</i>.
 <p>
 <h3>Process Analysis</h3>
 If you've run collectl as a daemon and collected process data, you now have a huge pile of

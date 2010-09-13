@@ -14,16 +14,20 @@ cp RELEASE-collectl      $BINDIR
 cp UNINSTALL             $BINDIR
 
 cp collectl.pl           $BINDIR/sbin/collectl
-cp formatit.ph lexpr.ph  $BINDIR/sbin
+cp formatit.ph           $BINDIR/sbin
+cp lexpr.ph sexpr.ph     $BINDIR/sbin
+cp vmstat.ph readS       $BINDIR/sbin
 cp collectl.conf         $BINDIR/etc
-cp sexpr.ph vmstat.ph    $BINDIR/sbin
 cp docs/*                $BINDIR/docs
 cp initd/*               $BINDIR/initd
 cp man1/*                $BINDIR/man1
 gzip $BINDIR/man1/*
 
-chmod 755 $BINDIR/sbin/collectl
+chmod 755 $BINDIR/sbin/collectl $BINDIR/sbin/readS
 chmod 755 $BINDIR/initd/collectl
+chmod 444 $BINDIR/sbin/formatit.ph $BINDIR/sbin/*expr.ph $BINDIR/sbin/vmstat.ph
+chmod 444 $BINDIR/etc/collectl.conf
+chmod 444 $BINDIR/ARTISTIC $BINDIR/COPYING $BINDIR/GPL
 
 # create symlinks
 ln -sf $BINDIR/man1/collectl.1.gz /usr/share/man/man1/collectl.1.gz
@@ -43,13 +47,13 @@ fi
 distro=1
 if [[ -f /sbin/yast ]]; then
     distro=2
-    ln -sf $BINDIR/initd/collectl-suse /etc/init.d/collectl
+    ln -sf $BINDIR/etc/init.d/collectl-suse /etc/init.d/collectl
 fi
 
 # debian
 if [[ -f /usr/sbin/update-rc.d ]]; then
     distro=3
-    ln -sf $BINDIR/initd/collectl-debian /etc/init.d/collectl
+    ln -sf $BINDIR/etc/init.d/collectl-debian /etc/init.d/collectl
     chmod +x /etc/init.d/collectl
     update-rc.d collectl defaults
 fi
@@ -63,4 +67,3 @@ fi
 if [[ ${distro} = 1 ]]; then
     ln -sf /etc/rc.d/init.d/collectl /etc/rc.d/rc5.d/K99collectl
 fi
-

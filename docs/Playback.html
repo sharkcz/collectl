@@ -1,69 +1,70 @@
 <html>
 <head>
 <link rel=stylesheet href="style.css" type="text/css">
-<title>collectl - Playback and Plot Files</title>
+<title>collectl - Playback</title>
 </head>
 
 <body>
-<center><h1>Playback and Plot Files</h1></center>
+<center><h1>Playback</h1></center>
 <p>
 <h3>Playing back one or more files</h3>
-You tell collectl to play back one or more files using <i>-p</i> following by any
-combination of one or more files separated with commas or whitespace if the
-string is quoted.  They will be played back as if a single file, with monotonically
+There are actually 2 reasons for playing back a file, one being to generate
+<a href=Plotfiles.html>plottable files</a> and the other is to simply examine
+the data in the same format as you would see if running collectl intertively.
+The following discussion applies to both cases, the only real difference is that to
+generate plot files you include the switches <i>-P</i> and <i>-f</i>.
+<p>
+You tell collectl to play back one or more files using <i>-p</i> followed by any
+combination of one or more files separated with commas or whitespace, noting you 
+may need to quote the string.  They may also contain wild-card characters, 
+The files will be played back as if a single file, with monotonically
 increasing sample numbers for each unique source system.  It should be noted
 that if these files contain samples of different subsystems the resultant
 stream will contain data elements for all, zero filling as appropriate.  When
 this occurs, a message will be displayed if -m has been specified.
-Collectl can also record them in plot format to multiple output files as appropriate.
-Filtering options such as <i>-b</i> and <i>-e</i> to specify beginning and ending times
-can also be used.
+Collectl can also convert them to plot format, writing them to multiple output files 
+as appropriate.
+Filtering options such as <i>--from</i> and <i>--thru</i> to specify beginning and 
+ending dates/times can also be used.
 <p>
-If you do choose to use a begin time switch keep several things in mind.  Collectl
-processes the files in the order specified, skipping records until it finds the
-first interval >= the begin time and reports all remaining records until it
-reaches the end time.  If files are listed out of time sequence you may end
-up reporting on data prior to the begin time.
+If you do choose to use the <i>--from</i> or <i>--thru</i> switches keep several things 
+in mind:
+<ul>
+<li>the default times are from the beginning to the end of each file</li>
+<li>the default dates, if only one is specified are 20000101 and 20380101 respectively</li>
+<li>if no dates are included, the time(s) apply to each file selected</li>
+<li>if one or more dates are specified, the times only apply to the first/last dates</li>
+</ul>
+Collectl then processes the files in the order specified, noting if multiple files are
+explicitly specified and are out of order, unexpected results may be produced.
 <p>
 Collectl always needs data from a base interval from which to begin
 calculating changes in counters and that interval is never displayed.
 Therefore when you specify a starting time, collectl attempts to read a
 sample from a previous interval.  When mulitple files are
-processed this must be repeated for each, so keep this in mind - if 2 files
-contain 4 samples each, you will only see 6 intervals.
+processed collectl is smart enough to know if they are contiguous to use the last set
+of data from one file as the base interval for the next file.  However if they are
+not configuous a new base level must be taken for the new file and its first record
+skipped.  This can be confusing and probably not even that important but consider 2
+files generated contigously:
+<ul>
+<li>If you process each file one at a time, their first samples will not be displayed</li>
+<li>If you process them in one command using a wild card for the date/time, you will see
+the first record of the second file</li>
+</ul>
+
+If you have 2 non-contiguous files you will see the same results whether you process them one
+at a time or together using a wild card, that is no first record for either.
 <p>
 Perhaps the most important thing to keep in mind is that when you play back a file,
 collectl will use the same switches as were specified during collection.  In other
-words if you collectl cpu, disk and network data using <i>-scdn</i>, when you play
+words if you collect cpu, disk and network data using <i>-scdn</i>, when you play
 it back you will get cpu, disk and network <i>summary</i> data either displayed on
 the terminal or written to a file.  However, you could just have easily chosen a
 different subsystem specification such as <i>-scND</i> in which case you'd still get
 CPU summary data but now you'd get network and disk detail data.  This feature can
 be extremely useful especially when combined with different output formatting switches
 such as <i>-o</i> and/or <i>--verbose</i>.
-
-<h3>Creation of <i>Plot Files</i> from <i>Raw Files</i></h3>
-These rules apply whether playing back one or multiple files.
-<p>
-The first thing collectl does is examine the raw file header to get the
-source host name and creation date.  There will always be a new set of data
-generated for each unique combination of host and creation date.  Note that 
-depending on the subsystems chosen there may be multiple output files generated.
-This also means a single raw file that spans multiple
-dates will result in a single set of data.
-<p>
-By default, the name of the plot file contains only the date and a test is made
-to see if a file with that name already exists.  If not, it is created in
-append mode.  This means that multiple raw data files for the same
-host on the same date will result in a single set of data.  However, if that
-file already exists, collectl will NOT process any data, and request you
-specify <i>-oc</i> to tell it to perform the first open in <i>create mode</i>
-so that subsequent files can be appended.  If you specify <i>-oa</i> 
-all files will be appended to the original one which may not be what you want.
-Collectl cannot read your mind so to be safe, be explicit.  If you want to 
-generate a unique set of data files for each raw file use <i>-ou</i>
-which causes the time to be included in file names, resulting in a unique output
-file name for each raw file.
 
 </body>
 </html>

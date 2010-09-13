@@ -267,8 +267,10 @@ This requires the -P flag as well.
 .RS
 Play back data starting with this time, which may optionally include the ending
 time as well, which is of the format of [date:]time[-[date:]time].
-The leading 0 of the hour is optional and is not specified, the seconds are 
-assumed to be 0.
+The leading 0 of the hour is optional and if the seconds field is not specified
+is assumed to be 0.  If no dates specified the time(s) apply to each file specified
+by -P.  Otherwise the time(s) only apply to the first/last dates and any files
+between those dates will have all their data reported. 
 .RE
 
 .B "--passwd filename"

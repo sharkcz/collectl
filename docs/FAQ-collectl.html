@@ -42,6 +42,7 @@
   <li><a href="#ops12">I'm getting an error that <i>formatit.ph</i> can't be found</a></li>
   <li><a href="#ops13">When I use an interval >4 seconds I'm getting non-uniform sample times</li>
   <li><a href="#ops14">I'm getting <i>settimer</i> messages on the console and in dmesg</li>
+  <li><a href="#ops15">Why is a set of process data missing during playback?</li>
 </ul>
 
 <h1>General Questions</h1>
@@ -418,6 +419,24 @@ reported this to the author of HiRes he immediately (whithin hours) release vers
 <h2>I'm getting <i>settimer</i> messages on the console and in dmesg</h2>
 This problem is actually another form of the previous one and is related to version 2.5 of
 glibc.  See more details on what this means and how to correct it <a href=HiResTime.html>here</a>.
+
+<a name="ops15"></a>
+<h2>Why is a set of process data missing during playback?</h2>
+This actually applies to slab data too.  Both types of data contain counters and in order to
+display them as rates, collectl needs to read a sample as a baselevel - that's why you see the
+<i>waiting for n second sample</i> message when collectl first starts.   This applies to
+playback too and that's why when you playback data from a file you never see the first
+sample.  Since process/slab data are usually collected at a different frequency, collectl
+has to read more intervals to get to the proper baselevel.  As an example, consider data collected
+at 00:01AM.  When you play it back, collectl is able to include processes/slabs in its baselevel
+since this data is typicall collected on an intergral minute boundary.  It will therefore start playing back non-process
+data at 00:01:10 and process data at 00:02:00.  In fact, if you play back data from 00:01:10 
+collectl reads data from the previous interval and will still report process data for 00:02:00.
+However if you play back data from 00:01:20 it will set its baselevel to 00:01:10 which does not
+contain process data and so will not report process data until 00:03:00.
+<p>
+Therefore, if you're not seeing process data for the time interval you've chosen use an earlier
+value for <i>--from</i>.
 
 </body>
 </html>

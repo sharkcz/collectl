@@ -275,8 +275,9 @@ between those dates will have all their data reported.
 
 .B "--passwd filename"
 .RS
-When playing back process data on a system other than the one it was collected on, 
-this lets you specify an alternate passwd file used to translate the UIDs.
+When reporting usernames associated with a UID, use this file for the mapping.
+This is particularly important on systems running NIS where this are no user
+names in /etc/passwd.
 .RE
 
 .B "--offsettime seconds"

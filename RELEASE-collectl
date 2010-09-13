@@ -37,6 +37,29 @@ KNOWN PROBLEMS/RESTRICTIONS
   - if a symlink is used to point to the executable, it MUST contain the full
     path or collectl will not be able to find 'formatit.ph'
 
+3.1.3-1 January 23, 2009
+  - output for '--procopts i' off by one column near accutim
+  - if RETURN entered in brief mode before 1st interval reported, ignore
+    it because we'll get a divide by 0 error
+  - add +openibd to sles startup script so collectl will start after IB
+  - fixed problem processing data from different time zones with new 
+    --from/-thru processing
+  - fatal bug in playing back process data was missed before release
+  - another fatal bug in --procanalyze.  if looking at a process which were only
+    there for a single interval, when calculating the % of cpu which takes into
+    account the process lifetime (in this case 0), you get a divide by 0 error!
+    the fix is to set the duration to 1.
+  - not all files were opened if -s specified with + and --procanal/--slabinfo
+    so added restriction against doing so
+  - when playing back interrupt data in plot format you have to include -sC and this
+    was too confusing so just silently (unless -m) adding it in and documenting in FAQ.
+  - if --slabanal or --procanal but no -sY/Z, don't write to slb or prc file
+  - allow --passwd for ALL situations since /etc/passwd not valid for NIS.  also add
+    to help output
+  - selection of task by UID wasn't working
+  - if uid can't be translated to a username, report the UID instead of ???
+  - fixed problem with divide by 0 errors if proc/slab analysis on multiple host/days
+
 3.1.2-4 January 20, 2009
   - bug fixes to handling of interval times
   - -sm --verbose needs 1 extra line with --top

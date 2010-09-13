@@ -635,8 +635,6 @@ sub initFormat
   my ($day, $mon, $year, $i, $recsys, $host);
   my ($version, $datestamp, $timestamp, $interval);
 
-  $procAnalCounter=0;
-
   $temp=(defined($playfile)) ? $playfile : '';
   print "initFormat($temp)\n"    if $debug & 1;
 
@@ -1606,8 +1604,11 @@ sub intervalEnd
   if ($interval2Print)
   {
     cleanStaleTasks()               if $ZFlag && !$pidOnly;
-    $lastInt2Secs=$lastSecs         if $lastInt2Secs==0;
-    $interval2Secs=$interval2SecsReal=$seconds-$lastInt2Secs;
+
+    # note - $interval2SecsReal never normalized
+    my $lastInt2Secs=$lastSecs      if $lastInt2Secs==0;
+    my $lastInterval=$seconds-$lastInt2Secs;
+    $interval2Secs=$interval2SecsReal=($lastInterval!=0) ? $lastInterval : $interval2;
     $interval2Secs=1                if $options=~/n/ || !$interval2Secs;
     $lastInt2Secs=$seconds;
   }
@@ -3259,8 +3260,8 @@ sub dataAnalyze
     elsif ($data=~/^Uid:\s+(\d+)/)
     { 
       $uid=$1;
-      $procUser[$i]=($playback eq '' || $passwdFile ne '') ? $UidSelector{$uid} : $uid;
-      $procUser[$i]="???"    if !defined($procUser[$i]);
+      $procUser[$i]=($passwdFile ne '') ? $UidSelector{$uid} : $uid;
+      $procUser[$i]=$uid    if !defined($procUser[$i]);
     }
   }
 }
@@ -3733,8 +3734,8 @@ sub printPlot
 
   if (!$rawtooFlag && $subsys=~/[YZ]/ && $interval2Print)
   {
-    printPlotSlab($date, $time)    if $subsys=~/Y/;
-    printPlotProc($date, $time)    if $subsys=~/Z/;
+    printPlotSlab($date, $time)    if $subsys=~/Y/ && !$slabAnalOnlyFlag;
+    printPlotProc($date, $time)    if $subsys=~/Z/ && !$procAnalOnlyFlag;
     return    if $subsys=~/^[YZ]$/;    # we're done if ONLY printing slabs or processes
   }
 
@@ -4256,7 +4257,7 @@ sub printPlot
 	if !$logToFileFlag || ($sockFlag && $export eq '');
 }
 
-# First and formost, this is ONLY used to plot data.  It will send it to the terminal,
+# First and foremost, this is ONLY used to plot data.  It will send it to the terminal,
 # a socket, a data file or a combination of socket and data file.
 # Secondly, we only call after processing a complete subsystem so in the case of
 # core ones there's a single call but for detail subsystems one per.
@@ -5692,7 +5693,7 @@ sub printTermProc
       }
       elsif ($procOpts=~/i/)
       {
-        $tempHdr= "#${tempFiller} PID  User      PPID S  SysT  UsrT Pct AccuTime   RKB   WKB  RKBC  WKBC  RSys  WSys  Cncl Command\n";
+        $tempHdr= "#${tempFiller} PID  User      PPID S  SysT  UsrT Pct  AccuTime   RKB   WKB  RKBC  WKBC  RSys  WSys  Cncl Command\n";
       }
       elsif ($procOpts=~/m/)
       {
@@ -6509,15 +6510,19 @@ sub printBrief
   }
 
   # See if user entered a command.  If not, @ready will never be
-  # non-zero so the 'if' below will never fire.
+  # non-zero so the 'if' below will never fire.  Also, if we haven't
+  # done one interval, ignore becuase $miniInstances will be 0
   @ready=$mini1select->can_read(0)    if $termFlag;
   if (scalar(@ready))
   {
     $command=<STDIN>;
-    $resetType='T';
-    $resetType=$command    if $command=~/a|t|z/i;
-    printBriefCounters($resetType);
-    resetBriefCounters()    if $resetType=~/Z/i;
+    if ($miniInstances)
+    {
+      $resetType='T';
+      $resetType=$command    if $command=~/a|t|z/i;
+      printBriefCounters($resetType);
+      resetBriefCounters()    if $resetType=~/Z/i;
+    }
   }
 
   # Minor subtlety - we want to print the totals as soon as the hot-key
@@ -7119,8 +7124,12 @@ sub printProcAnalyze
   my ($date, $timefrom, $timethru);
   foreach my $pid (keys %analyzed)
   {
-     # Date always come from 'from' field
-     ($date,$timefrom)=cvtT4($summary[$pid]->{timefrom});
+    # Date always come from 'from' field
+    ($date,$timefrom)=cvtT4($summary[$pid]->{timefrom});
+
+    # if process only ran for one interval the duration would be 0 and we can't allow that to be a divisor below.
+    my $pidDuration=$summary[$pid]->{timethru}-$summary[$pid]->{timefrom};
+    $pidDuration=1    if $pidDuration==0;
 
     # NOTE - since sys/usr times in jiffies DON'T multiply by 100
     $line=sprintf("%s$SEP%s$SEP%s$SEP%d$SEP%s$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%s$SEP%s$SEP%6.2f$SEP%s$SEP",
@@ -7145,7 +7154,7 @@ sub printProcAnalyze
 
       cvtT3($summary[$pid]->{sysT}),
       cvtT3($summary[$pid]->{usrT}),
-      ($summary[$pid]->{sysT}+$summary[$pid]->{usrT})/($summary[$pid]->{timethru}-$summary[$pid]->{timefrom})/$procAnalCounter,
+      ($summary[$pid]->{sysT}+$summary[$pid]->{usrT})/$pidDuration/$procAnalCounter,
       $summary[$pid]->{accumT});
 
     $line.=sprintf("%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP",
@@ -7166,10 +7175,13 @@ sub printProcAnalyze
   $procAnalyzed=0;
   close PRCS;
   $ZPRCS->gzclose()    if $zFlag;
+
+  $procAnalCounter=0;
 }
 
 sub slabAnalyze
 {
+  $slabAnalCounter++;
   if ($slabinfoFlag)
   {
     for (my $i=0; $i<$slabIndexNext; $i++)
@@ -7229,6 +7241,7 @@ sub printSlabAnalyze
     print SLBS $line     if !$zFlag;
     $ZSLBS->gzwrite($line) or logmsg('E', "Error writing to slbs")     if  $zFlag;
   }
+  $slabAnalCounter=0;
 }
 
 # like printPlotProc(), this only goes to .slb and we don't care about --logtoo

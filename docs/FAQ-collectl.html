@@ -43,6 +43,9 @@
   <li><a href="#ops13">When I use an interval >4 seconds I'm getting non-uniform sample times</li>
   <li><a href="#ops14">I'm getting <i>settimer</i> messages on the console and in dmesg</li>
   <li><a href="#ops15">Why is a set of process data missing during playback?</li>
+  <li><a href="#ops16">I played back all summary data with -P but got a cpu detail file.  Why?</li>
+  <li><a href="#ops17">What does this message mean: <i>-sj or -sJ with -P also requires CPU details so adding -sC</i></li>
+  <li><a href="#ops18">Why are some process usernames being reported as numbers?</li>
 </ul>
 
 <h1>General Questions</h1>
@@ -437,6 +440,29 @@ contain process data and so will not report process data until 00:03:00.
 <p>
 Therefore, if you're not seeing process data for the time interval you've chosen use an earlier
 value for <i>--from</i>.
+
+<a name="ops16"></a>
+<h2>I played back all summary data with -P but got a cpu detail file.  Why?</h2>
+This will happen when you try to convert interrupt data to plot format file.  In fact if you include
+-m you will see a <a href=FAQ-collectl.html#ops17>message</a> that this is automatically being done for you.  The basic problem is that by
+definition summary data is written in a fixed format to help ease the automated processing of the tab
+file.  However interrupt data by definition is variable since there is a counter for each CPU.  By
+forcing a CPU detail file, there is now a plce to put the interrupt data.  To get rid of the message
+simply include cpu detail when in playback mode.
+
+<a name="ops17"></a>
+<h2>What does this message mean: <i>-sj or -sJ with -P also requires CPU details so adding -sC</i></h2>
+This message is displayed whenever you try to convert interrupt data to a file in plot format and have not included
+CPU detail data as explained in the previous section.  This message is only displayed when -m is included.
+
+<a name="ops18"></a>
+<h2>Why are some process usernames being reported as numbers?</h2>
+Collectl uses the usernames from /etc/passwd to associate with a process's UID.  If it can't find that UID in
+the file there is no username to associated with it and so collectl
+will report the UID instead.  This can happen when using NIS in which case username information is stored
+remotely OR if playing back a file on a different host than where the raw data was collected.  To get around this
+problem, copy (or create) the passwd file with the correct relationships to the local system and point 
+collectl to it with <i>--passwd</i>.
 
 </body>
 </html>

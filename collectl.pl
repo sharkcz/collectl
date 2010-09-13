@@ -105,7 +105,7 @@ if ($PerlVers lt '5.08.00')
   print "See /opt/hp/collectl/docs/FAQ-collectl.html for details.\n";
 }
 
-$Version=  '3.1.2-4';
+$Version=  '3.1.3-1';
 $Copyright='Copyright 2003-2008 Hewlett-Packard Development Company, L.P.';
 $License=  "collectl may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
@@ -306,7 +306,7 @@ $export=$expName=$expDir=$expOpts=$topOpts=$topType='';
 $homeFlag=$rawtooFlag=$autoFlush=$allFlag=0;
 $procOpts=$slabOpts='';
 $procFilt=$slabFilt='';
-$procAnalFlag=$procAnalyzed=$slabAnalFlag=$slabAnalyzed=$lastInt2Secs=0;
+$procAnalFlag=$procAnalCounter=$slabAnalFlag=$slabAnalCounter=$lastInt2Secs=0;
 $lastLogPrefix=$passwdFile='';
 $nfsOpts=$lustOpts=$userEnvOpts='';
 $grepPattern='';
@@ -640,8 +640,9 @@ if ($briefFlag)
 if ($procAnalFlag || $slabAnalFlag)
 {
   error("--procanalyze/--slabanalyze require -p")              if $playback eq '';
-  error("--procanalyze/--slabanaluze require -f")              if $filename eq '';
+  error("--procanalyze/--slabanalyze require -f")              if $filename eq '';
   error("--procanalyze/--slabanalyze do not support --utc")    if $utcFlag;
+  error("sorry, but no + or - with -s and analyze mode")       if $userSubsys=~/[+-]/;
 
   # No default from playback file in this mode, so go by whatever user 
   # specificed with -s and if no Y/Z, stick one in there and then make
@@ -814,13 +815,14 @@ error('--showplotheader not allowed with -f')              if $filename ne '' &&
 
 error("--align require HiRes time module")                 if $alignFlag && !$hiResFlag;
 
-error("--passwd only allow in playback mode")              if $passwdFile ne '' && $playback eq '';
 error("can't find file specified with --passwd")           if $passwdFile ne '' && !-e $passwdFile;
 
 # if user enters --envOpts, we need to add it to the defaults; otherwise override them
 $envOpts=($userEnvOpts eq 'M') ? "M$envOpts" : $userEnvOpts    if $userEnvOpts ne '';
 
 $passwdFile='/etc/passwd'    if $passwdFile eq '';
+loadUids($passwdFile);
+
 $allThreadFlag=($procOpts=~/t/) ? 1 : 0;
 
 # The separator is either a space if not defined or the character supplied if 
@@ -1349,8 +1351,11 @@ if ($playback ne '')
     ($recVersion, $recDate, $recTime, $recSecs, $recTZ, $recInterval, $recSubsys)=initFormat($file);
 
     # We can only do this test after figuring out what's in the header.
-    error("-sj or -sJ with -P also requires CPU details so add C or remove J.")
-	if $subsys=~/j/i && $subsys!~/C/ && $plotFlag;
+    if ($subsys=~/j/i && $subsys!~/C/ && $plotFlag)
+    {
+      logmsg('I', "-sj or -sJ with -P also requires CPU details so adding -sC.  See FAQ for details.");
+      $subsys.='C';
+    }
 
     error("data file does not contain io data")         if $topIOFlag && !$processIOFlag;
     error("data file does not contain process data")    if $procAnalFlag && $recSubsys!~/Z/;
@@ -1549,9 +1554,6 @@ if ($playback ne '')
       $newOutputFile=0;
     }
 
-    # When playing back process data, use /etc/passwd unless --passwd specified
-    loadUids($passwdFile)    if $ZFlag;
-
     # when processing data for a new prefix/date and printing on a terminal
     # we need to print totals from previous file(s) if there were any and 
     # reset total
@@ -1610,8 +1612,9 @@ if ($playback ne '')
 	  next;
         }
 
-        # At this point, $newSeconds is actually pointing to the last interval
-        my $thisSeconds=$1;
+        # At this point, $newSeconds is actually pointing to the last interval and be
+        # sure to conver to local time so --from/--thru checks work
+	my $thisSeconds=$1+$timeAdjust;
         $lastSeconds=(defined($newSeconds)) ? $newSeconds : 0;
   	$skip=0    if $fromSecs && $thisSeconds>=$fromSecs;
         last       if $thruSecs && $lastSeconds>$thruSecs;
@@ -1629,16 +1632,17 @@ if ($playback ne '')
             $lastSecs=$thisSeconds;
 	  }
 	  print "ConsecFlag: $consecutiveFlag\n"    if $debug & 1;
-
           next;
 	}
-        $newSeconds=$1+$timeAdjust;
+        $newSeconds=$thisSeconds;
 
         # track thru times for each file to be used for totals/averages
         # in terminal mode
-        $fileFrom=$newSeconds    if !$skip && !defined($fileFrom);
-        $fileThru=$newSeconds;
-        #printf "FROM: %s  THRU: %s\n", getTime($fileFrom), getTime($fileThru);
+        if (!$skip)
+        {
+          $fileFrom=$newSeconds    if !defined($fileFrom);
+          $fileThru=$newSeconds;
+        }
       }
       next    if $skip;
 
@@ -1715,8 +1719,8 @@ if ($playback ne '')
   }
 
   # Always print last set of summary data...
-  printProcAnalyze()    if $procAnalFlag;
-  printSlabAnalyze()    if $slabAnalFlag;
+  printProcAnalyze()    if $procAnalCounter;
+  printSlabAnalyze()    if $slabAnalCounter;
 
   # if printing to terminal, be sure to print averages & totals for last file
   # processed
@@ -3584,9 +3588,9 @@ sub newLog
   {
     print "Create plot files: $filename.*\n"    if $debug & 8192;
 
-    # Indicates something needs to be printed (is there an easier way to tell)?
-    printProcAnalyze($filename)    if $procAnalyzed;
-    printSlabAnalyze($filename)    if $slabAnalyzed;
+    # Indicates something needs to be printed
+    printProcAnalyze($filename)    if $procAnalCounter;
+    printSlabAnalyze($filename)    if $slabAnalCounter;
 
     print "Writing file(s): $mode$filename\n"    if $msgFlag && !$daemonFlag;
     print "Subsys: $subsys\n"    if $debug & 1;
@@ -4644,9 +4648,7 @@ sub loadPids
     }
   }
 
-  # Step 2 - we need to get username/UIDs from here so we can reverse
-  # map later on.  Note that in playback mode we may get them from elsewhere.
-  loadUids('/etc/passwd');
+  # Step 2 - no longer needed.  UIDs loaded earlier
 
   # Step 3 - find pids of all processes that match selection criteria
   #          be sure to truncate leading spaces since pids are fixed width
@@ -4660,6 +4662,7 @@ sub loadPids
     next    if $process=~/^\s+PID/;
     $process=~s/^\s+//;
 
+    chomp $process;
     ($pid, $ppid, $user, $uid)=split(/\s+/, $process, 4);
 
     # if we can't read proc, process must have existed
@@ -4819,10 +4822,11 @@ sub pidNew
       $match=$pid    if cmdHasString($pid, $param);
     }
 
-    # match on username?
+    # match on UID?
     elsif ($type=~/[uU]/)
     {
       # in case process went away we need to do a 'last'
+      # note that in some cases we don't find a uid and so we silently ignore
       open TMP, "</proc/$pid/status" or last;
       while ($line=<TMP>)
       {
@@ -4833,7 +4837,7 @@ sub pidNew
 	  last;
         }
       }
-      logmsg("E", "Couldn't find UID for Pid: $pid")   if !$match;
+      #logmsg("E", "Couldn't find UID for Pid: $pid")   if !$match;
     }
   }
   print "%%% Discovered new pid for monitoring: $pid\n"
@@ -5122,6 +5126,7 @@ This is the complete list of switches, more details in man page
       --offsettime secs         seconds by which to offset times during playback
   -o, --options                 misc formatting options, --showoptions for all
   -p, --playback   file         playback results from 'file'
+      --passwd     file         use this instead if /etc/passwd for UID->name
   -P, --plot                    generate output in 'plot' format
       --procanalyze             analyze process data, generating prcs file
       --quiet                   do note echo warning messages on the terminal

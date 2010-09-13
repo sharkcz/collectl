@@ -85,7 +85,7 @@ if ($Config{'version'} lt '5.8.0')
 #  exit;
 }
 
-$Version=  '2.3.4';
+$Version=  '2.4.0';
 $Copyright='Copyright 2003-2007 Hewlett-Packard Development Company, L.P.';
 $License=  "collectl may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
@@ -163,10 +163,14 @@ $dentryFlag=$inodeFlag=$filenrFlag=$supernrFlag=$dquotnrFlag=0;
 # since getopts doesn't!  Also save the list of switches we were called with.
 $cmdSwitches=preprocSwitches();
 
+# These are the defaults for interactive and daemon subsystems
+$SubsysDefInt='cdn';
+$SubsysDefDaemon='cdlmnstx';
+
 # We want to load any default settings so that user can selectively 
 # override them.  We're giving these starting values in case not
-# enabled in .conf file.
-$SubsysDef=$SubsysCore="cdlmnstx";
+# enabled in .conf file.  We later override subsys if interactive
+$SubsysDef=$SubsysCore=$SubsysDefDaemon;
 $Interval=     10;
 $Interval2=    60;
 $Interval3=   300;
@@ -187,6 +191,7 @@ $HeaderRepeat=20;
 $Passwd=       '/etc/passwd';
 $Grep=         '/bin/grep';
 $Egrep=        '/bin/egrep';
+$Ps=           '/bin/ps';
 $Rpm=          '/bin/rpm';
 $Ethtool=      '/sbin/ethtool';
 $Lspci=        '/sbin/lspci';
@@ -240,7 +245,7 @@ $count=-1;
 $numTop=0;
 $showPHeaderFlag=0;
 $showMergedFlag=$showHeaderFlag=$verboseFlag=$procmemFlag=$vmstatFlag=$alignFlag=0;
-$quietFlag=$utcFlag=0;
+$quietFlag=$utcFlag=$procioFlag=0;
 $address=$beginTime=$endTime=$filename=$flush='';
 $limits=$lustreSvcs=$procopts=$runTime=$subOpts=$playback=$rollLog='';
 $groupFlag=$msgFlag=$niceFlag=$plotFlag=$sshFlag=$wideFlag=$rawFlag=$sexprFlag=0;
@@ -322,7 +327,7 @@ GetOptions('align!'     => \$alignFlag,
 	   'Z=s'        => \$procopts,
 	   'procopts=s' => \$procopts,
 
-           # New for V2.0.0
+           # New since V2.0.0
            'custom=s'      => \$custom,
 	   'headerrepeat=i'=> \$headerRepeat,
            'procmem!'      => \$procmemFlag,
@@ -333,10 +338,9 @@ GetOptions('align!'     => \$alignFlag,
            'showsubopts!'  => \$showSuboptsFlag,
 	   'showheader!'   => \$showHeaderFlag,
            'showplotheader!'  =>\$showPHeaderFlag,
-
-           # New for V2.1.2...
            'rawtoo!'       => \$rawtooFlag,
            'sexpr=s'       => \$sexprType,
+           'procio!'       => \$procioFlag,
            ) or error("type -h for help");
 
 #    O p e n    A    S o c k e t  ?
@@ -383,13 +387,13 @@ showSubopts()     if $showSuboptsFlag;
 
 #    H a n d l e    V 2 . 0    R e m a p p i n g s    F i r s t
 
-if ($verboseFlag+$vmstatFlag+$procmemFlag || $custom ne '')
+if ($verboseFlag+$vmstatFlag+$procmemFlag+$procioFlag || $custom ne '')
 {
-  $temp="--verbose, --vmstat, --procmem or --custom";
+  $temp="--verbose, --vmstat, --procmem, --procio or --custom";
   error("can't use -P with $temp")    if $plotFlag;
   error("can't use -f with $temp")    if $filename ne '';
-  error("can't mix --custom with any of --verbose, --vmstat or --procmem")
-      if $custom ne '' && ($verboseFlag+$vmstatFlag+$procmemFlag);
+  error("can't mix --custom with any of --verbose, --vmstat, --procmem or procio")
+      if $custom ne '' && ($verboseFlag+$vmstatFlag+$procmemFlag+$procioFlag);
 
   # either custom or standard.  need to set verbose flag so we skip brief processing
   # in printTerm()
@@ -422,10 +426,10 @@ if ($verboseFlag+$vmstatFlag+$procmemFlag || $custom ne '')
     error("no subsystems can be specified for -M2")    if $userSubsys ne '';
     $subsys=$userSubsys="cm";
   }
-  elsif ($procmemFlag)
+  elsif ($procmemFlag || $procioFlag)
   {
     # Force -s to be Z
-    error("-s not allowed with --procmem")    if $userSubsys ne '';
+    error("-s not allowed with --procmem or --procio")      if $userSubsys ne '';
     $subsys=$userSubsys="Z";
   }
 }
@@ -491,7 +495,7 @@ if (!$daemonFlag)
     $Interval=1;
   }
 
-  $SubsysDef='cnd';
+  $SubsysDef=$SubsysDefInt;
   $subsys=$SubsysDef       if $userSubsys eq '';
 
   # If only doings slabs/processes, set the primary interval to be the
@@ -623,7 +627,7 @@ $PerlVers=$Config{"version"};
 # Finally, set a flag to indicate we're writing to rolling logs (unless just --sexpr)
 $rawFlag=$rawtooFlag;
 $rawFlag=1    if $filename ne '' && !$plotFlag && $sexprType eq '';
-$logToFileFlag=($rawFlag || $plotFlag) ? 1 : 0;
+$logToFileFlag=($filename ne '') ? 1 : 0;
 print "RawFlag: $rawFlag PlotFlag: $plotFlag  SexprType: $sexprType\n"    if $debug & 1;
 
 error("-G requires data collection to a file") 
@@ -1392,6 +1396,7 @@ logsys($message);
 # on this platform, initRecord() will have deselected them!
 initRecord();
 error("no subsystems selected")    if $subsys eq '';
+error("--procio features not enabled in this kernel")      if $procioFlag && !$processIOFlag;
 
 # In case displaying output.  We also need the recorded version to match ours.
 initFormat();
@@ -1901,7 +1906,8 @@ for (; $count!=0 && !$doneFlag; $count--)
     {
       # NOTE - $SlabGetProc is either 0 for all slabs or 14 for selective
       #        $SlabHeader is 1 for 2.4 kernels and 2 for 2.6 ones
-      getProc($SlabGetProc, "/proc/slabinfo", "Slab", $SlabSkipHeader);
+      getProc($SlabGetProc, "/proc/slabinfo", "Slab", $SlabSkipHeader)
+	  if !$slubinfoFlag;
     }
 
     if ($ZFlag)
@@ -1930,6 +1936,8 @@ for (; $count!=0 && !$doneFlag; $count--)
 	      if $pidSeen{$pid}==1;
 	  $pidSeen{$pid}=getProc(16, "/proc/$task/$pid/cmdline", "proc:$pid cmd", undef, 1)
 	      if $pidSeen{$pid}==1;
+	  $pidSeen{$pid}=getProc(17, "/proc/$task/$pid/io", "proc:$pid io")
+	      if $pidSeen{$pid}==1 && $processIOFlag;
 	  findThreads($pid)    if $ThreadFlag && $subOpts!~/P/ && $pidThreads{$pid};
         }
       }
@@ -1952,6 +1960,8 @@ for (; $count!=0 && !$doneFlag; $count--)
 	      if $pidSeen{$pid}==1;
 	  $pidSeen{$pid}=getProc(16, "/proc/$task/$pid/cmdline", "proc:$pid cmd", undef, 1)
 	      if $pidSeen{$pid}==1;
+	  $pidSeen{$pid}=getProc(17, "/proc/$task/$pid/io", "proc:$pid io")
+	      if $pidSeen{$pid}==1 && $processIOFlag;
 	  findThreads($pid)    if $ThreadFlag && $subOpts!~/P/ && $pidThreads{$pid};
         }
       }
@@ -1966,7 +1976,9 @@ for (; $count!=0 && !$doneFlag; $count--)
 	  # The 'T' lets the processing code know it's a thread for formatting purposes
   	  $tpidSeen{$pid}=getProc(17, "/proc/$task/$pid/stat",   "procT:$pid stat", undef, 1);
 	  $tpidSeen{$pid}=getProc(13, "/proc/$task/$pid/status", "procT:$pid")
-	      if $tpidSeen{$pid}==1;
+	      if $tpidSeen{$pid}==1; 
+	  $tpidSeen{$pid}=getProc(17, "/proc/$task/$pid/io", "procT:$pid io")
+	      if $tpidSeen{$pid}==1 && $processIOFlag;
         }
       }
 
@@ -2142,6 +2154,14 @@ sub preprocessPlayback
     $thisSubOpt=$1;
     $header=~/Interval:\s+(\S+)/;
     $thisInterval=$1;
+
+    # If user specified --procio and file doesn't have data, we can't process it
+    $flags=($header=~/Flags:\s+(\S+)/) ? $1 : '';
+    if ($procioFlag && $flags!~/i/)
+    {
+      $preprocErrors{$file}="E:--procio requested but data not present in file";
+      next;
+    }
 
     # we need to merge intervals is user has selected her own AND set a flag so
     # changeConfig() will update %playbackSettings{} correctly
@@ -2920,7 +2940,7 @@ sub newLog
   # - if name not a dir, the filename gets '-host' appended
   # - if raw file it also gets date/time but if plot file only date.
   $filename= "."         if $filename eq '';  # -P and no -f
-  $filename.=(-d $filename) ? "/$Host" : "-$Host";
+  $filename.=(-d $filename || $filename=~/\/$/) ? "/$Host" : "-$Host";
   $filename.=(!$plotFlag || $options=~/u/) ? "-$datetime" : "-$dateonly";
 
   # if the directory doesn't exist (we don't need date/time stamp), create it
@@ -3153,6 +3173,12 @@ sub buildCommonHeader
   $tempInterval.=($subsys!~/[yz]/i) ? "::$interval3" : ":$interval3"
       if $subsys=~/E/;
 
+  # For now, these are the only flags I can think of but clearly they
+  # can grow over time...
+  my $flags='';
+  $flags.='i'    if $processIOFlag;
+  $flags.='s'    if $slubinfoFlag;
+
   my $commonHeader='';
   if ($rawType!=-1 && $playback ne '')
   {
@@ -3167,7 +3193,7 @@ sub buildCommonHeader
   $commonHeader.="\n# Collectl:   V$Version  HiRes: $hiResFlag  Options: $cmdSwitches\n";
   $commonHeader.="# Host:       $Host  DaemonOpts: $DaemonOptions\n";
   $commonHeader.=$timeZoneInfo  if defined($timeZoneInfo);
-  $commonHeader.="# SubSys:     $tempSubsys SubOpts: $subOpts Options: $options  Interval: $tempInterval NumCPUs: $NumCpus $Hyper\n";
+  $commonHeader.="# SubSys:     $tempSubsys SubOpts: $subOpts Options: $options  Interval: $tempInterval NumCPUs: $NumCpus $Hyper Flags: $flags\n";
   $commonHeader.="# HZ:         $HZ  Arch: $SrcArch PageSize: $PageSize\n";
   $commonHeader.="# Cpu:        $CpuVendor Speed(MHz): $CpuMHz Cores: $CpuCores  Siblings: $CpuSiblings\n";
   $commonHeader.="# Kernel:     $Kernel  Memory: $Memory  Swap: $Swap\n";
@@ -3182,11 +3208,12 @@ sub buildCommonHeader
       if $NumFans || $NumPwrs || $NumTemps;
   if ($subsys=~/l/i)
   {
-    # Only include both if sfs system.
-    $commonHeader.="# LustreVersion:  $cfsVersion"    if $cfsVersion ne '';
-    $commonHeader.="  SfsVersion: $sfsVersion"        if $sfsVersion ne '';
+    # Lustre Version and services (if any) info
+    $commonHeader.="# Lustre:   ";
+    $commonHeader.="  CfsVersion: $cfsVersion"       if $cfsVersion ne '';
+    $commonHeader.="  SfsVersion: $sfsVersion"       if $sfsVersion ne '';
     $commonHeader.="  Services: $lustreSvcs";
-    $commonHeader.="\n"                               if $cfsVersion ne '';
+    $commonHeader.="\n";
 
     $commonHeader.="# LustreServer:   NumMds: $NumMds MdsNames: $MdsNames  NumOst: $NumOst OstNames: $OstNames\n"
 	if $NumOst || $NumMds;
@@ -3731,6 +3758,7 @@ sub loadConfig
     {
       $Grep=$value             if $param=~/^Grep/;
       $Egrep=$value            if $param=~/^Egrep/;
+      $Ps=$value               if $param=~/^Ps/;
       $Rpm=$value              if $param=~/^Rpm/;
       $Ethtool=$value          if $param=~/^Ethtool/;
       $Lspci=$value            if $param=~/^Lspci/;
@@ -4394,6 +4422,7 @@ Synonyms
 
 These are Alternate Display Formats
   --procmem                   show memory utilization by process
+  --procio                    show process level I/ counters
   --vmstat                    show output similar to vmstat
 
 Logging options

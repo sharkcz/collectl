@@ -38,6 +38,12 @@ sub initRecord
     $PageSize=($SrcArch=~/ia64/) ? 16384 : 4096;
   }
 
+  # If we have process IO everyone must.  This was added in 2.6.23,
+  # but then only if someone builds the kernel with it enabled, though
+  # that, will probably change with future kernels.
+  $processIOFlag=(-e '/proc/self/io')  ? 1 : 0;
+  $slubinfoFlag= (-e '/sys/slab')      ? 1 : 0;
+
   # Get number of cpus, which are used in header of 'raw' file
   $NumCpus=`$Grep cpu /proc/stat | wc -l`;
   $NumCpus=~/(\d+)/;
@@ -186,6 +192,72 @@ sub initRecord
         logmsg("W", $message);
         $xFlag=$XFlag=0;
         $subsys=~s/x//ig;
+      }
+    }
+
+    # One last check and this is a doozie!  Because we read IB counters by doing
+    # a read/clear everytime, mulitple copies of collectl will step on each other.
+    # Therefore we can only allow one instance to actually monitor the IB and the
+    # first one wins, unless we're trying to start a daemon in which case we let 
+    # step on the other [hopefully temporary] instance.
+    if ($mellanoxFlag)
+    {
+      $command="$Ps axo pid,cmd | $Grep collectl | $Grep -v grep";
+      foreach my $line (`$command`)
+      {
+        $line=~s/^\s+//;    # show pids have leading white space
+        my ($pid, $procCmd)=split(/ /, $line, 2);
+        next    if $pid==$$;
+
+        # There are just too many ways one can specify the subsystems whether it's
+        # overriding the DaemonCommands or SubsysCore in collectl.conf, using an
+        # alternate collectl.conf or specifying --subsys instead of -s  and I'm 
+        # just not going to go there [for now] as it's complicated enough.
+
+        # If a daemon, subsys comes out of collectl.conf; otherwise it's already
+        # loaded into '$procCmd'
+        my $tempDaemonFlag=($procCmd=~/-D/) ? 1 : 0;
+        $procCmd=`$Grep 'DaemonCommands =' /etc/collectl.conf`    if $tempDaemonFlag;
+
+        # if +/-, it's the immediate character following the -s (after we get rid
+        # of leading white space and any subsystems follow until the next switch
+        chomp $procCmd;
+        $procCmd.='-';           # make =~// below work in case -s at very end
+        $procCmd=~/-s(.+?)-/;
+        $procSubsys=(defined($1)) ? $1 : '';
+        #print "PID: $pid  ProcCommand: $procCmd  Subsys: $procSubsys\n";
+
+        # The default subsys is different for daemon and interactive use
+        # if no -s, we use default and if there, assume we're overriding
+        my $tempSubsysDef=($tempDaemonFlag)  ? $SubsysDefDaemon : $SubsysDefInt;
+        my $tempSubsys=($procSubsys eq '') ? $tempSubsysDef : $procSubsys;
+
+        # But if + or -, we either combine or substract instead
+        $tempSubsys=$tempSubsysDef.$procSubsys    if $procSubsys=~/\+/;
+        if ($procSubsys=~/-/)
+        {
+          $tempSubsys=$tempSubsysDef;
+          $tempSubsys=~s/[$procSubsys]//g;
+        }
+	#print "TempSubsys: $tempSubsys\n";
+        
+	# At this point if there IS an instance of collectl running with -sx,
+        # we need to disable it here, unless we're a daemon in which case we
+        # just log a warning.
+        if ($tempSubsys=~/x/i)
+        {
+	  if (!$daemonFlag)
+          {
+            logmsg("W", "-sx disabled because another instance already monitoring Infiniband");
+            $xFlag=$XFlag=0;
+            $subsys=~s/x//ig;
+          }
+          else
+          {
+            logmsg("W", "another instance is monitoring IB and the stats will be in error until it is stopped");
+          }
+          last;
+        }
       }
     }
   }
@@ -386,27 +458,32 @@ sub initRecord
 
   #    S L A B    C h e c k s
 
-  # looks like we always need to grab slab control information because
-  # under some circumstances the user's choice of -s may get overridden
-  # (see newLog()) and if slabs are to be included, we'll need this.
-  $SlabGetProc=($slabopts eq '') ? 0 : 14;
-  $SlabSkipHeader=($kernel2_4) ? 1 : 2;
-
-  $temp=`head -n 1 /proc/slabinfo`;
-  $temp=~/(\d+\.\d+)/;
-  $SlabVersion=$1;
-  $NumSlabs=`cat /proc/slabinfo | wc -l`*1;
-  chomp $NumSlabs;
-  $NumSlabs-=$SlabSkipHeader;
-
-  if ($SlabVersion!~/^1\.1|^2/)
+  # We now have 2 types of slabs to deal with, either in /proc/slabinfo
+  # or in /sys/slab...
+  if (!$slubinfoFlag)
   {
-    # since 'W' will echo on terminal, we only use when writing to files
-    $severity=(defined($opt_s)) ? "E" : "I";
-    $severity="W"    if $logToFileFlag;
-    logmsg($severity, "unsupported /proc/slabinfo version: $SlabVersion");
-    $subsys=~s/y//gi;
-    $yFlag=$YFlag=0;
+    $SlabGetProc=($slabopts eq '') ? 0 : 14;
+    $SlabSkipHeader=($kernel2_4) ? 1 : 2;
+
+    $temp=`head -n 1 /proc/slabinfo`;
+    $temp=~/(\d+\.\d+)/;
+    $SlabVersion=$1;
+    $NumSlabs=`cat /proc/slabinfo | wc -l`*1;
+    chomp $NumSlabs;
+    $NumSlabs-=$SlabSkipHeader;
+
+    if ($SlabVersion!~/^1\.1|^2/)
+    {
+      # since 'W' will echo on terminal, we only use when writing to files
+      $severity=(defined($opt_s)) ? "E" : "I";
+      $severity="W"    if $logToFileFlag;
+      logmsg($severity, "unsupported /proc/slabinfo version: $SlabVersion");
+      $subsys=~s/y//gi;
+      $yFlag=$YFlag=0;
+    }
+  }
+  elsif ($slubinfoFlag)
+  {
   }
 }
 
@@ -746,6 +823,10 @@ sub initFormat
     $NumCpus=$1;
     $Hyper=($header=~/HYPER/) ? "[HYPER]" : "";
 
+    $flags=($header=~/Flags:\s+(\S+)/) ? $1 : '';
+    $processIOFlag=($flags=~/i/) ? 1 : 0;
+    $slubinfoFlag= ($flags=~/s/) ? 1 : 0;
+    
     $header=~/Memory:\s+(\d+)/;
     $Memory=$1;
 
@@ -2226,6 +2307,10 @@ sub dataAnalyze
     undef @fields;
     @fields=split(/\s+/, $data);
 
+    # just to warn people why there may be unitialized variable warnings
+    logmsg("W", "New network device found, but I don't know its name")
+	 if !defined($netRxKBLast[$netIndex]);
+
     # This seems to be relatively rare though it was observed a few times
     # on x86_64.  Not enough data at this time to know if I should do more
     # but the symptom is a complete record is read from /proc but the Tx or Rx
@@ -2269,10 +2354,6 @@ sub dataAnalyze
     $netTxCollNow=$fields[14];
     $netTxCarNow= $fields[15];
     $netTxCmpNow= $fields[16];
-
-    # just to warn people why there may be unitialized variable warnings
-    logmsg("W", "New network device found, but I don't know its name")
-	 if !defined($netRxKBLast[$netIndex]);
 
     # basic stuff - note that we have to wait until AFTER we fix to convert to KB
     $netRxKB[$netIndex]= fix($netRxKBNow- $netRxKBLast[$netIndex])/1024;
@@ -2637,6 +2718,8 @@ sub dataAnalyze
       $i=$procIndexes{$procPidNow}=nextAvailProcIndex();
       $procMinFltLast[$i]=$procMajFltLast[$i]=0;
       $procUTimeLast[$i]=$procSTimeLast[$i]=$procCUTimeLast[$i]=$procCSTimeLast[$i]=0;
+      $procRCharLast[$i]=$procWCharLast[$i]=$procSyscrLast[$i]=	$procSyscwLast[$i]=0;
+      $procRBytesLast[$i]=$procWBytesLast[$i]=$procCancelLast[$i]=0;
       print "### new index $i allocated for $procPidNow\n"    if $debug & 256;
     }
 
@@ -2673,6 +2756,42 @@ sub dataAnalyze
       $procUTimeLast[$i]= $procUTimeTot[$i];
       $procSTimeLast[$i]= $procSTimeTot[$i];
     }
+
+    # Handle the IO counters
+    elsif ($data=~/^io (.*)/)
+    {
+      $data2=$1;
+
+      # This might be easier to do in 7 separate 'if' blocks but
+      # this keeps the code denser and may be easier to follow
+      $procRChar=$1     if $data2=~/^rchar: (\d+)/;
+      $procWChar=$1     if $data2=~/^wchar: (\d+)/;
+      $procSyscr=$1     if $data2=~/^syscr: (\d+)/;
+      $procSyscw=$1     if $data2=~/^syscw: (\d+)/;
+      $procRBytes=$1    if $data2=~/^read_bytes: (\d+)/;
+      $procWBytes=$1    if $data2=~/^write_bytes: (\d+)/;
+
+      if ($data2=~/^cancelled_write_bytes: (\d+)/)
+      {
+        $procCancel=$1;
+	$procRKBC[$i]=fix($procRChar-$procRCharLast[$i])/1024;
+  	$procWKBC[$i]=fix($procWChar-$procWCharLast[$i])/1024;
+	$procRSys[$i]=fix($procSyscr-$procSyscrLast[$i]);
+	$procWSys[$i]=fix($procSyscw-$procSyscwLast[$i]);
+	$procRKB[$i]= fix($procRBytes-$procRBytesLast[$i])/1024;
+	$procWKB[$i]= fix($procWBytes-$procWBytesLast[$i])/1024;
+	$procCKB[$i]= fix($procCancel-$procCancelLast[$i])/1024;
+
+	$procRCharLast[$i]=$procRChar;
+	$procWCharLast[$i]=$procWChar;
+	$procSyscrLast[$i]=$procSyscr;
+	$procSyscwLast[$i]=$procSyscw;
+	$procRBytesLast[$i]=$procRBytes;
+	$procWBytesLast[$i]=$procWBytes;
+        $procCancelLast[$i]=$procCancel;
+      }
+    }
+
     # if bad stat file skip the rest
     elsif (!defined($procSTimeTot[$i])) { }
     elsif ($data=~/^cmd (.*)/)          { $procCmd[$i]=$1; }
@@ -2771,7 +2890,7 @@ sub printHeaders
       if ($subOpts=~/B/)
       {
         foreach my $i (@brwBuckets)
-        { $headers.="[OSTB]r${i}P{SEP}"; }
+        { $headers.="[OSTB]r${i}P${SEP}"; }
         foreach my $i (@brwBuckets)
         { $headers.="[OSTB]w${i}P${SEP}"; }
       }
@@ -3697,12 +3816,6 @@ sub writeData
     return;
   }
 
-  # There is a very special case (so special maybe nobody will ever use it) in
-  # which one specifies --sexpr -P -f in conjunction with -A.  By definition
-  # this should mean to send the sexpr over the socket but log data in plot
-  # format.  To make the test easier, we're using a special flag for this.
-#  return    if $sexprFlag && $plotFlag && $filename ne '';
-
   # Final Write!!!
   # Doing these two writes this way will allow writing to the
   # terminal AND a socket if we ever want to.
@@ -3749,7 +3862,7 @@ sub printTerm
   #    custom formats
   ############################
 
-  if (!$verboseFlag || $vmstatFlag || $procmemFlag || $custom ne '')
+  if (!$verboseFlag || $vmstatFlag || $procmemFlag || $procioFlag || $custom ne '')
   {
     if ($custom ne '')
     {
@@ -3765,7 +3878,9 @@ sub printTerm
       $line=briefFormatit();
     }
 
-    #	V M S t a t
+    ##########################
+    #	--vmstat
+    ##########################
 
     if ($vmstatFlag)
     {
@@ -3785,7 +3900,9 @@ sub printTerm
        		$userP[$i], $sysP[$i], $idleP[$i], $waitP[$i]);
     }
 
-    #	p r o c m e m S t a t
+    ###########################
+    #	--procmem
+    ###########################
 
     # if we don't include $interval2Print, it'll print even when no data present
     if ($procmemFlag && $interval2Print)
@@ -3813,7 +3930,43 @@ sub printTerm
 		defined($procVmStk[$i])  ? cvt($procVmStk[$i],6,1,1)  : 0,  
 		defined($procVmExe[$i])  ? cvt($procVmExe[$i],6,1,1)  : 0,
 		defined($procVmLib[$i])  ? cvt($procVmLib[$i],6,1,1)  : 0,
-		defined($procCmd[$i])    ? $procCmd[$i] : $procName[$i]);
+		defined($procCmd[$i])    ? (split(/\s+/, $procCmd[$i]))[0] : $procName[$i]);
+      }
+    }
+
+    ##############################
+    #    --procio
+    ##############################
+
+    # if we don't include $interval2Print, it'll print even when no data present
+    if ($procioFlag && $interval2Print)
+    {
+      # note that the first print interval has a counter of 2 and it's too
+      # painful/not worth it to track down...
+      print $cls    if $options=~/t/;
+      if ($options!~/H/ && ($options=~/t/ || ($interval2Counter % $headerRepeat)==2))
+      {
+        $line="${cls}#${miniBlanks} PID  User     S  SysT  UsrT   RKB   WKB  RKBC  WKBC  RSYS  WSYS  CNCL  Command\n";
+      }
+
+      foreach $pid (sort {$a <=> $b} keys %procIndexes)
+      {
+        $i=$procIndexes{$pid};
+        next   	      if (!defined($procSTimeTot[$i]));
+
+        $line.=sprintf("%s%5d%s %-8s %1s %s %s ",
+		$datetime, $procPid[$i], $procThread[$i] ? '+' : ' ',
+		$procUser[$i], $procState[$i],
+		cvtT1($procSTime[$i]), cvtT1($procUTime[$i]));
+        $line.=sprintf("%5s %5s %5s %5s %5s %5s %5s  %s\n", 
+		cvt($procRKB[$i]/$interval2Secs), 
+		cvt($procWKB[$i]/$interval2Secs),
+		cvt($procRKBC[$i]/$interval2Secs),
+		cvt($procWKBC[$i]/$interval2Secs),
+		cvt($procRSys[$i]/$interval2Secs),
+		cvt($procWSys[$i]/$interval2Secs),
+		cvt($procCKB[$i]/$interval2Secs),
+        	defined($procCmd[$i])    ? (split(/\s+/, $procCmd[$i]))[0] : $procName[$i]); 
       }
     }
 
@@ -4808,7 +4961,11 @@ sub printTerm
       printText("\n")    if $options!~/t/;
       $temp1=($options=~/F/) ? "(faults are cumulative)" : "(faults are $rate)";
       printText("# PROCESS SUMMARY $temp1$temp2\n");
-      printText("#${miniFiller} PID  User     PR  PPID S   VSZ   RSS  SysT  UsrT Pct  AccuTime MajF MinF Command\n");
+
+      $tempHdr= "#${miniFiller} PID  User     PR  PPID S   VSZ   RSS  SysT  UsrT Pct  AccuTime ";
+      $tempHdr.=" RKB  WKB "    if $processIOFlag;
+      $tempHdr.="MajF MinF Command\n";
+      printText($tempHdr);
     }
 
     # When doing top, the pids with the most accumumated user/sys time get printed first
@@ -4833,10 +4990,8 @@ sub printTerm
 
     my $procCount=0;
     foreach $key (sort keys %procSort)
-#    foreach $pid (sort {$a <=> $b} keys %procIndexes)
     {
       # if we had partial data for this pid don't try to print!
-#      $i=$procIndexes{$pid};
       $i=$procIndexes{$procSort{$key}};
       #print ">>>SKIP PRINTING DATA for pid $key  i: $i"
       #	      if (!defined($procSTimeTot[$i]));
@@ -4856,7 +5011,7 @@ sub printTerm
 	$minFlt=$procMinFlt[$i]/$interval2Secs;
       }
 
-      $line=sprintf("$datetime%5d%s %-8s %2s %5d %1s %5s %5s %s %s %s %s %4s %4s %s\n", 
+      $line=sprintf("$datetime%5d%s %-8s %2s %5d %1s %5s %5s %s %s %s %s ", 
 		$procPid[$i],  $procThread[$i] ? '+' : ' ',
 		$procUser[$i], $procPri[$i],
 		$procPpid[$i], $procState[$i], 
@@ -4864,9 +5019,13 @@ sub printTerm
 		defined($procVmRSS[$i])  ? cvt($procVmRSS[$i],4,1)  : 0,
 		cvtT1($procSTime[$i]), cvtT1($procUTime[$i]), 
 		cvtP($procSTime[$i]+$procUTime[$i]),
-		cvtT2($procSTimeTot[$i]+$procUTimeTot[$i]),
+		cvtT2($procSTimeTot[$i]+$procUTimeTot[$i]));
+      $line.=sprintf("%4s %4s ", 
+		cvt($procRKB[$i]/$interval2Secs),
+		cvt($procWKB[$i]/$interval2Secs))    if $processIOFlag;
+      $line.=sprintf("%4s %4s %s\n", 
 		cvt($majFlt), cvt($minFlt),
-		defined($procCmd[$i]) ? substr($procCmd[$i],0,40) : $procName[$i]);
+		defined($procCmd[$i]) ? (split(/\s+/,$procCmd[$i]))[0] : $procName[$i]);
       printText($line);
     }
   }
@@ -6209,7 +6368,9 @@ sub printPlotProc
     $procHeaders.=(!$utcFlag) ? "#Date${SEP}Time" : '#UTC';;
     $procHeaders.="${SEP}PID${SEP}User${SEP}PR${SEP}PPID${SEP}S${SEP}VmSize${SEP}";
     $procHeaders.="VmLck${SEP}VmRSS${SEP}VmData${SEP}VmStk${SEP}VmExe${SEP}VmLib${SEP}";
-    $procHeaders.="SysT${SEP}UsrT${SEP}AccumT${SEP}MajF${SEP}MinF${SEP}Command\n";
+    $procHeaders.="SysT${SEP}UsrT${SEP}AccumT${SEP}";
+    $procHeaders.="RKB${SEP}WKB${SEP}RKBC${SEP}WKBC${SEP}RSYS${SEP}WSYS${SEP}CNCL${SEP}";
+    $procHeaders.="MajF${SEP}MinF${SEP}Command\n";
     $headersPrintedProc=1;
   }
 
@@ -6235,7 +6396,7 @@ sub printPlotProc
     $datetime.=".$usecs"    if $options=~/m/;
 
     # Username comes from translation hash OR we just print the UID
-    $procPlot.=sprintf("%s${SEP}%d${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s\n",
+    $procPlot.=sprintf("%s${SEP}%d${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%d${SEP}%d${SEP}%d${SEP}%d${SEP}%d${SEP}%d${SEP}%d${SEP}%s${SEP}%s${SEP}%s\n",
           $datetime, $procPid[$i], $procUser[$i],  $procPri[$i], 
 	  $procPpid[$i],  $procState[$i],  
 	  defined($procVmSize[$i]) ? $procVmSize[$i] : 0, 
@@ -6247,6 +6408,13 @@ sub printPlotProc
 	  defined($procVmLib[$i])  ? $procVmLib[$i]  : 0,
 	  cvtT1($procSTime[$i],1), cvtT1($procUTime[$i],1), 
 	  cvtT2($procSTimeTot[$i]+$procUTimeTot[$i],1),
+	  defined($procRKB[$i])    ? $procRKB[$i]/$interval2Secs  : 0,
+	  defined($procWKB[$i])    ? $procWKB[$i]/$interval2Secs  : 0,
+	  defined($procRKBC[$i])   ? $procRKBC[$i]/$interval2Secs : 0,
+	  defined($procWKBC[$i])   ? $procWKBC[$i]/$interval2Secs : 0,
+	  defined($procRSys[$i])   ? $procRSys[$i]/$interval2Secs : 0,
+	  defined($procWSys[$i])   ? $procWSys[$i]/$interval2Secs : 0,
+	  defined($procCKB[$i])    ? $procCKB[$i]/$interval2Secs  : 0,
 	  cvt($majFlt), cvt($minFlt),
 	  defined($procCmd[$i])    ? $procCmd[$i] : $procName[$i]);
 

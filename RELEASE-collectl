@@ -43,6 +43,21 @@ KNOWN PROBLEMS/RESTRICTIONS
     or else will trip error checks in checkSubOpts()
   - this version may generate errors "Ignoring '!' modifier for short option P" with
     older versions of perl OR at least older version of the 'getopts' module.
+  - when showing process command, only show command portion.  the args will still be
+    saved when using -P
+
+2.4.0	Dec 23, 2007
+  - test for -f filename only checked for existing directory and if ended in /
+    still created it but logfile created started with -
+  - changed way lustre versions and services formatted in header because when used 
+    very old file where neither cfs or sfs version defined we get an extra CR which 
+    screws up gnuplot.  I'm probably the only one who will even see this.
+  - typo prevented OST BRW stats headers from printing properly which in turn messed
+    up plotting
+  - remove arg-list from process command string when displaying in terminal format
+  - added process i/o stats for systems with that feature built into the kernel
+  - include new flag --procio which functions silimarly to --procmem in that it
+    show much more detail about stats
 
 2.3.4   Dec 13, 2007
   - added IB code of 0c06 for Mellanox IB Infinihost III card

@@ -894,7 +894,7 @@ There are less, and some different fields for V2.
 .SH Processes
 .nf
 # PROCESS SUMMARY (faults are /sec)
-# PID  User     PR  PPID S   VSZ   RSS  SysT  UsrT Pct  AccuTime MajF MinF Command
+# PID  User     PR  PPID S   VSZ   RSS  SysT  UsrT Pct  AccuTime  RKB  WKB MajF MinF Command
 .fi
 
 .B PID
@@ -945,6 +945,16 @@ time are used for this calculation)
 .RS
 Total accumulated System and User time since the process began execution
 .RE
+.B RKB
+.RS
+This is the number of kilobytes of data written by each process.  Both
+this and the WKB field are only present if the kernel had proces i/o
+monitoring enabled which is not the default as of 2.6.23.
+.RE
+.B WKB
+.RS
+This is the number of kilobytes of data read by each process
+.RE
 .B MajF
 .RS
 Major Page Faults per second
@@ -956,6 +966,35 @@ Minor Page Faults per second
 .B Command
 .RS
 Command that is running.  Path and command line options are NOT included
+.RE
+
+The following alternate formate is produced when --procio is selected, noting
+that several of the fields are identical to those described above and will
+not be repeated in the descriptions that follow.
+
+.nf
+# PID  User     S  SysT  UsrT   RKB   WKB  RKBC  WKBC  RSYS  WSYS  CNCL  Command
+.fi
+
+.B RKBC
+.RS
+Characters read per second in KB.
+.RE
+.B WKBC
+.RS
+Characters written per second in KB.
+.RE
+.B RSYS
+.RS
+Read system calls per second
+.RE
+.B WSYS
+.RS
+Write system calls per second
+.RE
+.B CNCL
+.RS
+Write bytes cancelled per second
 .RE
 
 .SH Slabs

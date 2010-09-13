@@ -96,15 +96,6 @@ as a daemon, primarily used when starting as a service.  One
 caveat about this mode is you can only run one copy.
 .RE
 
-.B "--expdir directory"
-.RS
-This names the directory to write exported output to when writing
-to a local file, such as lexpr/sexpr do when then write the L/S files.  
-Note that it is up to the script to decide if it chooses to use this 
-switch as not all may choose to write to a file.  The default is to
-use the directory specified by -f.
-.RE
-
 .B "--export file[,options]"
 .RS
 This requests that collectl does not print anything on the terminal (or
@@ -278,6 +269,14 @@ between those dates will have all their data reported.
 When reporting usernames associated with a UID, use this file for the mapping.
 This is particularly important on systems running NIS where this are no user
 names in /etc/passwd.
+.RE
+
+.B "--pname name"
+.RS
+By default, collectl uses the file /var/run/collectl.pid to indicate the pid of
+the running instance of collectl and prevent multiple copies from being run.  If
+you DO want to run a second copy, this switch will cause collectl to change its
+process name to collectl-name and use that name as the associated pid file as well.
 .RE
 
 .B "--offsettime seconds"

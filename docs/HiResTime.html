@@ -37,8 +37,11 @@ different location, and collectl still sees the old version.  You can usually ge
 around this problem by re-executing the <i>make install</i> command as <i>make 
 install -UNINST=1</i>
 <p>
-If anyone identifies this problem occuring at times other than system startup be 
-sure to post a note on the sourceforge forum and let myself and others know.
+<b>Update - April 08, 2009</b>
+<br>It looks like RedHat has finally responded to my bugzilla and posted a
+<a href=http://rhn.redhat.com/errata/RHBA-2009-0406.html>solution</a>, which makes
+me optimistic we should see a newer version of <i>Time::HiRes</i> in the RHEL5.4 timeframe.
+That still doesn't mean the problem has been resolved on distros that use older versions.
 
 </body>
 </html>

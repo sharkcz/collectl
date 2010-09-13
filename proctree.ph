@@ -36,6 +36,7 @@ sub proctreeInit
   $expSkip=shift;
   $expOpts=shift;
 
+  error("you cannot do socket I/O with proctree")       if $sockFlag;
   error("you cannot use --procfilt with 'proctree'")    if $procFilt ne '';
   error("do not specify any options with --export when using --top interactively")
 	    if $numTop && $playback eq '' && defined($expSkip);

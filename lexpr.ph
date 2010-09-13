@@ -1,218 +1,276 @@
-# Call with --custom "lexpr[,[filename][,subsys]]"
-#   note: filename does not include directory, default=L
-#         if subsys is specified these are the subsytems reported on NOT all
-#            the ones listed with -s
-my ($filename, $filespec, $lexopts);
+# copyright, 2003-2009 Hewlett-Packard Development Company, LP
+
+# Call with --custom "lexpr[,switches]
+# Debug
+#   1 - show all names/values
+#   2 - just show names/values 'sent'
+#   4 - unsed
+#   8 - do not send anything 
+#       (useful when displaying normal output on terminal)
+
+my ($lexSubsys, $lexInterval, $lexDebug, $lexCOFlag, $lexTTL, $lexFilename, $lexSumFlag);
+my ($lexDataIndex, @lexDataLast, @lexDataMin, @lexDataMax, @lexDataTot, @lexTTL, $lexSendCount);
+my ($lexMinFlag, $lexMaxFlag, $lexAvgFlag)=(0,0,0);
+my $lexOneTB=1024*1024*1024*1024;
+my $lexCounter=0;
+my $lexFlags;
 sub lexprInit
 {
-  $filename=shift;
-  $lexopts= shift;
+  # Defaults for options
+  $lexDebug=$lexCOFlag=0;
+  $lexFilename='';
+  $lexInterval=$interval;
+  $lexSubsys=$subsys;
+  $lexTTL=5;
 
-  $filename='L'    if !defined($filename) || $filename eq '';
-  $filespec="$expDir/$filename";
+  foreach my $option (@_)
+  {
+    my ($name, $value)=split(/=/, $option);
+    error("invalid lexpr option '$name'")    if $name!~/^[dfis]?$|^co$|^ttl$|^min$|^max$|^avg$/;
 
-  $lexopts=$subsys    if !defined($lexopts);
-  error("options to lexpr not a proper subset of '$subsys'")    if $lexopts!~/^[$subsys]+$/;
+    $lexCOFlag=1           if $name eq 'co';
+    $lexDebug=$value       if $name eq 'd';
+    $lexFilename=$value    if $name eq 'f';
+    $lexInterval=$value    if $name eq 'i';
+    $lexSubsys=$value      if $name eq 's';
+    $lexTTL=$value         if $name eq 'ttl';
+    $lexMinFlag=1          if $name eq 'min';
+    $lexMaxFlag=1          if $name eq 'max';
+    $lexAvgFlag=1          if $name eq 'avg';
+  }
+
+  # If importing data, and if not reporting anything else, $subsys will be ''
+  $lexSubsys=~s/x//gi    if $subsys!~/x/i;    # in case disabled at runtime
+  $lexSumFlag=$lexSubsys=~/[cdfilmnstxE]/ ? 1 : 0;
+  error("lexpr subsys options '$lexSubsys' not a proper subset of '$subsys'")
+	    if $subsys ne '' && $lexSubsys!~/^[$subsys]+$/;
+
+  error("lexpr cannot write a snapshot file and use a socket at the same time")
+	if $sockFlag && $lexFilename ne '';
+
+  # Using -f and f= will not result in raw or plot file so need this message.
+  error ("using lexpr option 'f=' AND -f requires -P and/or --rawtoo")
+	if $lexFilename ne '' && $filename ne '' && !$plotFlag && !$rawtooFlag;
+
+  # if -f, use that dirname/L for snampshot file; otherwise use f= for it.
+  $lexFilename=(-d $filename) ? "$filename/L" : dirname($filename)."/L"
+	if $lexFilename eq '' && $filename ne '';
+
+  # convert to the number of samples we want to send
+  $lexSendCount=int($lexInterval/$interval);
+  error("lexpr interval option not a multiple of '$interval' seconds")
+        if $interval*$lexSendCount != $lexInterval;
+
+  $lexFlags=$lexMinFlag+$lexMaxFlag+$lexAvgFlag;
+  error("only 1 of 'min', 'max' or 'avg' with 'lexpr'")    if $lexFlags>1;
+  error("'min', 'max' and 'avg' require lexpr 'i' that is > collectl's -i")
+	if $lexFlags && $lexSendCount==1;
 }
 
 sub lexpr
 {
-  my $sumFlag=$subsys=~/[cdfilmnstxE]/ ? 1 : 0;
-  my $detFlag=$subsys=~/[CDN]/         ? 1 : 0;
+  # We ALWAYS process the same number of data elements for any collectl instance
+  # so we can use a global index to point to the one we're currently using.
+  $lexDataIndex=0;
 
   my ($cpuSumString,$cpuDetString)=('','');
-  if ($lexopts=~/c/i)
+  if ($lexSubsys=~/c/i)
   {
-    if ($lexopts=~/c/)
+    if ($lexSubsys=~/c/)
     {
       # CPU utilization is a % and we don't want to report fractions
       my $i=$NumCpus;
-      $cpuSumString.=sprintf("cputotals.user %d\n",  $userP[$i]);
-      $cpuSumString.=sprintf("cputotals.nice %d\n",  $niceP[$i]);
-      $cpuSumString.=sprintf("cputotals.sys %d\n",   $sysP[$i]);
-      $cpuSumString.=sprintf("cputotals.wait %d\n",  $waitP[$i]);
-      $cpuSumString.=sprintf("cputotals.irq %d\n",   $irqP[$i]);
-      $cpuSumString.=sprintf("cputotals.soft %d\n",  $softP[$i]);
-      $cpuSumString.=sprintf("cputotals.steal %d\n", $stealP[$i]);
-      $cpuSumString.=sprintf("cputotals.idle %d\n",  $idleP[$i]);
+      $cpuSumString.=sendData("cputotals.user",  $userP[$i]);
+      $cpuSumString.=sendData("cputotals.nice",  $niceP[$i]);
+      $cpuSumString.=sendData("cputotals.sys",   $sysP[$i]);
+      $cpuSumString.=sendData("cputotals.wait",  $waitP[$i]);
+      $cpuSumString.=sendData("cputotals.irq",   $irqP[$i]);
+      $cpuSumString.=sendData("cputotals.soft",  $softP[$i]);
+      $cpuSumString.=sendData("cputotals.steal", $stealP[$i]);
+      $cpuSumString.=sendData("cputotals.idle",  $idleP[$i]);
 
-      $cpuSumString.=sprintf("ctxint.ctx %d\n",  $ctxt/$intSecs);
-      $cpuSumString.=sprintf("ctxint.int %d\n",  $intrpt/$intSecs);
-      $cpuSumString.=sprintf("ctxint.proc %d\n", $proc/$intSecs);
-      $cpuSumString.=sprintf("ctxint.runq %d\n", $loadQue);
+      $cpuSumString.=sendData("ctxint.ctx",  $ctxt/$intSecs);
+      $cpuSumString.=sendData("ctxint.int",  $intrpt/$intSecs);
+      $cpuSumString.=sendData("ctxint.proc", $proc/$intSecs);
+      $cpuSumString.=sendData("ctxint.runq", $loadQue);
     }
 
-    if ($lexopts=~/C/)
+    if ($lexSubsys=~/C/)
     {
       for (my $i=0; $i<$NumCpus; $i++)
       {
-        $cpuDetString.=sprintf("cpuinfo.user.cpu$i %d\n",   $userP[$i]);
-        $cpuDetString.=sprintf("cpuinfo.nice.cpu$i %d\n",   $niceP[$i]);
-        $cpuDetString.=sprintf("cpuinfo.sys.cpu$i %d\n",    $sysP[$i]);
-        $cpuDetString.=sprintf("cpuinfo.wait.cpu$i %d\n",   $waitP[$i]);
-        $cpuDetString.=sprintf("cpuinfo.irq.cpu$i %d\n",    $irqP[$i]);
-        $cpuDetString.=sprintf("cpuinfo.soft.cpu$i %d\n",   $softP[$i]);
-        $cpuDetString.=sprintf("cpuinfo.steal.cpu$i %d\n",  $stealP[$i]);
-        $cpuDetString.=sprintf("cpuinfo.idle.cpu$i %d\n",   $idleP[$i]);
-        $cpuDetString.=sprintf("cpuinfo.intrpt.cpu$i %d\n", $intrptTot[$i]);
+        $cpuDetString.=sendData("cpuinfo.user.cpu$i",   $userP[$i]);
+        $cpuDetString.=sendData("cpuinfo.nice.cpu$i",   $niceP[$i]);
+        $cpuDetString.=sendData("cpuinfo.sys.cpu$i",    $sysP[$i]);
+        $cpuDetString.=sendData("cpuinfo.wait.cpu$i",   $waitP[$i]);
+        $cpuDetString.=sendData("cpuinfo.irq.cpu$i",    $irqP[$i]);
+        $cpuDetString.=sendData("cpuinfo.soft.cpu$i",   $softP[$i]);
+        $cpuDetString.=sendData("cpuinfo.steal.cpu$i",  $stealP[$i]);
+        $cpuDetString.=sendData("cpuinfo.idle.cpu$i",   $idleP[$i]);
+        $cpuDetString.=sendData("cpuinfo.intrpt.cpu$i", $intrptTot[$i]);
       }
     }
   }
 
   my ($diskSumString,$diskDetString)=('','');
-  if ($lexopts=~/d/i)
+  if ($lexSubsys=~/d/i)
   {
-    if ($lexopts=~/d/)
+    if ($lexSubsys=~/d/)
     {
-      $diskSumString.=sprintf("disktotals.reads %d\n",    $dskReadTot/$intSecs);
-      $diskSumString.=sprintf("disktotals.readkbs %d\n",  $dskReadKBTot/$intSecs);
-      $diskSumString.=sprintf("disktotals.writes %d\n",   $dskWriteTot/$intSecs);
-      $diskSumString.=sprintf("disktotals.writekbs %d\n", $dskWriteKBTot/$intSecs);
+      $diskSumString.=sendData("disktotals.reads",    $dskReadTot/$intSecs);
+      $diskSumString.=sendData("disktotals.readkbs",  $dskReadKBTot/$intSecs);
+      $diskSumString.=sendData("disktotals.writes",   $dskWriteTot/$intSecs);
+      $diskSumString.=sendData("disktotals.writekbs", $dskWriteKBTot/$intSecs);
     }
 
-    if ($lexopts=~/D/)
+    if ($lexSubsys=~/D/)
     {
       for (my $i=0; $i<$NumDisks; $i++)
       {
-        $diskDetString.=sprintf("diskinfo.reads.$dskName[$i] %d\n",    $dskRead[$i]/$intSecs);
-        $diskDetString.=sprintf("diskinfo.readkbs.$dskName[$i] %d\n",  $dskReadKB[$i]/$intSecs);
-        $diskDetString.=sprintf("diskinfo.writes.$dskName[$i] %d\n",   $dskWrite[$i]/$intSecs);
-        $diskDetString.=sprintf("diskinfo.writekbs.$dskName[$i] %d\n", $dskWriteKB[$i]/$intSecs);
+        $diskDetString.=sendData("diskinfo.reads.$dskName[$i]",    $dskRead[$i]/$intSecs);
+        $diskDetString.=sendData("diskinfo.readkbs.$dskName[$i]",  $dskReadKB[$i]/$intSecs);
+        $diskDetString.=sendData("diskinfo.writes.$dskName[$i]",   $dskWrite[$i]/$intSecs);
+        $diskDetString.=sendData("diskinfo.writekbs.$dskName[$i]", $dskWriteKB[$i]/$intSecs);
       }
     }
   }
 
   my $nfsString='';
-  if ($lexopts=~/f/)
+  if ($lexSubsys=~/f/)
   {
     if ($nfsSFlag)
     {
-      $nfsString.=sprintf("nfsinfo.Sread %d\n",  $nfsSReadsTot/$intSecs);
-      $nfsString.=sprintf("nfsinfo.Swrite %d\n", $nfsSWritesTot/$intSecs);
-      $nfsString.=sprintf("nfsinfo.Smeta %d\n",  $nfsSMetaTot/$intSecs);
-      $nfsString.=sprintf("nfsinfo.Scommit %d\n",$nfsSCommitTot/$intSecs);
+      $nfsString.=sendData("nfsinfo.Sread",  $nfsSReadsTot/$intSecs);
+      $nfsString.=sendData("nfsinfo.Swrite", $nfsSWritesTot/$intSecs);
+      $nfsString.=sendData("nfsinfo.Smeta",  $nfsSMetaTot/$intSecs);
+      $nfsString.=sendData("nfsinfo.Scommit",$nfsSCommitTot/$intSecs);
     }
     if ($nfsCFlag)
     {
-      $nfsString.=sprintf("nfsinfo.Cread %d\n",  $nfsCReadsTot/$intSecs);
-      $nfsString.=sprintf("nfsinfo.Cwrite %d\n", $nfsCWritesTot/$intSecs);
-      $nfsString.=sprintf("nfsinfo.Cmeta %d\n",  $nfsCMetaTot/$intSecs);
-      $nfsString.=sprintf("nfsinfo.Ccommit %d\n",$nfsCCommitTot/$intSecs);
+      $nfsString.=sendData("nfsinfo.Cread",  $nfsCReadsTot/$intSecs);
+      $nfsString.=sendData("nfsinfo.Cwrite", $nfsCWritesTot/$intSecs);
+      $nfsString.=sendData("nfsinfo.Cmeta",  $nfsCMetaTot/$intSecs);
+      $nfsString.=sendData("nfsinfo.Ccommit",$nfsCCommitTot/$intSecs);
     }
   }
 
   my $inodeString='';
-  if ($lexopts=~/i/)
+  if ($lexSubsys=~/i/)
   {
-    $inodeString.="inodeinfo.unuseddcache $unusedDCache\n";
-    $inodeString.="inodeinfo.openfiles $openFiles\n";
-    $inodeString.="inodeinfo.inodeused $inodeUsed\n";
-    $inodeString.="inodeinfo.superused $superUsed\n";
-    $inodeString.="inodeinfo.dquotused $dquotUsed\n";
+    $inodeString.=sendData("inodeinfo.dentrynum", $dentryNum);
+    $inodeString.=sendData("inodeinfo.dentryunused", $dentryUnused);
+    $inodeString.=sendData("inodeinfo.filesalloc", $filesAlloc);
+    $inodeString.=sendData("inodeinfo.filesmax", $filesMax);
+    $inodeString.=sendData("inodeinfo.inodeused", $inodeUsed);
   }
 
   # No lustre details, at least not for now...
   my $lusSumString='';
-  if ($lexopts=~/l/)
+  if ($lexSubsys=~/l/)
   {
     if ($CltFlag)
     {
-      $lusSumString.=sprintf("lusclt.reads %d\n",    $lustreCltReadTot/$intSecs);
-      $lusSumString.=sprintf("lusclt.readkbs %d\n",  $lustreCltReadKBTot/$intSecs);
-      $lusSumString.=sprintf("lusclt.writes %d\n",   $lustreCltWriteTot/$intSecs);
-      $lusSumString.=sprintf("lusclt.writekbs %d\n", $lustreCltWriteKBTot/$intSecs);
-      $lusSumString.=sprintf("lusclt.numfs %d\n",    $NumLustreFS);
+      $lusSumString.=sendData("lusclt.reads",    $lustreCltReadTot/$intSecs);
+      $lusSumString.=sendData("lusclt.readkbs",  $lustreCltReadKBTot/$intSecs);
+      $lusSumString.=sendData("lusclt.writes",   $lustreCltWriteTot/$intSecs);
+      $lusSumString.=sendData("lusclt.writekbs", $lustreCltWriteKBTot/$intSecs);
+      $lusSumString.=sendData("lusclt.numfs",    $NumLustreFS);
     }
 
     if ($MdsFlag)
     {
-      $lusSumString.=sprintf("lusclt.close %d\n",    $lustreMdsClose/$intSecs);
-      $lusSumString.=sprintf("lusclt.getattr %d\n",  $lustreMdsGetattr/$intSecs);
-      $lusSumString.=sprintf("lusclt.reint %d\n",    $lustreMdsReint/$intSecs);
-      $lusSumString.=sprintf("lusclt.sync %d\n",     $lustreMdsSync/$intSecs);
+      $lusSumString.=sendData("lusclt.close",    $lustreMdsClose/$intSecs);
+      $lusSumString.=sendData("lusclt.getattr",  $lustreMdsGetattr/$intSecs);
+      $lusSumString.=sendData("lusclt.reint",    $lustreMdsReint/$intSecs);
+      $lusSumString.=sendData("lusclt.sync",     $lustreMdsSync/$intSecs);
     }
 
     if ($OstFlag)
     {
-      $lusSumString.=sprintf("lusost.reads %d\n",    $lustreReadOpsTot/$intSecs);
-      $lusSumString.=sprintf("lusost.readkbs %d\n",  $lustreReadKBytesTot/$intSecs);
-      $lusSumString.=sprintf("lusost.writes %d\n",   $lustreWriteOpsTot/$intSecs);
-      $lusSumString.=sprintf("lusost.writekbs %d\n", $lustreWriteKBytesTot/$intSecs);
+      $lusSumString.=sendData("lusost.reads",    $lustreReadOpsTot/$intSecs);
+      $lusSumString.=sendData("lusost.readkbs",  $lustreReadKBytesTot/$intSecs);
+      $lusSumString.=sendData("lusost.writes",   $lustreWriteOpsTot/$intSecs);
+      $lusSumString.=sendData("lusost.writekbs", $lustreWriteKBytesTot/$intSecs);
     }
 
   }
 
   my $memString='';
-  if ($lexopts=~/m/)
+  if ($lexSubsys=~/m/)
   {
-    $memString.="meminfo.tot $memTot\n";
-    $memString.="meminfo.used $memUsed\n";
-    $memString.="meminfo.free $memFree\n";
-    $memString.="meminfo.shared $memShared\n";
-    $memString.="meminfo.buf $memBuf\n";
-    $memString.="meminfo.cached $memCached\n";
-    $memString.="meminfo.slab $memSlab\n";
-    $memString.="meminfo.map $memMap\n";
-    $memString.="swapinfo.total $swapTotal\n";
-    $memString.="swapinfo.used $swapUsed\n";
-    $memString.="swapinfo.in $swapin/$intSecs\n";
-    $memString.="swapinfo.out $swapout/$intSecs\n";
-    $memString.="pageinfo.fault $pagefault/$intSecs\n";
-    $memString.="pageinfo.mayfault $pagemajfault/$intSecs\n";
-    $memString.="pageinfo.in $pagein/$intSecs\n";
-    $memString.="pageinfo.out $pageout/$intSecs\n";
+    $memString.=sendData("meminfo.tot", $memTot);
+    $memString.=sendData("meminfo.used", $memUsed);
+    $memString.=sendData("meminfo.free", $memFree);
+    $memString.=sendData("meminfo.shared", $memShared);
+    $memString.=sendData("meminfo.buf", $memBuf);
+    $memString.=sendData("meminfo.cached", $memCached);
+    $memString.=sendData("meminfo.slab", $memSlab);
+    $memString.=sendData("meminfo.map", $memMap);
+    $memString.=sendData("meminfo.inactive", $inactive);
+    $memString.=sendData("meminfo.hugetot", $memHugeTot);
+    $memString.=sendData("meminfo.hugefree", $memHugeFree);
+    $memString.=sendData("meminfo.hugersvd", $memHugeRsvd);
+    $memString.=sendData("swapinfo.total", $swapTotal);
+    $memString.=sendData("swapinfo.free", $swapFree);
+    $memString.=sendData("swapinfo.used", $swapUsed);
+    $memString.=sendData("swapinfo.in", $swapin/$intSecs);
+    $memString.=sendData("swapinfo.out", $swapout/$intSecs);
+    $memString.=sendData("pageinfo.fault", $pagefault/$intSecs);
+    $memString.=sendData("pageinfo.majfault", $pagemajfault/$intSecs);
+    $memString.=sendData("pageinfo.in", $pagein/$intSecs);
+    $memString.=sendData("pageinfo.out", $pageout/$intSecs);
   }
 
   my ($netSumString,$netDetString)=('','');
-  if ($lexopts=~/n/i)
+  if ($lexSubsys=~/n/i)
   {
-    if ($lexopts=~/n/)
+    if ($lexSubsys=~/n/)
     {
-      $netSumString.=sprintf("nettotals.kbin %d\n",   $netRxKBTot/$intSecs);
-      $netSumString.=sprintf("nettotals.pktin %d\n",  $netRxPktTot/$intSecs);
-      $netSumString.=sprintf("nettotals.kbout %d\n",  $netTxKBTot/$intSecs);
-      $netSumString.=sprintf("nettotals.pktout %d\n", $netTxPktTot/$intSecs);
+      $netSumString.=sendData("nettotals.kbin",   $netRxKBTot/$intSecs);
+      $netSumString.=sendData("nettotals.pktin",  $netRxPktTot/$intSecs);
+      $netSumString.=sendData("nettotals.kbout",  $netTxKBTot/$intSecs);
+      $netSumString.=sendData("nettotals.pktout", $netTxPktTot/$intSecs);
     }
 
-    if ($lexopts=~/N/)
+    if ($lexSubsys=~/N/)
     {
       for ($i=0; $i<$netIndex; $i++)
       {
         next    if $netName[$i]=~/lo|sit/;
-        $netDetString.=sprintf("netinfo.kbin.$netName[$i] %d\n",   $netRxKB[$i]/$intSecs);
-        $netDetString.=sprintf("netinfo.pktin.$netName[$i] %d\n",  $netRxPkt[$i]/$intSecs);
-        $netDetString.=sprintf("netinfo.kbout.$netName[$i] %d\n",  $netTxKB[$i]/$intSecs);
-        $netDetString.=sprintf("netinfo.pktout.$netName[$i] %d\n", $netTxPkt[$i]/$intSecs);
+        $netDetString.=sendData("netinfo.kbin.$netName[$i]",   $netRxKB[$i]/$intSecs);
+        $netDetString.=sendData("netinfo.pktin.$netName[$i]",  $netRxPkt[$i]/$intSecs);
+        $netDetString.=sendData("netinfo.kbout.$netName[$i]",  $netTxKB[$i]/$intSecs);
+        $netDetString.=sendData("netinfo.pktout.$netName[$i]", $netTxPkt[$i]/$intSecs);
       }
     }
   }
 
   my $sockString='';
-  if ($lexopts=~/s/)
+  if ($lexSubsys=~/s/)
   {
-    $sockString.="sockinfo.used $sockUsed\n";
-    $sockString.="sockinfo.tcp $sockTcp\n";
-    $sockString.="sockinfo.orphan $sockOrphan\n";
-    $sockString.="sockinfo.tw $sockTw\n";
-    $sockString.="sockinfo.alloc $sockAlloc\n";
-    $sockString.="sockinfo.mem $sockMem\n";
-    $sockString.="sockinfo.udp $sockUdp\n";
-    $sockString.="sockinfo.raw $sockRaw\n";
-    $sockString.="sockinfo.frag $sockFrag\n";
-    $sockString.="sockinfo.fragm $sockFragM\n";
+    $sockString.=sendData("sockinfo.used", $sockUsed);
+    $sockString.=sendData("sockinfo.tcp", $sockTcp);
+    $sockString.=sendData("sockinfo.orphan", $sockOrphan);
+    $sockString.=sendData("sockinfo.tw", $sockTw);
+    $sockString.=sendData("sockinfo.alloc", $sockAlloc);
+    $sockString.=sendData("sockinfo.mem", $sockMem);
+    $sockString.=sendData("sockinfo.udp", $sockUdp);
+    $sockString.=sendData("sockinfo.raw", $sockRaw);
+    $sockString.=sendData("sockinfo.frag", $sockFrag);
+    $sockString.=sendData("sockinfo.fragm", $sockFragM);
   }
 
   my $tcpString='';
-  if ($lexopts=~/t/)
+  if ($lexSubsys=~/t/)
   {
-    $tcpString.=sprintf("tcpinfo.pureack %d\n", $tcpValue[27]/$intSecs);
-    $tcpString.=sprintf("tcpinfo.hypack %d\n", $tcpValue[28]/$intSecs);
-    $tcpString.=sprintf("tcpinfo.loss %d\n", $tcpValue[40]/$intSecs);
-    $tcpString.=sprintf("tcpinfo.ftrans %d\n", $tcpValue[45]/$intSecs);
+    $tcpString.=sendData("tcpinfo.pureack", $tcpValue[27]/$intSecs);
+    $tcpString.=sendData("tcpinfo.hypack", $tcpValue[28]/$intSecs);
+    $tcpString.=sendData("tcpinfo.loss", $tcpValue[40]/$intSecs);
+    $tcpString.=sendData("tcpinfo.ftrans", $tcpValue[45]/$intSecs);
   }
 
   my $intString='';
-  if ($lexopts=~/x/i)
+  if ($lexSubsys=~/x/i)
   {
     if ($NumXRails)
     {
@@ -230,14 +288,14 @@ sub lexpr
       $pktOutT=$ibTxTot;
     }
    
-    $intString.=sprintf("iconnect.kbin %d\n",   $kbInT/$intSecs);
-    $intString.=sprintf("iconnect.pktin %d\n",  $pktInT/$intSecs);
-    $intString.=sprintf("iconnect.kbout %d\n",  $kbOutT/$intSecs);
-    $intString.=sprintf("iconnect.pktout %d\n", $pktOutT/$intSecs);
+    $intString.=sendData("iconnect.kbin",   $kbInT/$intSecs);
+    $intString.=sendData("iconnect.pktin",  $pktInT/$intSecs);
+    $intString.=sendData("iconnect.kbout",  $kbOutT/$intSecs);
+    $intString.=sendData("iconnect.pktout", $pktOutT/$intSecs);
   }
 
   my $envString='';
-  if ($lexopts=~/E/i)
+  if ($lexSubsys=~/E/i)
   {
     foreach $key (sort keys %$ipmiData)
     {
@@ -245,30 +303,132 @@ sub lexpr
       {
         my $name=$ipmiData->{$key}->[$i]->{name};
         my $inst=($key!~/power/ && $ipmiData->{$key}->[$i]->{inst} ne '-1') ? $ipmiData->{$key}->[$i]->{inst} : '';
-        $envString.="env.$name$inst $ipmiData->{$key}->[$i]->{value}\n";
+        $envString.=sendData("env.$name$inst", $ipmiData->{$key}->[$i]->{value});
       }
     }
   }
 
-  my $lexprRec='';
-  $lexprRec.="sample.time $lastSecs\n"    if $sumFlag;
-  $lexprRec.="$cpuSumString$diskSumString$nfsString$inodeString$memString$netSumString";
-  $lexprRec.="$lusSumString$sockString$tcpString$intString$envString";
+  # if any imported data, it may want to include lexpr output AND we do a little more work to
+  # separate the summary from the detail
+  my (@nameS, @valS, @nameD, @valD);
+  my ($impSumString, $impDetString)=('','');
+  for (my $i=0; $i<$impNumMods; $i++) { &{$impPrintExport[$i]}('l', \@nameS, \@valS, \@nameD, \@valD); }
+  foreach (my $i=0; $i<scalar(@nameS); $i++) { $impSumString.=sendData($nameS[$i], $valS[$i]); }
+  foreach (my $i=0; $i<scalar(@nameD); $i++) { $impDetString.=sendData($nameD[$i], $valD[$i]); }
+  $lexSumFlag=1    if $impSumString ne '';   # in case not already set
 
-  $lexprRec.="sample.time $lastSecs\n"   if !$sumFlag;
-  $lexprRec.="$cpuDetString$diskDetString$netDetString";
+  #     B u i l d    O u t p u t    S t r i n g
+
+  my $lexprRec='';
+  $lexprRec.="sample.time $lastSecs\n"    if $lexSumFlag;
+  $lexprRec.="$cpuSumString$diskSumString$nfsString$inodeString$memString$netSumString";
+  $lexprRec.="$lusSumString$sockString$tcpString$intString$envString$impSumString";
+
+  $lexprRec.="sample.time $lastSecs\n"   if !$lexSumFlag;
+  $lexprRec.="$cpuDetString$diskDetString$netDetString$impDetString";
 
   # Either send data over socket or print to terminal OR write to
   # a file, but not both!
-  if ($sockFlag || $expDir eq '')
+  if ($sockFlag || $lexFilename eq '')
   {
     printText($lexprRec, 1);    # include EOL marker at end
   }
-  elsif ($expDir ne '')
+  elsif ($lexFilename ne '')
   {
-    open  EXP, ">$filespec" or logmsg("F", "Couldn't create '$filespec'");
+    open  EXP, ">$lexFilename" or logmsg("F", "Couldn't create '$lexFilename'");
     print EXP  $lexprRec;
     close EXP;
   }
 }
+
+# this code tightly synchronized with gexpr
+sub sendData
+{
+  my $name= shift;
+  my $value=shift;
+
+  $value=int($value);
+
+  # These are only undefined the very first time
+  if (!defined($lexTTL[$lexDataIndex]))
+  {
+    $lexTTL[$lexDataIndex]=$lexTTL;
+    $lexDataLast[$lexDataIndex]=-1;
+  }
+
+  # As a minor optimization, only do this when dealing with min/max/avg values
+  if ($lexFlags)
+  {
+    # And while this should be done in init(), we really don't know how may indexes
+    # there are until our first pass through...
+    if ($lexCounter==0)
+    {
+      $lexDataMin[$lexDataIndex]=$lexOneTB;
+      $lexDataMax[$lexDataIndex]=0;
+      $lexDataTot[$lexDataIndex]=0;
+    }
+
+    $lexDataMin[$lexDataIndex]=$value    if $lexMinFlag && $value<$lexDataMin[$lexDataIndex];
+    $lexDataMax[$lexDataIndex]=$value    if $lexMaxFlag && $value>$lexDataMax[$lexDataIndex];
+    $lexDataTot[$lexDataIndex]+=$value   if $lexAvgFlag;
+  }
+
+  return('')    if ++$lexCounter!=$lexSendCount;
+
+  #    A c t u a l    S e n d    H a p p e n s    H e r e
+
+  # If doing min/max/avg, reset $value
+  $lexCounter=0;
+  if ($lexFlags)
+  {
+    $value=$lexDataMin[$lexDataIndex]    if $lexMinFlag;
+    $value=$lexDataMax[$lexDataIndex]    if $lexMaxFlag;
+    $value=($lexDataTot[$lexDataIndex]/$lexSendCount)    if $lexAvgFlag;
+  }
+
+  # Always send send data if not CO mode, but if so only send when it has
+  # indeed changed OR TTL about to expire
+  my $valSentFlag=0;
+  my $returnString='';
+  if (!$lexCOFlag || $value!=$lexDataLast[$lexDataIndex] || $lexTTL[$lexDataIndex]==1)
+  {
+    $valSentFlag=1;
+    $returnString=sprintf("%s %d\n", $name, $value)    unless $lexDebug & 8;
+    $lexDataLast[$lexDataIndex]=$value;
+  }
+
+  # A fair chunk of work, but worth it
+  if ($lexDebug & 3)
+  {
+    my ($intSeconds, $intUsecs);
+    if ($hiResFlag)
+    {
+      # we have to fully qualify name because or 'require' vs 'use'
+      ($intSeconds, $intUsecs)=Time::HiRes::gettimeofday();
+    }
+    else
+    {
+      $intSeconds=time;
+      $intUsecs=0;
+    }
+
+    $intUsecs=sprintf("%06d", $intUsecs);
+    my ($sec, $min, $hour)=localtime($intSeconds);
+    my $timestamp=sprintf("%02d:%02d:%02d.%s", $hour, $min, $sec, substr($intUsecs, 0, 3));
+    printf "$timestamp Name: %-20s Val: %8d TTL: %d %s\n",
+		$name, $value, $lexTTL[$lexDataIndex], ($valSentFlag) ? 'sent' : ''
+			if $lexDebug & 1 || $valSentFlag;
+  }
+
+  # TTL only applies when in 'CO' mode, noting we already made expiration
+  # decision above when we saw counter of 1
+  if ($lexCOFlag)
+  {
+    $lexTTL[$lexDataIndex]--          if !$valSentFlag;
+    $lexTTL[$lexDataIndex]=$lexTTL    if $valSentFlag || $lexTTL[$lexDataIndex]==0;
+  }
+  $lexDataIndex++;
+  return($returnString);
+}
+
 1;

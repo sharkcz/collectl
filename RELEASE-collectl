@@ -37,6 +37,85 @@ KNOWN PROBLEMS/RESTRICTIONS
   - if a symlink is used to point to the executable, it MUST contain the full
     path or collectl will not be able to find 'formatit.ph'
 
+3.3.2.1   April 28, 2009
+  - screwed up $rootFlag and set to 0 after it was intialized correctly
+  - fixed a couple of problems in INSTALL: added 'q' to gzip, added gexpr/envrules.std
+  - added DL385G5 top envrules.std
+
+3.3.1-10  April 27, 2009
+  - If root, add product name from 'dmidecode' to header
+  - If !root, don't allow -sE because ipmitool will fail
+  - When running -sE and no --envrules, look in 'envrules.std' for matching product rules
+  - remove '.' from ipmi device names before applying parsing rules (screws up =~//)
+  - change ipmi value of 'no reading' to -1
+
+3.3.1-9 April 24, 2009
+  - When splitting off the daemon options, needed to include ',2' in the split
+    or any *expr options get screwed up since they can have their own =
+  - removed 'C' from -s in daemon command string since no longer needed
+
+3.3.1-8	April 22, 2009
+  - renamed cmuextras to misc and renamed all variables accordingly
+  - added inactive memory to lexpr
+  - set default interval for 'misc.ph' to 60 seconds
+  - a couple sets of data names in gexpr (for cpu and disk detail) were framed in
+    single quotes and neede to use doubles
+  - wrong variable name for $intrptTot
+  - removed check for CPU data in presence of -sD since always there
+  - -sL --lustopts O not properly parsing read/write bytes for CFS/SUN release
+  - accidentally left some debugging code in that changed 'sd' disks to 'xvd' disks
+  - added support for disk types of 'emcpower'
+  - when running with -P and --rawtoo, collectl only write to the raw file but still created an
+    empty prc file.  Not it doesn't create that empty file.  Also added reason to FAQ
+
+3.3.1-7
+  - removed memhuge from cmuextras and added to core memory stats as well as
+    gexpr, lexpr and sexpr
+  - cleaned up a couple bugs in gexpr for i= processing
+  - silently remove 'x' from 's=' in gexpr, lexpr and sexpr if not part of -s since it
+    could have been disabled.  this allows one to specify -sx as well as s=x without
+    fear of getting a hard error from the *expr
+
+3.3.1-6
+  - updated collectl-debian
+  - added avg/min/max options to gexpr and lexpr
+  - added import 'cmuextras.ph' to kit
+  - removed line that set $message to 'unexpected perfquey error' which was
+    clearly the wrong thing to be doing
+  - in 3.2.1-6 added 'unexpected message' for perfquery failures that was wrong so
+    removed it
+
+3.3.1-5	Apr 09, 2009
+  - need to include command switches when changing process name
+  - rewrite of all the start scripts (collectl, -generic, -debian and -suse) to support
+    multiple daemons.  In the process fixed a bug where debian wouldn't restart correctly.
+    Added --restry 2 to start-stop-daemon and that seemed to fix it.
+  - added type 4 to gedtExec()
+
+3.3.1-4  Apr 06, 2009
+  - changed interface to sexpr and lexpr to more closely reflect gexpr dir/file naming,
+    updated documentation and also changed lexpr to include only sending changes and 
+    handling TTL, mainly by stealing a lot of code from gexpr.
+  - got rid of --expdir since that now handled with 'f=' option to all 3
+  - Had to move calling of ${export}Init to after initRecord()
+  - Reporting incorrect variables for -si with all 'expr' routines.  Had changed
+    inode data a long time ago but apparently nobody uses 'expr' or -si or both
+  - Needed to add -sC with -sj in sexpr
+  - Added SwapFree to *expr even though it can be derived
+  - new switch: --pname name, tells collectl to run as a different process name
+    and use a different pid file with that name, which in conjunction with hacking
+    up another init.d/collectl file will allow you to run a second instance of a 
+    daemon with a different name
+  - reset $interval2SecsReal to 1 at same as $intereval2Secs when $i2Secs is 0
+
+3.3.1-1
+  - when writing to plot files not including new headers on subsequent days
+  - typo on major fault display string in lexpr.ph
+  - if only logging plot detail data, was getting errors trying to print to
+    unopened tab file
+  - API for --import allows custom data collection, includes example hello.ph
+    - had to allow for playing of file with blank Subsys field
+
 3.2.1-6 March 03, 2009
   - added --nfsopts z to filter lines of 0 in -sF mode
   - if collectl.conf is not writeable (eg in R/O filesystem), do not try to add

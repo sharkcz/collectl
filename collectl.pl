@@ -21,7 +21,7 @@
 # 1024 - show list of SLABS to be monitored
 # 2048 - playback preprocessing 
 # 4096 - 
-# 8192 - show creation of RAW, PLOT and EXPORT files
+# 8192 - show creation of RAW, PLOT and files
 
 # debug tricks
 # - use '-d36' to see each line of raw data as it would be logged but not 
@@ -82,9 +82,9 @@ $Lctl=         '/usr/sbin/lctl';
 # Constants and removing -w warnings
 $miniDateFlag=0;
 $kernel2_4=$kernel2_6=$PageSize=0;
-$PidFile='/var/run/collectl.pid';
-$PerlVers=$Memory=$Swap=$Hyper=$Distro='';
+$PerlVers=$Memory=$Swap=$Hyper=$Distro=$ProductName='';
 $CpuVendor=$CpuMHz=$CpuCores=$CpuSiblings='';
+$PidFile='/var/run/collectl.pid';    # default, unless --pname
 $PQuery=$PCounter=$VStat=$VoltaireStats=$IBVersion=$HCALids=$OfedInfo='';
 $numBrwBuckets=$cfsVersion=$sfsVersion='';
 $Resize=$IpmiCache=$IpmiTypes=$ipmiExec='';
@@ -94,6 +94,9 @@ $lastSecs=$interval2Print=0;
 # Find out ASAP if we're linux or WNT based as well as whether or not XC based
 $PcFlag=($Config{"osname"}=~/MSWin32/) ? 1 : 0;
 $XCFlag=(!$PcFlag && -e '/etc/hptc-release') ? 1 : 0;
+
+# Always nice to know if we're root
+$rootFlag=(!$PcFlag && `whoami`=~/root/) ? 1 : 0;
 
 # Save architecture name as well as perl version, noting we want the perl version
 # reformatted to handle 2 digit mainor/patch numbers
@@ -106,7 +109,7 @@ if ($PerlVers lt '5.08.00')
   print "See /opt/hp/collectl/docs/FAQ-collectl.html for details.\n";
 }
 
-$Version=  '3.2.1-6';
+$Version=  '3.3.2-1';
 $Copyright='Copyright 2003-2009 Hewlett-Packard Development Company, L.P.';
 $License=  "collectl may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
@@ -304,14 +307,15 @@ $address=$beginTime=$endTime=$filename=$flush=$fileRoot='';
 $limits=$lustreSvcs=$runTime=$playback=$playbackFile=$rollLog='';
 $groupFlag=$msgFlag=$niceFlag=$plotFlag=$sshFlag=$wideFlag=$rawFlag=$ioSizeFlag=0;
 $userOptions=$userInterval=$userSubsys='';
-$export=$expName=$expDir=$expOpts=$topOpts=$topType='';
+$import=$export=$expName=$expOpts=$topOpts=$topType='';
+$impNumMods=0;  # also acts as a flag to tell us --import code loaded
 $homeFlag=$rawtooFlag=$autoFlush=$allFlag=0;
 $procOpts=$slabOpts='';
 $procFilt=$slabFilt='';
 $procAnalFlag=$procAnalCounter=$slabAnalFlag=$slabAnalCounter=$lastInt2Secs=0;
 $lastLogPrefix=$passwdFile='';
 $nfsOpts=$nfsFilt=$lustOpts=$userEnvOpts='';
-$grepPattern='';
+$grepPattern=$pname='';
 
 # Since --top has optionals arguments, we need to see if it was specified without
 # one and stick in the defaults noting -1 means to use the window size for size
@@ -398,11 +402,11 @@ GetOptions('align!'     => \$alignFlag,
 
            'all!'          => \$allFlag,
            'export=s'      => \$export,
-           'expdir=s'      => \$expDir,
 	   'from=s'        => \$from,
 	   'thru=s'        => \$thru,
 	   'headerrepeat=i'=> \$headerRepeat,
            'hr=i'          => \$headerRepeat,
+	   'import=s'      => \$import,
            'lustopts=s'    => \$lustOpts,
            'nfsopts=s'     => \$nfsOpts,
            'nfsfilt=s'     => \$nfsFilt,
@@ -412,6 +416,7 @@ GetOptions('align!'     => \$alignFlag,
            'envtest=s'     => \$envTestFile,
            'grep=s'        => \$grepPattern,
            'offsettime=s'  => \$offsetTime,
+           'pname=s'       => \$pname,
            'procanalyze!'  => \$procAnalFlag,
 	   'procopts=s'    => \$procOpts,
            'rawtoo!'       => \$rawtooFlag,
@@ -428,6 +433,14 @@ GetOptions('align!'     => \$alignFlag,
            'verbose!'      => \$verboseFlag,
            'vmstat!'       => \$vmstatFlag,
            ) or error("type -h for help");
+
+if ($pname ne '')
+{
+  # We need to include switches because collectl-generic expects to find them in the process name
+  $0="collectl-$pname $cmdSwitches";
+  $PidFile=~s/collectl/collectl-$pname/;
+  print "Set PName to collectl-$pname\n"    if $debug & 1;
+}
 
 #    O p e n    A    S o c k e t  ?
 
@@ -733,6 +746,77 @@ if ($topOpts ne '')
 error("--top only reports timestamps for single subsystem verbose data")
       if $options=~/[dDT]/ && $numTop && ($playback ne '' || !$sameColsFlag);
 
+#    I m p o r t
+
+if ($import ne '')
+{
+  # Default mode for --import is NO user defined subsystem in interactive mode.
+  # All must be explicitly defined
+  $subsys=''    if !$daemonFlag && $userSubsys eq '';
+
+  # Don't really need to do this but gets rid of uninit var warnings
+  undef @impKey;
+  undef @impInitInterval;
+  undef @impAnalyze;
+  undef @impPrintBrief;
+  undef @impPrintVerbose;
+  undef @impPrintPlot;
+  undef $impPrintExport;
+  foreach my $imp (split(/:/, $import))
+  {
+    $impString=$imp;
+    $impNumMods++;
+
+    # The following chunks based somewhat on --export code, except OPTS is a string
+    ($impName, $impOpts)=split(/,/, $impString, 2);
+    $impName.=".ph"    if $impName!~/\./;
+
+    # If the import file itself doesn't exist in current directory, try $BinDir 
+    my $tempName=$impName;
+    $impName="$BinDir/$impName"    if !-e $impName;
+    if (!-e "$impName")
+    {
+      my $temp="can't find import file '$tempName' in ./";
+      $temp.=" OR $BinDir/"    if $BinDir ne '.';
+      error($temp)             if !-e "$impName";
+    }
+
+    require $impName;
+
+    # the basename is the name of the function and also remove extension.
+    $impName=basename($impName);
+    $impName=(split(/\./, $impName))[0];
+
+    push @impOpts,         $impOpts;
+    push @impInit,         "${impName}Init";
+    push @impGetData,      "${impName}GetData";
+    push @impInitInterval, "${impName}InitInterval";
+    push @impAnalyze,      "${impName}Analyze";
+    push @impUpdateHeader, "${impName}UpdateHeader";
+    push @impPrintBrief,   "${impName}PrintBrief";
+    push @impPrintVerbose, "${impName}PrintVerbose";
+    push @impPrintPlot,    "${impName}PrintPlot";
+    push @impPrintExport,  "${impName}PrintExport";
+  }
+
+  # Call REQUIRED initialization routines
+  $impSummaryFlag=$impDetailFlag=0;
+  for (my $i=0; $i<$impNumMods; $i++)
+  { 
+    &{$impInit[$i]}(\$impOpts[$i], \$impKey[$i]);
+
+    # We need to know if any module has summary or data in case one one else does
+    # and we're in plot format so newlog() will know to open tab file.  This also
+    # helps optimize some of the print routines.
+    $impSummaryFlag++    if $impOpts[$i]=~/s/;
+    $impDetailFlag++     if $impOpts[$i]=~/d/;
+  }
+
+  # Reset output formatting based on the modules we just loaded
+  print "RESET OUTPUT FLAGS\n"    if $debug & 1;
+  setOutputFormat();
+}
+
 #    E x p o r t    M o d u l e s
 
 # since we might want to diddle with things like $subsys or fake out other
@@ -741,24 +825,14 @@ error("--top only reports timestamps for single subsystem verbose data")
 
 if ($export ne '')
 {
-  error("--expdir requires --export")    if $expDir ne '' && $export eq '';
-  error("$expDir doesn't exist")         if $expDir ne '' && !-e $expDir;
-  error("--expdir conflicts with -A")    if $expDir ne '' && $address ne '';
-  error("--expdir and -f requires -P or --rawtoo")   
-      if $expDir ne '' && $filename ne '' && !$plotFlag && !$rawtooFlag;
-
   # By design, if you specify --export and -f and have a socket open, the exported
-  # date goes over the socket and we write either a raw or plot file to the dir
+  # data goes over the socket and we write either a raw or plot file to the dir
   # pointed to by -f.  If not -P, we always write a raw file
   $rawtooFlag=1    if $sockFlag && $filename ne '' && !$plotFlag;
 
   $verboseFlag=1;
   ($expName, @expOpts)=split(/,/, $export);
   $expName.=".ph"    if $expName!~/\./;
-
-  # --expdir names output directory only if specified
-  $expDir=(-d $filename) ? $filename : dirname($filename)
-	if $filename ne '' && $expDir eq '';
 
   # If the export file itself doesn't exist in current directory, try $BinDir
   my $tempName=$expName;
@@ -767,17 +841,13 @@ if ($export ne '')
   {
     my $temp="can't find export file '$tempName' in ./";
     $temp.=" OR $BinDir/"    if $BinDir ne '.';
-    error($temp)             if !-e "$expName";
+    error($temp);
   }
   require $expName;
 
   # the basename is the name of the function and also remove extension.
   $expName=basename($expName);
   $expName=(split(/\./, $expName))[0];
-
-  # Call REQUIRED initialization routine
-  my $initName="${expName}Init";
-  &$initName(@expOpts);
 }
 
 #    S i m p l e    S w i t c h    C h e c k s
@@ -949,7 +1019,7 @@ if ($flush ne '')
 if ($daemonFlag)
 {
   error("no debugging allowed with -D")      if $debug;
-  error("-D can only be used by root")       if `whoami`!~/root/i;
+  error("-D can only be used by root")       if !$rootFlag;
   error("-D requires -f OR -A server")       if $filename eq '' && !$serverFlag;
   error("-p not allowed with -D")            if $playback ne "";
 
@@ -1355,7 +1425,6 @@ if ($playback ne '')
     printf "Host: $Host  Version: %s  Date: %s  Time: %s  Interval: %s Subsys: $recSubsys\n",
               $recVersion, $recDate, $recTime, $recInterval
 		  if $debug & 1;
-
     loadUids($passwdFile)    if $recSubsys=~/Z/;
 
     # track when the hostname (as set by initFormat() changes).  Note that the $Host is not
@@ -1451,12 +1520,6 @@ if ($playback ne '')
     elsif (defined($offsetTime))
     {
       $timeAdjust=$offsetTime;    # user override of default
-    }
-
-    if ($subsys=~/D/ && $recSubsys=~/d/ && $recSubsys!~/c/)
-    {
-      print "file recorded with -sd and not -sc cannot be played back with -sD\n";
-      next;
     }
 
     # Header already successfully read one, but what the heck...
@@ -1765,7 +1828,8 @@ loadUids($passwdFile)   if $subsys=~/Z/;
 
 # In case running on a cluster, record the name of the host we're running on.
 # Track in collecl's log as well as syslog
-$message="V$Version Beginning execution on $myHost...";
+my $temp=($pname ne '') ? "(running as '$pname') " : '';
+$message="V$Version Beginning execution ${temp}on $myHost...";
 logmsg("I", $message);
 logsys($message);
 checkHiRes()    if $daemonFlag;    # check for possible HiRes/glibc incompatibility
@@ -1773,7 +1837,7 @@ checkHiRes()    if $daemonFlag;    # check for possible HiRes/glibc incompatibil
 # initialize. noting if the user had only selected subsystems not supported
 # on this platform, initRecord() will have deselected them!
 initRecord();
-error("no subsystems selected")    if $subsys eq '';
+error("no subsystems selected")    if $subsys eq '' && $import eq '';  # ok in --import mode
 error("you cannot use --top and IO options with this kernel")  if $topIOFlag && !$processIOFlag;
 error("process I/O features not enabled in this kernel")       if $procOpts=~/i/   && !$processIOFlag;
 error("process I/O statistics not available in this kernel")   if $procOpts=~/[s]/ && !$processIOFlag;
@@ -1787,6 +1851,14 @@ if ($subsys=~/y/i && !$slabinfoFlag && !$slubinfoFlag)
 
 # We can't do this until we know if the data structures exist.
 loadSlabs($slabFilt)    if $subsys=~/y/i;
+
+# now that subsys accurately reflects the systems we're collectling data on we
+# can safely initialize out export if one is defined.
+if ($expName ne '')
+{
+  my $initName="${expName}Init";
+  &$initName(@expOpts);
+}
 
 # In case displaying output.  We also need the recorded version to match ours.
 initFormat();
@@ -2097,7 +2169,9 @@ for (; $count!=0 && !$doneFlag; $count--)
     # if time to roll, do so and recalculate next roll time.
     if ($intSeconds ge $rollSecs)
     {
-      $zlibErrors=0;
+      # We need to make sure each logfile has headers.  Since this flag is used interactively
+      # as well we can't just clear it here.
+      $zlibErrors=$headersPrinted=0;
       newLog($filename, "", "", "", "", "");
       $rollSecs+=$rollIncr*60;
 
@@ -2366,6 +2440,9 @@ for (; $count!=0 && !$doneFlag; $count--)
       }
     }
   }
+
+  # Custom data import  
+  for (my $i=0; $i<$impNumMods; $i++) { &{$impGetData[$i]}(); }
 
   #############################################
   #    I n t e r v a l 2    P r o c e s s i n g
@@ -3121,7 +3198,7 @@ sub getProc
   my $ignore=shift;
   my $quit=  shift;
   my $last=  shift;
-  my ($i, $index, $line, $ignoreString);
+  my ($index, $line, $ignoreString);
 
   if (!open PROC, "<$proc")
   {
@@ -3135,10 +3212,10 @@ sub getProc
   # Skip beginning if told to do so
   $ignore=0    if !defined($ignore);
   $quit=(defined($quit)) ? $ignore+$quit : 10000;
-  for ($i=0; $i<$ignore; $i++)  { <PROC>; }
+  for (my $i=0; $i<$ignore; $i++)  { <PROC>; }
 
   $index=0;
-  for ($i=$ignore; $i<$quit; $i++)
+  for (my $i=$ignore; $i<$quit; $i++)
   {
     last    if !($line=<PROC>);
     last    if defined($last) && $line=~/$last/;
@@ -3208,12 +3285,12 @@ sub getProc
     # in formatit.ph!!!
     elsif ($type==9)
     {
-$line=~s/sd/xvd/g;
       if ($line=~/cciss\/c\d+d\d+ /)   { record(2, "$tag $line"); next; }
       if ($line=~/hd[ab] /)            { record(2, "$tag $line"); next; }
       if ($line=~/ sd[a-z]+ /)         { record(2, "$tag $line"); next; }
       if ($line=~/xvd[a-z] /)          { record(2, "$tag $line"); next; }
       if ($line=~/dm-\d+ /)            { record(2, "$tag $line"); next; }
+      if ($line=~/emcpower/)           { record(2, "$tag $line"); next; }
     }
 
     # /proc/fs/lustre/llite/fsX/stats
@@ -3235,8 +3312,18 @@ $line=~s/sd/xvd/g;
     # locations we have to hunt them out, quitting after 'write' or course.
     elsif ($type==12)
     {
-      if ($line=~/^ost_read/)   { record(2, "$tag $line"); next; }
-      if ($line=~/^ost_write/)  { record(2, "$tag $line"); last; }
+      # This is for the standard CFS/SUN release
+      if ($sfsVersion eq '')
+      {
+        if ($line=~/^read_bytes/)   { record(2, "$tag $line"); next; }
+        if ($line=~/^write_bytes/)  { record(2, "$tag $line"); last; }
+      }
+      else
+      {
+        # and this is the older HP/SFS V2.*
+        if ($line=~/^ost_read/)   { record(2, "$tag $line"); next; }
+        if ($line=~/^ost_write/)  { record(2, "$tag $line"); last; }
+      }
     }
 
     # /proc/*/status - save it all!
@@ -3355,6 +3442,15 @@ sub getExec
     {
       record(2, "$tag: $line");
     }
+  }
+
+  # just count records
+  elsif ($type==4)
+  {
+    my $count=0;
+    foreach my $line (<CMD>)
+    {  $count++; }
+    record(2, "$tag: $count\n");
   }
 }
 
@@ -3535,6 +3631,11 @@ sub newLog
     open TCP, ">-" or logmsg("F", "Couldn't open TCP for STDOUT"); select TCP; $|=1;
     open SLB, ">-" or logmsg("F", "Couldn't open SLB for STDOUT"); select SLB; $|=1;
     open PRC, ">-" or logmsg("F", "Couldn't open PRC for STDOUT"); select PRC; $|=1;
+    for (my $i=0; $i<$impNumMods; $i++)
+    {
+      open $impGz[$i], ">-" or logmsg("F", "Couldn't open $impKey[$i] for STDOUT"); select $impGz[$i]; $|=1;
+    }
+
     select STDOUT; $|=1;
     return 1;
   }
@@ -3656,8 +3757,10 @@ sub newLog
     $printHeaders=0    if $newFiles{$filename}==1;
 
     # Open 'tab' file in plot mode if processing at least 1 core variable (or extended core)
+    # OR we're --importing something that prints summary data
     $temp="$SubsysCore$SubsysExcore";
-    if ($subsys=~/[$temp]/)
+
+    if ($subsys=~/[$temp]/ || $impSummaryFlag)
     {
       $ZLOG=Compress::Zlib::gzopen("$filename.tab.gz", $zmode) or
 	logmsg("F", "Couldn't open '$filename.tab.gz'")       if $zFlag;
@@ -3741,22 +3844,27 @@ sub newLog
           logmsg("F", "Couldn't open OST gzip file")     if  $zFlag && $LFlag && $reportOstFlag;
 
     # These next two guys are 'special' because they're not really detail files per se, 
-    if (!$procAnalOnlyFlag && $ZFlag)
+    # Also note when doing --rawtoo, the date in 'prc' and 'raw' is essentially identical and
+    # we don't need it on both places.  Furthermore, raw is already being compressed.
+    if (!$rawtooFlag)
     {
-      print "Creating PRC file\n"    if $debug & 8192;
-      open PRC, "$mode$filename.prc" or 
+      if (!$procAnalOnlyFlag && $ZFlag)
+      {
+        print "Creating PRC file\n"    if $debug & 8192;
+        open PRC, "$mode$filename.prc" or 
             logmsg("F", "Couldn't open '$filename.prc'")  if !$zFlag && $ZFlag;
-      $ZPRC=Compress::Zlib::gzopen("$filename.prc.gz", $zmode) or
+        $ZPRC=Compress::Zlib::gzopen("$filename.prc.gz", $zmode) or
             logmsg("F", "Couldn't open PRC gzip file")    if  $zFlag && $ZFlag;
-    }
+      }
 
-    if (!$slabAnalOnlyFlag && $YFlag)
-    {
-      print "Creating SLB file\n"    if $debug & 8192;
-      open SLB, "$mode$filename.slb" or 
+      if (!$slabAnalOnlyFlag && $YFlag && !$rawtooFlag)
+      {
+        print "Creating SLB file\n"    if $debug & 8192;
+        open SLB, "$mode$filename.slb" or 
 	    logmsg("F", "Couldn't open '$filename.slb'")  if !$zFlag && $YFlag;
-      $ZSLB=Compress::Zlib::gzopen("$filename.slb.gz", $zmode) or
+        $ZSLB=Compress::Zlib::gzopen("$filename.slb.gz", $zmode) or
             logmsg("F", "Couldn't open SLB gzip file")    if  $zFlag && $YFlag;
+      }
     }
 
     open TCP, "$mode$filename.tcp" or 
@@ -3764,10 +3872,19 @@ sub newLog
     $ZTCP=Compress::Zlib::gzopen("$filename.tcp.gz", $zmode) or
           logmsg("F", "Couldn't open TCP gzip file")    if  $zFlag && $TFlag;
 
+    # Open any detail files associated with --import
+    for (my $i=0; $i<$impNumMods; $i++)
+    {
+      open $impText[$i], "$mode$filename.$impKey[$i]" or
+	logmsg("F", "Couldn't open '$filename.$impKey[$i]'")  if !$zFlag && $impOpts[$i]=~/d/;
+      $impGz[$i]=Compress::Zlib::gzopen("$filename.$impKey[$i].gz", $zmode) or
+	logmsg("F", "Couldn't open $impKey[$i] gzip file")    if  $zFlag && $impOpts[$i]=~/d/;
+    }
+
     if ($autoFlush)
     {
       print "Setting non-compressed files to 'autoflush'\n"    if $debug & 1;
-      if (defined(fileno($LOG)))  { select $LOG; $|=1; }
+      if (defined($LOG))          { select $LOG; $|=1; }
       if (defined(fileno(BLK)))   { select BLK;  $|=1; }
       if (defined(fileno(BUD)))   { select BUD;  $|=1; }
       if (defined(fileno(CLT)))   { select CLT;  $|=1; }
@@ -3864,7 +3981,7 @@ sub buildCommonHeader
   $commonHeader.='#'x80;
   $commonHeader.="\n# Collectl:   V$Version  HiRes: $hiResFlag  Options: $cmdSwitches\n";
   $commonHeader.="# Host:       $Host  DaemonOpts: $DaemonOptions\n";
-  $commonHeader.="# Distro:     $Distro\n"    if $Distro ne '';
+  $commonHeader.="# Distro:     $Distro  Platform: $ProductName\n";
   $commonHeader.=$timeZoneInfo  if defined($timeZoneInfo);
   $commonHeader.="# SubSys:     $tempSubsys Options: $options NfsFilt: $nfsFilt ";
   $commonHeader.=              "Interval: $tempInterval NumCPUs: $NumCpus $Hyper NumBud: $NumBud Flags: $flags\n";
@@ -3895,6 +4012,7 @@ sub buildCommonHeader
     $commonHeader.="# LustreDisks:    Num: $NumLusDisks  Names: $LusDiskNames\n"
 	if ($lustOpts=~/D/);
   }
+  for (my $i=0; $i<$impNumMods; $i++) { &{$impUpdateHeader[$i]}(\$commonHeader); }
   $commonHeader.='#'x80;
   $commonHeader.="\n";
 
@@ -3938,8 +4056,8 @@ sub plotFileExists
 sub setOutputFormat
 {
   # By default, brief has been initialized to 1 and verbose to 0 but in these
-  # cases we switch to verbose automatically
-  $verboseFlag=1    if $subsys!~/^[$BriefSubsys]+$/ || $lustOpts=~/[BDM]/;
+  # cases (when not doing --import) we switch to verbose automatically
+  $verboseFlag=1    if ($subsys ne '' && $subsys!~/^[$BriefSubsys]+$/) || $lustOpts=~/[BDM]/;
 
   # except as where noted below, columns in verbose mode are assumed different
   $sameColsFlag=($verboseFlag) ? 0 : 1;
@@ -3962,6 +4080,27 @@ sub setOutputFormat
     $miniDateFlag=$miniTimeFlag=0;
     $miniDateTime=$miniFiller='';
   }
+
+  # Finally, if --import modules we've been called at least a second time
+  if ($impNumMods)
+  {
+    # Detail mode forces verbose
+    if ($impDetailFlag)
+    {
+      $verboseFlag=1;
+      $sameColsFlag=0;
+    }
+
+    # Verbose mode special, because if we don't have any subsystem data and only have 1 type of
+    # imported data, we still get all data on the same line and won't need to repeat headers every pass.
+    # On the other hand it we have more than 1 type of data we can't have the same columns
+    $sameColsFlag=($verboseFlag && $impSummaryFlag+$impDetailFlag+length($subsys)==1) ? 1 : 0;
+
+    # and finally if processing any standard detail data we know we have at least 2 fields, at least
+    # one of which is our custom import, and so we can't have same columns in effect.
+    $sameColsFlag=0    if $subsys=~/[A-Z]/;    # detail for single -s would have set flag
+  }
+
   $briefFlag=($verboseFlag) ? 0 : 1;
   print "SET OUTPUT -- Subsys: $subsys Verbose: $verboseFlag SameCols: $sameColsFlag\n"    if $debug & 1;
 
@@ -4070,10 +4209,17 @@ sub flushBuffers
     $ZTCP-> gzflush(2)<0 and flushError('tcp', $ZTCP)     if $TFlag;
     $ZSLB-> gzflush(2)<0 and flushError('slb', $ZSLB)     if $YFlag && !$rawtooFlag;
     $ZPRC-> gzflush(2)<0 and flushError('prc', $ZPRC)     if $ZFlag && !$rawtooFlag;
+
+    # handle --import
+    for (my $i=0; $i<$impNumMods; $i++)
+    {
+      $impGz[$i]-> gzflush(2)<0 and flushError('$impKey[$i]', $impGz)    if defined($impGz[$i]);
+    }
+
   }
   else
   {
-    select $LOG;  $|=1; print $LOG ""; $|=0;  select STDOUT;
+    if (defined($LOG)) { select $LOG;  $|=1; print $LOG ""; $|=0;  select STDOUT; }
     return    if !$plotFlag;
 
     if ($BFlag)   { select BUD;  $|=1; print BUD ""; $|=0; }
@@ -4090,6 +4236,12 @@ sub flushBuffers
     if ($LFlag && $CltFlag)                    { select CLT;  $|=1; print CLT ""; $|=0; }
     if ($LFlag && $OstFlag)                    { select OST;  $|=1; print OST ""; $|=0; }
     if ($LFlag && $lustOpts=~/D/)              { select BLK;  $|=1; print BLK ""; $|=0; }
+
+    # Handle --import
+    for (my $i=0; $i<$impNumMods; $i++)
+    {
+      if (defined($impText[$i]))  { select $impText[$i];  $|=1; print {$impText[$i]} ""; $|=0; }
+    }
 
     if ($options=~/x/i)
     {
@@ -4440,8 +4592,9 @@ sub loadConfig
     elsif ($param=~/DaemonCommands/ && $daemonFlag)
     { 
       # Pull commmand string off line and add a 'special' end-of-line marker.
-      # Note that we save off the whole thing for the header
-      $DaemonOptions=$switches=(split(/=\s*/, $line))[1];
+      # Note that we save off the whole thing for the header and we need the
+      # ',2' in the split since we can have '=' in the options
+      $DaemonOptions=$switches=(split(/=\s*/, $line, 2))[1];
       $switches.=" -->>>EOL<<<";
 
       # We need to gather up switch and arg (if it has one) and then prepend onto
@@ -5229,6 +5382,7 @@ This is the complete list of switches, more details in man page
   -h, --help                    print basic help
       --home                    move cursor to top before printing interval data
       --hr,--headerrepeat num   repeat headers every 'num' lines, once or never
+      --import     file         name of file(s) to use for data importation
   -i, --interval   int[:pi:ei]] collection interval in seconds
                                   [defaults: interactive=1, daemon=10]
                                   pi is process interval [default=60]
@@ -5241,6 +5395,9 @@ This is the complete list of switches, more details in man page
   -o, --options                 misc formatting options, --showoptions for all
   -p, --playback   file         playback results from 'file'
       --passwd     file         use this instead if /etc/passwd for UID->name
+      --pidfile    file         use this instead of /var/run/collectl.pid BUT
+                                requires the same name in init.d/collectl
+      --pname      name         set process name to 'collectl-pname'
   -P, --plot                    generate output in 'plot' format
       --procanalyze             analyze process data, generating prcs file
       --quiet                   do note echo warning messages on the terminal
@@ -5269,7 +5426,6 @@ These are Alternate Display Formats
 Logging options
   --rawtoo                    used with -P, write raw data to a log as well
   --export name[,options]     write data to an exported socket/file
-  --expdir                    option directory to write file (if any) to
 
 Various types of help
   -h, --help                  print this text

@@ -31,7 +31,9 @@ which collectl derives its numbers to report, it is always possible to go back
 and look at the orginal data.
 In some cases, there is data in the raw file that was easier to
 collect than ignore and in these situations one can actually see more data than
-is normally available.
+is normally available.  In fact the <i>--grep</i> switch is available for looking
+for data in the raw files and prefacing them with timestamps, something the standard
+grep command cannot do. 
 <p>
 As their type implies, plottable files have their data in a form that is ready
 to be plotted with tools like gnuplot or immedately loadable into a spreadsheet
@@ -43,19 +45,19 @@ than spaces, one can change the data separator with --sep.  In fact, for the
 case where a tool such as rrd requires the date be in UTC format, you can even
 change the timestamp format using --utc.
 <p>
-<h3>Logging Options</h3>
-The following table provides a high-level view of the output options, the main
-2 of which are the terminal or file.  The
-first line of each of the 4 cells lists the switches and the second lists the
-format of the data:
+<h3>Logging Option</h3>
+There are 2 switches you should become familiar with for logging data, noting that
+you cannot write to a file and the terminal at the same time.
+<ul>
+<li><b>-f</i></b> tells collectl to write a log file to the specified directory.  All files
+written by collectl have a predefined name format which includes the hostname and date 
+and in some cases the time as well.  You cannot change this format but if -f does not specificy
+a directory name, that string is prepended to the standard output file name</li>
+<li><b>-P</b> which when used in combination with <i>-f</i> instructs collectl to write
+a <a href=Plotfiles.html><i>plottable</i></a> file instead</li>
+</ul>
 <p>
-<table border="1" width=50%>
-<tr><td>&nbsp;</td><td><b>Raw</b></td><td><b>Plot</b></td></tr>
-<tr><td><b>Terminal</b></td><td>no switches<br>terminal</td><td>-P<br>plot</td></tr>
-<tr><td><b>File</b></td><td>-f<br>raw</td><td>-P -f<br>plot</td></tr>
-</table>
-<p>
-For most users, this matrix is all you need to know.  On the other hand if
+For most users this is all you need to know.  On the other hand if
 want to use collectl to feed data to other tools or perhaps log to both
 raw and plot files at the same time, read on...
 <p>
@@ -68,12 +70,12 @@ required, the one expense being some additional processing
 However there are a few potential limits in doing so that should be understood.
 <p>
 First and foremost, once a plottable file has been created the original
-data from which it was created is lost forever.  In most cases that is fine as there
-is really no need to go back to the original source.
-However, very often one collects summary data because
+data from which it was created is lost forever.  In many cases that is fine as many users
+feel there is really no need to go back to the original source.
+However, one often collects summary data because
 that is what they are interested in, but then later decides they want to look at the details.
 This can be easily done by just replaying the raw file and requesting details be
-displayed or written to a plottable file.  If a raw file had not
+displayed or (re)written to a plottable file.  If the raw file had not
 been generated, this option would not be possible.
 <p>
 A second limitation with plottable
@@ -101,25 +103,17 @@ is already sitting in a buffer and ready to be written.
 If the plottable files are being generated in uncompressed format, 
 the size of the compressed raw file becomes even less significant.
 <p>
-We can now extend our table to include logging while communicating over a socket
-as well as logging to both raw and plot files at the same time noting if you don't
-inclue <i>-f</i> no local storage is involved.  <i>Note that when you include -f
-and -P, the plot data will get sent over the pipe and also be logged locally</i>.
-<p>
-<table border="1" width=50%>
-<tr><td>&nbsp;</td><td><b>Raw</b></td><td><b>Plot</b></td></tr>
-<tr><td><b>Terminal</b></td><td>no switches<br>terminal</td><td>-P<br>plot</td></tr>
-<tr><td><b>File</b></td><td>-f<br>raw</td><td>-P -f [--rawtoo]<br>plot</td></tr>
-<tr><td><b>Socket</b></td><td>-A [-f]<br>terminal</td><td>-A -P [-f [--rawtoo]]<br>plot</td></tr>
-</table>
-<p>
 <h3>Exported output, the 3rd type of file</h3>
 We finally come to a third type of output, intended primarily for feeding
 collectl data to other programs, and that is <i>exported</i> ouput.  There are
-currently 3 types exported output delivered with collectl though the only two
-actually generate data files and are therefore applicable to this section.
+currently a variety of types of exports delivered with collectl though
+only three are capable of generating local data files and their use complicates the
+picture.  To better understand how logging works in the context of <i>--export</i>, 
+see the <a href=Export.html> description </a> of how they work and in particular 
+how collectl decides where and when to do <i>logging</i>.
 <p>
-The first is the <a href=http://en.wikipedia.org/wiki/S-expression>s-expression</a>.
+<ul>
+<li>The first is the <a href=http://en.wikipedia.org/wiki/S-expression>s-expression</a>.
 S-expressions have been around for many years having their earliest roots in
 programming languages such as Lisp and Scheme, as described in the Wikipedia
 and offer a semi-structured mechanism for the representation of data.  One such
@@ -129,49 +123,17 @@ and by providing a mechanism for collectl to
 write s-expressions, one can more easily supply data to supermon or any other
 tools that might wish to consume it in close to real-time.
 The actual contents of the s-expressions will be driven by the subsystems for which
-data is being collected.
-<p>
-The second type is the <i>L-expression</i> which is something that has been
+data is being collected.</li>
+<li>The second type is the <i>L-expression</i> which is something that has been
 invented purely for collectl as an alternative form of output which in some
-environments can be easier to parse than the more complex <i>s-sepression</i>.
+environments can be easier to parse than the more complex <i>s-sepression</i>.</li>
+<li>The third and newest type, named <i>gexpr</i>, writes its output over a UDP
+socket in a format understood by the <a href=http://ganglia.info/>ganglia</a>
+monitoring daemon, gmond. You can read more about this <a href=Gexpr.html>here</a>.
+</ul>
 <p>
-When used without any logging switches (-f, -P and/or --rawtoo), the resultant
-output from both expressions is written to the terminal, more for consistency 
-with the general output model than anything else.  If can also be helpful as
-a debugging aide to see exactly what would be delivered over a socket or written
-to a file.
-<p>
-The more typical use of these expressions requires that collectl be in
-logging mode, that is one has specified a destination with -f.
-The directory associated with this destination then becomes the default location
-for their output files.  If one wishes to change that directory one can
-include the new destination with --expdir.  Alternatively, one can alsoe send the
-data over a socket by using -A instead of -f.
-<p>
-For consistency with the general logging model, one can choose to include
-additional logging switches so one may choose to send the expression
-over a socket and also log to a local raw or plot file at the same time.  
-<i>Note that when you send an expression over a socket and specify -f,
-the data logged locally is the <i>raw</i> data</i>.
-<p>
-<table border="1" width=75%>
-<tr><td>&nbsp;</td><td><b>Raw</b></td><td><b>Plot</b></td><td><b>Exported</b></td></tr>
-<tr><td><b>Terminal</b></td><td>no switches<br>terminal</td><td>-P<br>plot</td><td>--export<br>expression</td></tr>
-<tr><td><b>File</b></td><td>-f<br>raw</td><td>-P -f [--rawtoo]<br>plot</td><td>--export -f [-P][--rawtoo]<br>expression</td></tr>
-<tr><td><b>Socket</b></td><td>-A [-f]<br>terminal*</td><td>-A -P [-f [--rawtoo]]<br>plot</td><td>--export -A [-f [-P][--rawtoo]]<br>expression</td></tr>
-</table>
-* remember, logging does not apply to terminal based output
-<p>
-There are a couple of additional caveats you should be aware of.  When you specify
--A, --export, P and -f at the same time the exported data goes over the socket
-and the plot data gets logged locally.
-<p>
-If you are still confused, try experimenting with various combinations of switches
-and see which files get genereated.
-<p>
-One should also note that when run on an HP XC Cluster, the actual syntax of
-the s-expression generated has been extended to make it more easily consumable
-in that environment.
+If you are a little confused, and you probably should be, try experimenting with 
+various combinations of switches and see which files get genereated.
 <p>
 <h3>The overhead</h3>
 So what is the overhead associated with all this logging?  From the perspective of

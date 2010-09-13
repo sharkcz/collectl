@@ -1,6 +1,5 @@
 sub vmstatInit
 {
-  error("'vmstat' doesn't support --expdir")     if $expDir ne '';
   error("-s not allowed with 'vmstat'")          if $userSubsys ne '';
   error("-f requires either --rawtoo or -P")     if $filename ne '' && !$rawtooFlag && !$plotFlag;
   error("-P or --rawtoo require -f")             if $filename eq '' && ($rawtooFlag || $plotFlag);

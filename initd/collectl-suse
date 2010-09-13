@@ -3,6 +3,8 @@
 #
 # description: Run data collection for a number of subsystems
 #    see /etc/collectl.conf for startup options
+#    $2: process name, if other than collectl OR "" to use $3
+#    $3: parameters, in quotes if more than one, to pass to daemon command
 #
 ### BEGIN INIT INFO
 # Provides: collectl
@@ -14,69 +16,86 @@
 ### END INIT INFO
 
 COLLECTL=/usr/sbin/collectl
-COMMAND="$COLLECTL -D"
-PATH=/bin:/usr/bin:/sbin:/usr/sbin
-export PATH
-
-[ -r /etc/rc.status ] && . /etc/rc.status
-rc_reset
-
 if [ ! -f $COLLECTL ]; then
     echo -n "Cannot find $COLLECTL"
     rc_status -s
     rc_exit
 fi
 
-# see if collectl is running
-pid="`ps auxww | grep \"$COMMAND\" | grep -v grep | awk '{print $2}'`"
+PATH=/bin:/usr/bin:/sbin:/usr/sbin
+export PATH
+
+# Just to make sure nothing is different when running 'collectl', we 
+# won't use --check even though it's probably ok to use all the time.
+PNAME=collectl
+PROCNAME=$COLLECTL
+if [ "$2" != "" ]; then
+  PNAME="collectl-$2"
+  PSWITCH=" --pname $2"
+  PROCNAME=$PNAME
+fi
+PIDFILE="/var/run/$PNAME.pid"
+
+[ -r /etc/rc.status ] && . /etc/rc.status
+rc_reset
+
+# If a pidfile, make sure it's not stale and if it is, collectl not running
+if [ -f $PIDFILE ]; then
+    pid=`cat $PIDFILE`
+    pid=`ps ax opid,cmd | grep $PROCNAME | grep $pid | grep -v grep | awk '{ print $1 }'`
+fi
  
 case "$1" in
    start)
       if [ "$pid" != "" ]; then
-	  echo collectl already running
+	  echo $PNAME already running
 	  exit
       fi
 
-      echo -n "Starting collectl:"
-      startproc -s $COMMAND
+      # we used to start with 'startproc', but if an instance of collectl already running it
+      # won't start the next one so we'll just start it this way
+      echo -n "Starting $PNAME:"
+      $COLLECTL -D $PSWITCH $3
       rc_status -v
 	;;
 
   stop)
-      if [ -f /var/run/collectl.pid ]; then
-          echo -n "Shutting down collectl: "
-          killproc collectl
+      # Note that we need to use a pid file to identify which instance we want to stop
+      if [ -f $PIDFILE ]; then
+          echo -n "Shutting down $PNAME: "
+          killproc -p $PIDFILE collectl
 	  RETVAL=$?
 	  rc_status -v
           echo
-          [ $RETVAL -eq 0 ] && rm -f /var/lock/subsys/collectl
+          [ $RETVAL -eq 0 ] && rm -f /var/lock/subsys/$PNAME
       else
-          echo "collectl not running"
+          echo "$PNAME not running"
       fi
 	;;
 
   flush)
-      if [ -f /var/run/collectl.pid ]; then
-	  pid=`cat /var/run/collectl.pid`
-	  echo Flushing buffers for collectl
+      if [ -f $PIDFILE ]; then
+	  pid=`$PIDFILE`
+	  echo Flushing buffers for $PNAME
 	  kill -s USR1 $pid
       else
-          echo "collectl not running"
+          echo "$PNAME not running"
       fi
       rc_status
       ;;
 
-  restart|reload)
-   	$0 stop
-   	$0 start
-   	rc_status
-	;;
   status)
    	if [ "$pid" = "" ]; then
-	    echo "collectl not running"
+	    echo "$PNAME not running"
 	else
-	    echo "collectl is running"
+	    echo "$PNAME is running"
 	fi
+	;;
+
+  restart|reload)
+   	$0 stop $2
+   	$0 start "$2" "$3"
+   	rc_status
 	;;
   *)
 	echo "Usage: $0 {start|stop|flush|restart|status}"

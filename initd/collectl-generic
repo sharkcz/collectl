@@ -3,24 +3,37 @@
 #
 # description: Run data collection for a number of subsystems
 #    see /etc/collectl.conf for startup options
+#    $2: process name, if other than collectl OR "" to use $3
+#    $3: parameters, in quotes if more than one, to pass to daemon command
 
 COLLECTL=/usr/sbin/collectl
-COMMAND="$COLLECTL -D"
-PIDFILE="/var/run/collectl.pid"
-
 if [ ! -f $COLLECTL ]; then
     echo -n "Cannot find $COLLECTL"
     exit 0
 fi
 
-pid="`ps ax opid,cmd | grep \"$COMMAND\" | grep -v grep | cut -f1 -d' '`"
+# Note that the process name we grep for changes when not 'collectl'
+PNAME=collectl
+PROCNAME=$COLLECTL
+if [ "$2" != "" ]; then
+  PNAME="collectl-$2"
+  PSWITCH=" --pname $2"
+  PROCNAME=$PNAME
+fi
+PIDFILE="/var/run/$PNAME.pid"
+
+# If a pidfile, make sure it's not stale and if it is, collectl not running
+if [ -f $PIDFILE ]; then
+    pid=`cat $PIDFILE`
+    pid=`ps ax opid,cmd | grep $PROCNAME | grep $pid | grep -v grep | awk '{ print $1 }'`
+fi
 
 case "$1" in
    start)
       if [ "$pid" != "" ]; then
         echo "[already running]"
       else
-	`$COMMAND`
+	$COLLECTL -D $PSWITCH $3
 	echo "."
       fi
       ;;
@@ -51,25 +64,29 @@ case "$1" in
 
   flush)
       if [ "$pid" != "" ]; then
-	  echo "Flushing buffers for collectl"
+	  echo "Flushing buffers for $PNAME"
 	  kill -s USR1 $pid
       else
-	  echo "collectl is not running)"
+	  echo "$PNAME is not running"
       fi
       ;;
 
   status)
       if [ "$pid" != "" ]; then
-          echo "collectl is running..."
+          echo "$PNAME is running..."
       else
-          echo "collectl is not running"
+          echo "$PNAME is not running"
       fi
       ;;
 
   restart|force-reload)
-   	$0 stop
-   	$0 start
-	;;
+      if [ "$pid" == "" ]; then
+          echo "$PNAME does not appear to be running so will not be shut down"
+      else
+          $0 stop $2
+      fi
+      $0 start "$2" "$3"
+      ;;
   *)
 	echo "Usage: $0 {start|stop|flush|restart|force-reload|status}"
 	exit 1

@@ -32,15 +32,18 @@ make
 make install
 </pre>
 
-That's all it takes.  However, your system must support ipmi and one way to tell is
-if the command <i>dmidecode | grep IPMI</i> produces any output.  If not, your system
+That's all it takes.  However, collectl must be run as <i>root</i> and your system must
+support ipmi.  The easiest way to tell is
+if the command <i>dmidecode | grep IPMI</i> runs without error.  If you get the error 
+<i>Could not open device at /dev/ipmi0...</i> you are not running as <i>root</i>.
+If you get some other error your system probably
 does not support ipmi and even if you were able to install impitool, you won't be able
 to use it.
 <p>
 The next step is to start the ipmi driver, and this is generally done via the command
 <i>service ipmi start</i> on a RedHat system or something line <i>/etc/init.d/impi start</i>
 on others.  On some systems such as HP blades, you may need to install a
-custome ipmi driver such as <i>hp-OpenIPMI</i> and start that instead of the standard
+custom ipmi driver such as <i>hp-OpenIPMI</i> and start that instead of the standard
 driver.
 <p>
 At this point you should be able to execute the command "<i>ipmitool sdr</i> and see a all
@@ -158,8 +161,8 @@ on the same line and that's only for systems that have been tested.
 <p>
 After looking at all these different names and formats, one common theme did emerge.
 All devices appear to have optional numbers (I didn't see any with just letters)
-and those letters have options letters.  Furthermore, there seems to be some sort of
-optional type associated associated with many as well.  This led to the idea of a 
+and those numbers if there have optional letters.  Furthermore, there seems to be some sort of
+optional type associated with many as well.  This led to the idea of a 
 standard naming for these devices as follows:
 <p>
 <i>[type]Fan|Temp[devicenumber[deviceletter]]</i>
@@ -183,17 +186,17 @@ will report the device names in the same order returned by ipmitool it is not al
 difficult to figure out how collectl chose to map them.
 <p>
 <h3>Parsing Names and Customization</h3>
-This is where the fun begins or things get really ugly, depending on your perspective.
+This is where the fun begins <i>or things get really ugly</i>, depending on your perspective.
 <p>
 After examing many different types of device name formats, it was determined that most
-tended to follow a patter of
+tended to follow the pattern of
 
 <p><i>prefix type instanceNumber suffix</i><p>
 
 Where things get a little crazy is that sometimes the actual instance number can be part
 of the prefix OR sometimes the instance contains a letter.
 <p>
-All that said, collectl breaks a device name in the these components, assuming a numeric
+All that said, collectl breaks a device name into these components, assuming a numeric
 instance.  It then applies the minimal set of tests/modifications, note there are examples
 of all these cases in the sample names shown earlier:
 <ul>
@@ -205,7 +208,7 @@ of all these cases in the sample names shown earlier:
 <li>remove all whitespace</li>
 </ul>
 
-Since this can get verfy confusing, a special switch names <i>--envdebug</i> has been included
+Since this can get verf confusing, a special switch names <i>--envdebug</i> has been included
 which will show the actual parsing of the device names.  The following is an example of parsing
 some of the names listed above:
 
@@ -225,17 +228,22 @@ FAN MOD 1A RPM,5775,RPM,ok
 <li>In the third case the prefix is set to <i>MOD</i> and the device name set to <i>MFAN</i> and the
 instance number is lost when what we really want is to have it set to <i>1A</i>!!!</li>
 </ul>
-<h3>User Defined Parsing Rules</h3>
+<h3>Standard and User Defined Parsing Rules</h3>
 Collectl provides a mechanism for dealing with device names that do not result in the 
-generation of satisfactory names as described in the last section.  This is done by 
-supplying collectl with a file containing perl pattern matching/replacement expressions
-which are very similar to standard <i>regular expressions</i> and are then applied 
-to device names before their initial parsing and/or immediately
-after a device name is generated.
+generation of satisfactory names as described in the last section, by providing a file
+of translation <i>rules</i> for the system(s) they apply to.
+This file is currently populated with a number of HP systems this mechanism has
+been tested on and the <i>rules</i> are actually one or more perl pattern matching/replacement
+expressions. If the system name can be obtained via <i>dmidecode</i>, this file
+is searched for a matching stanza and its translations applied to device names
+before their initial parsing and/or immediately after a device name is generated.
 <p>
-To use this feature one includes a file containing the directives and points collectl
-to it using <i>--envrules</i>.  The file itself contains lines of the following form
-noting that spaces and comments (lines preceeded with a #) are permitted:
+If your system is not in this <i>standard</i> set, you can either add your own rules to 
+<i>/opt/hp/collectl/sbin/envrules.std</i> (assuming your system type can be obained 
+through dmidecode) or put them in a standalone file and tell collectl to use it
+instead of the standard one using <i>--envrules</i>.  If you do use your own file it 
+should simply contains line of the following form (no stanza preface) noting that spaces
+and comments (lines preceeded with a #) are permitted:
 
 <pre>
 [pre]

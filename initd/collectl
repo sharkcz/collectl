@@ -4,6 +4,8 @@
 # chkconfig: 345 99 99
 # description: Run data collection for a number of subsystems
 #    see /etc/collectl.conf for startup options
+#    $2: process name, if other than collectl OR "" to use $3
+#    $3: parameters, in quotes if more than one, to pass to daemon command
 
 RETVAL=0
 COLLECTL=/usr/sbin/collectl
@@ -14,45 +16,56 @@ if [ ! -f $COLLECTL ]; then
     exit 1
 fi
 
+# Just to make sure nothing is different when running 'collectl', we 
+# won't use --check even though it's probably ok to use all the time.
+PNAME=collectl
+if [ "$2" != "" ]; then
+  PNAME="collectl-$2"
+  PSWITCH="--pname $2 "
+  CHECK="--check $PNAME "
+fi
+PIDFILE="/var/run/$PNAME.pid"
+
 case "$1" in
    start)
-      echo -n "Starting collectl:"
-      COMMAND="$COLLECTL -D"
-      daemon $COMMAND
+      COMMAND="$COLLECTL -D $PSWITCH $3"
+      echo -n "Starting $PNAME:"
+      daemon $CHECK$COMMAND
       RETVAL=$?
       echo
-      [ $RETVAL -eq 0 ] && touch /var/lock/subsys/collectl
-	;;
+      [ $RETVAL -eq 0 ] && touch /var/lock/subsys/$PNAME
+      ;;
 
   stop)
-      if [ -f /var/run/collectl.pid ]; then
-          echo -n "Shutting down collectl: "
-          killproc collectl
+      if [ -f $PIDFILE ]; then
+          echo -n "Shutting down $PNAME: "
+          killproc $PNAME
           RETVAL=$?
           echo
-          [ $RETVAL -eq 0 ] && rm -f /var/lock/subsys/collectl
+          [ $RETVAL -eq 0 ] && rm -f /var/lock/subsys/$PNAME
       else
-          echo "collectl does not appear to be running so will not be shut down"
+          echo "$PNAME does not appear to be running so will not be shut down"
       fi
-	;;
+      ;;
 
   flush)
-      if [ -f /var/run/collectl.pid ]; then
-	  pid=`cat /var/run/collectl.pid`
-	  echo Flushing buffers for collectl
+      if [ -f $PIDFILE ]; then
+	  pid=`cat $PIDFILE`
+	  echo Flushing buffers for $PNAME
 	  kill -s USR1 $pid
       else
-	  echo "Can't find pid file /var/run/collectl.pid"
+	  echo "Can't find pid file $PIDFILE"
       fi
       ;;
 
   restart|reload)
-   	$0 stop
-   	$0 start
+   	$0 stop $2
+   	$0 start "$2" "$3"
    	RETVAL=$?
 	;;
   status)
-   	status collectl
+        # need to use pid file since there can be multiple instances
+   	status -p $PIDFILE
    	RETVAL=$?
 	;;
   *)

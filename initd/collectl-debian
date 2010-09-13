@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # Startup script for collectl on distros that support start-stop-daemon
 #
 # description: Run data collection for a number of subsystems
@@ -6,7 +6,6 @@
 
 PERL=/usr/bin/perl
 COLLECTL=/usr/sbin/collectl
-PIDFILE="/var/run/collectl.pid"
 
 if [ ! -f $PERL ]; then
     echo -n "Cannot find $PERL"
@@ -18,14 +17,19 @@ if [ ! -f $COLLECTL ]; then
     exit 0
 fi
 
-state=0
-start-stop-daemon --quiet --stop --exec $PERL --pidfile $PIDFILE --signal 0 && state=1
+PNAME=collectl
+if [ "$2" != "" ]; then
+  PNAME="collectl-$2"
+  PSWITCH="--pname $2"
+fi
+PIDFILE="/var/run/$PNAME.pid"
 
 case "$1" in
    start)
-      echo -n "Starting collectl: collectl"
-      if [ $state -eq 0 ]; then
-         start-stop-daemon --quiet --start --exec $COLLECTL -- -D
+      echo -n "Starting collectl: $PNAME"
+      start-stop-daemon --quiet --start --exec $PERL --pidfile $PIDFILE --test >/dev/null
+      if [ $? -eq 0 ]; then
+         start-stop-daemon --quiet --start --exec $COLLECTL -- -D $PSWITCH $3
 	 echo "."
       else
 	 echo " [already running]"
@@ -33,10 +37,10 @@ case "$1" in
       ;;
 
   stop)
-      echo -n "Stopping collectl: collectl"
+      echo -n "Stopping collectl: $PNAME"
 
-      if [ $state -eq 1 ]; then
-	 start-stop-daemon --quiet --stop --exec $PERL --pidfile $PIDFILE
+      start-stop-daemon --quiet --stop --retry 2 --exec $PERL --pidfile $PIDFILE
+      if [ $? -eq 0 ]; then
 	 echo "."
       else
 	 echo " [not running]"
@@ -44,26 +48,28 @@ case "$1" in
       ;;
 
   flush)
-      if [ $state -eq 1 ]; then
-	  echo "Flushing buffers for collectl"
-	  kill -s USR1 `cat /var/run/collectl.pid`
+      start-stop-daemon --quiet --start --exec $PERL --pidfile $PIDFILE --test >/dev/null
+      if [ $? -eq 0 ]; then
+	  echo "Flushing buffers for $PNAME"
+	  kill -s USR1 `cat $PIDFILE`
       else
-	  echo "collectl is not running"
+	  echo "$PNAME is not running"
       fi
       ;;
 
   status)
-      if [ $state -eq 1 ]; then
-          echo "collectl is running..."
+      start-stop-daemon --quiet --start --exec $PERL --pidfile $PIDFILE --test >/dev/null
+      if [ $? -eq 0 ]; then
+          echo "$PNAME is running..."
       else
-          echo "collectl is not running"
+          echo "$PNAME is not running"
       fi
       ;;
 
   restart|force-reload)
-   	$0 stop
+   	$0 stop $2
 	sleep 1
-   	$0 start
+   	$0 start "$2" "$3"
 	;;
   *)
 	echo "Usage: $0 {start|stop|flush|restart|force-reload|status}"

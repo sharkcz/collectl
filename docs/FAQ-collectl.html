@@ -46,6 +46,7 @@
   <li><a href="#ops16">I played back all summary data with -P but got a cpu detail file.  Why?</a></li>
   <li><a href="#ops17">What does this message mean: <i>-sj or -sJ with -P also requires CPU details so adding -sC</i></a></li>
   <li><a href="#ops18">Why are some process usernames being reported as numbers?</a></li>
+  <li><a href="#ops19">Why don't I get a prc file with -P and --rawtoo?</a></li>
 </ul>
 
 <h1>General Questions</h1>
@@ -464,6 +465,12 @@ remotely OR if playing back a file on a different host than where the raw data w
 problem, copy (or create) the passwd file with the correct relationships to the local system and point 
 collectl to it with <i>--passwd</i> OR change the <i>Passwd</i> entry in collectl.conf to point to that file if
 you get tired of using <i>--passwd</i>.
+
+<a name="ops19"></a>
+<h2>Why don't I get a prc file with -P and --rawtoo?</h2>
+The data in the raw file is essentially identical to that in the prc file so the theory is why repeat it
+when you can easily create it from the raw file.  Furthermore the raw file is already compressed and so
+is a lot smaller.
 
 </body>
 </html>

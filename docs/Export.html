@@ -22,7 +22,7 @@ and/or <i>plot</i> formats, you get that all that functionality for free.
 <p>
 <h3>How It Works</h3>
 The interface to all this is really quite simple.  At the command line the user
-types <i>collectl --export name[,options] [--expdir dirname]</i> where:
+types <i>collectl --export name[,options]</i> where:
 
 <ul>
 <li><b>name</b> both names a file to be <i>required</i> by collectl as well as
@@ -30,10 +30,82 @@ the name of the entry points to both an initialization routine as well as one
 that produces the output</li>
 <li><b>options</b> specifies an optional list of arguments that are passed to both
 routines to do with whatever they wish</li>
-<li><b>dirname</b> is available for specifying an alternative to the directory 
-specified by -f</li>
 </ul>
 
+There are currently 5 diffent custom exports that are part of a standard collectl
+distribution:
+<ul>
+<li><b><a href=Gexpr.html>gexpr</a></b> allows one to send collectl data to
+<a href=http://ganglia.info/>ganglia</a></li>
+<li><b>lexpr</b> generates output in an easy to parse format</li>
+<li><b>sexpr</b> generates output as an <a href=http://en.wikipedia.org/wiki/S-expression>s-expressions</a></li>
+<li><b><a href=Process.html>proctree</a></b> provides another way to look at process data</li>
+<li><b>vmstat</b> is the standard unix <i>vmstat</i> command most people know and love,
+so why reinvent it?  It's both a useful example of how to write an export as well as
+provides the benefit of allowing one to play back collectl data in vmstat format!</li>
+</ul>
+
+The first three are the most interesting because they have been built to take advantage
+of collectl's capability of sending their output over a socket and are therefore the ideal
+vehicle for interfacing with other tools and environments.  All three share a common set
+of options as described in the following table:
+<p>
+<center>
+<table border=1 width=85%>
+<tr><td align=center colspan=2><b>These apply to gexpr, lexpr and sexpr</b></td></tr>
+<tr><td><b>d</b></td><td>debugging value, see beginning of the actual export file for details</td></tr>
+<tr><td><b>f</b></td><td>output snapshot file name for lexp and sexpr.  If this option is
+                not used, -f must be and the snapshot file names are then set to the single character
+                <i>L</i> and <i>S</i>
+                respectively and written into the directory associated with -f</td></tr>
+<tr><td><b>s</b></td><td>specifies a subset of those subsystems specified with -s in the collectl command line
+                and only data collected for that subset will be sent.  The
+                default to report everything.</td></tr>
+<tr><td align=center colspan=2><b>These apply to gexpr and lexpr only</b></td></tr>
+<tr><td width=10%><b>avg</b></d><td>used in conjunction with <i>i=</i>, send the average of the data over
+                the associated set of intervals. If neither <i>avg, min</i> or <i>max</i> is
+                used, the values the the more recent monitoring interval will be sent.</td></tr>
+<tr><td width=10%><b>co</b></d><td>this does not take a value and indicates <i>changes only</i> to a
+                particulate data element are to be reported.   If not specified samples for
+                all reporting intervals will be sent.</td></tr>
+<tr><td><b>i</b></td><td>specifies the reporting interval in seconds.  In other words, if you specify
+                i=60, a sample will be sent every 60 seconds independent of collectl's monitoring
+                interval.  The default is to send
+                every sample.  NOTE - this interval must be a multiple of the base collectl interval.</td></tr>
+<tr><td width=10%><b>max</b></d><td>used in conjunction with <i>i=</i>, send the maximum data value over
+                the associated set of intervals. If neither <i>avg, min</i> or <i>max</i> is
+                used, the values the the more recent monitoring interval will be sent.</td></tr>
+<tr><td width=10%><b>min</b></d><td>used in conjunction with <i>i=</i>, send the minimum data value over
+                the associated set of intervals. If neither <i>avg, min</i> or <i>max</i> is
+                used, the values the the more recent monitoring interval will be sent.</td></tr>
+<tr><td><b>ttl</b></td><td> is the <i>time to live</i> in intervals for each piece of performance data.  If
+                more than this number of intervals passes data will be sent regardless of whether it changed
+                or not and the ttl countdown timer reset.  The default is 5.  This actually has a second use
+                for gexpr and that is to set the gmond ttl to double this number multiplied by the interval</td></tr>
+</table>
+</center>
+<p>
+<b>Logging</b>
+<br>
+Collectl can actually create up to 3 different type of log files and it's worth spending a little more
+time enumerating how collectl decides where and when to create them.
+<ul>
+<li>In its simplest form, when one runs collectl with --export and no switches, all 
+output goes to the terminal.</li>
+<li>If collectl is run with -f, and one is exporting <i>lexpr</i> or <i>sexpr</i> a snapshot
+file is created in the directory associated with -f.
+<li>If a socket is to be used by specifying <i>collectl -A</i> and the  export supports 
+socket I/O, all output goes out over a socket to that address.</li>
+<li>If a socket is used and one specifies -f, the snapshot goes over the socket and a raw
+file is created in the directory specified by -f.  If <i>-P</i> is used, a plot file is created
+instead and if <i>-P</i> and <i>--rawtoo</i> are used, both types of files are created.
+<li>To create the snapshot file in a directory other then the one specified with -f, use the
+<i>f=</i> option with <i>--export</i></li>
+<li>If one tries an invalid combination of switches, it up to the export itself to determine 
+that since by design collectl has no knowledge of those module's inner workings.</li>
+</ul>
+
+<h3>Example</h3>
 Perhaps the best way to see how all this works is with a simple example and
 it turns out that <i>vmstat.ph</i> is small enough to meet that need.  You
 can also refer to the others as well.
@@ -41,13 +113,12 @@ can also refer to the others as well.
 This first section gets called almost immediately by collectl after reading
 in the various user switches.  This is the place to catch switch errors
 and since this routine always requires <i>-scm</i> we'll just hardcode it 
-to that and reject any user entered ones.  It is named for out module followed
-by <i>Init</i>.
+to that and reject any user entered ones.  This initialization subrouting
+<i>must</i> be named for our module followed by <i>Init</i>.
 <div class=terminal-wide14>
 <pre>
 sub vmstatInit
 {
-  error("'vmstat' doesn't support --expdir")     if $expDir ne '';
   error("-s not allowed with 'vmstat'")          if $userSubsys ne '';
   error("-f requires either --rawtoo or -P")     if $filename ne '' && !$rawtooFlag && !$plotFlag;
   error("-P or --rawtoo require -f")             if $filename eq '' && ($rawtooFlag || $plotFlag);

@@ -1,0 +1,63 @@
+# This block at the beginning don't have rules but are there to make parsing
+# this file every so slightly faster, noting the commas are really only
+# needed to make visual parsing easier.
+>ProLiant BL460c G1,ProLiant BL460c G6<
+>ProLiant BL685c G1,ProLiant BL2x220c G5<
+>ProLiant DL145 G2<
+>ProLiant DL185 G5,ProLiant DL385 G5,ProLiant DL585 G1<
+>ProLiant DL360 G3,ProLiant DL380 G3,ProLiant DL380 G5<
+>ProLiant ML370 G6<
+
+# These are the real rules and the headers much EXACTLY match everything to the
+# right of the ": " returned by the command "dmidecode|grep -m1 'Product Name'"
+# for example: "Product Name: ProLiant BL460c G1"
+
+>ProLiant DL160 G5<
+[pre]
+/ ROTOR/R/
+/Rear Ambient/RTemp/
+/PCI Ambient/ATemp/
+/CPU(\d) Dmn (\d) Temp/Temp$1-$2/
+
+>ProLiant DL785<
+[pre]
+/Zone /Z/
+
+>SE4208<
+[pre]
+/^CPU/CTemp/
+/^System/STemp/
+/^FAN6CPU/Fan6C/
+
+# There is a lot of remappings to get SL170h temperatures into fixed format as follows
+#   CPU1 Temp->CTemp1      CPU2 Temp->CTemp2       CPU1 DIMM->CTemp1D       CPU2 DIMM->CTemp2D
+#   CPU2_DIMM6G->CTemp6G   CPU2_DIMM5B->CTemp5B    CPU2_DIMM4E->CTemp4E
+#   CPU2_DIMM3H->CTemp3H   CPU2_DIMM2C->CTemp2C    CPU2_DIMM1F->CTemp1F
+#   Node Exit Amb->ETemp   Front I/O Amb->FTemp    HDD BP Amb->HTemp
+#   Node Inlet Amb->ITemp  PCIE local Temp->LTemp  Northbridge Amb->NTemp   PSU BP->PTemp
+>ProLiant SL170h G6<
+[pre]
+/^CPU(\d) DIMM Amb/CTemp$1D/
+/^Node //
+/Amb/Temp/
+/DIMM(.*)/Temp$1/
+/.*Internal/Temp/
+/^PCIE l/L/
+
+# This on also has a lot of remapping
+>ProLiant DL160 G6<
+[pre]
+/_INLET/I/
+/_OUTLET/O/
+/Rear Board/xTemp/
+/^Front Board/BTemp/
+/^Front dimm/FTemp/
+/^Rear dimm/RTemp/
+/^PCI outlet/PTemp/
+/^IOH outlet/ITemp1/
+/^Front IOH/ITemp2/
+/^Inlet ambient/ATemp/
+/ sensor/ Temp/
+[post]
+/^BTemp/BTempF/
+/^xTemp/BTempR/

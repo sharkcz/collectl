@@ -1,10 +1,14 @@
+# copyright, 2003-2009 Hewlett-Packard Development Company, LP
+
+# Debug
+#  1 - show useful stuff
+#  2 - show creation of header file
+
 #####################################################
 #    S - E x p r e s s i o n    S u p p o r t
 #####################################################
 
-my $sexprDispatch;
-my $sexprHeaderPrinted;
-
+my ($sexprDebug, $sexprFilename, $sexprDispatch, $sexprHeaderPrinted);
 sub sexpr
 {
   sexprRaw()     if  $sexprDispatch==1;
@@ -13,15 +17,53 @@ sub sexpr
 
 sub sexprInit
 {
-  my $sexprType=shift;
-  error("sexpr calling format is --export sexpr,[raw|rate]")
-	if !defined($sexprType) || $sexprType!~/raw|rate/;
+  $sexprDebug=0;
+  $sexprDispatch=0;
+  $sexprFilename='';
+  $sexprSubsys=$subsys;
+  $sexprHeaderPrinted=($sockFlag) ? 1 : 0;  # we never write local snapshot in socket mode
+  foreach my $option (@_)
+  {
+    my ($name, $value)=split(/=/, $option);
+    error("invalid lexpr option '$name'")    if $name!~/^[dfs]$|^raw$|^rate$/;
 
-  error("--sexpr does not support -sJ")          if $subsys=~/J/;
-  error("--sexpr with -sj also requires -sC")    if $subsys=~/j/ && $subsys!~/C/;
+    $sexprDebug=$value       if $name eq 'd';
+    $sexprFilename=$value    if $name eq 'f';
+    $sexprDispatch=1         if $name eq 'raw';
+    $sexprDispatch=2         if $name eq 'rate';
+    $sexprSubsys=$value      if $name eq 's';
+  }
 
-  $sexprHeaderPrinted=0;
-  $sexprDispatch=($sexprType eq 'raw') ? 1 : 2;
+  error("sexpr must be called with at least 'raw' or 'rate'")    if !$sexprDispatch;
+  error("sexpr does not support -sJ")                            if $subsys=~/J/;
+  error("sexpr,raw does not apply to -sf")                       if $subsys=~/f/ && $sexprDispatch==1;
+
+  # the naming/location of the output files is based on code in lexpr
+  # If importing data, and if not reporting anything else, $subsys will be ''
+  $sexprSubsys=~s/x//gi    if $subsys!~/x/i;    # in case disabled at runtime
+  $sexprSumFlag=$sexprSubsys=~/[cdfilmnstxE]/ ? 1 : 0;
+  error("sexpr subsys options '$sexprSubsys' not a proper subset of '$subsys'")
+            if $subsys ne '' && $sexprSubsys!~/^[$subsys]+$/;
+
+  error("sexpr cannot write a snapshot file and use a socket at the same time")
+        if $sockFlag && $sexprFilename ne '';
+
+  # Using -f and f= will not result in raw or plot file so need this message.
+  error ("using sexpr option 'f=' AND -f requires -P and/or --rawtoo")
+        if $sexprFilename ne '' && $filename ne '' && !$plotFlag && !$rawtooFlag;
+
+  # if -f, use that dirname/L for snampshot file; otherwise use f= for it.
+  $sexprFilename=(-d $filename) ? "$filename/S" : dirname($filename)."/S"
+        if $sexprFilename eq '' && $filename ne '';
+  print "sexpr filename: $sexprFilename\n"    if $sexprDebug & 1;
+
+  if ($subsys=~/j/ && $subsys!~/C/)
+  {
+    logmsg('W',"adding -s+C because 'sexpr' requires it with 'j'");
+    $subsys.='C';
+    $CFlag=1;
+    logmsg('W',"adding -s+C because 'sexpr' requires it with 'j'");
+  }
 }
 
 sub sexprRaw
@@ -133,14 +175,13 @@ sub sexprRaw
   my $nfsString='';
   if ($subsys=~/f/)
   {
-    $nfsString= "$pad(nfsinfo (read $nfsValuesLast[6]) (write $nfsValuesLast[7]) (calls $rpcCallsLast))\n";
   }
 
   my $inodeString='';
   if ($subsys=~/i/)
   {
-    $inodeString= "$pad(inodeinfo (unuseddcache $unusedDCache) (openfiles $openFiles) ";
-    $inodeString.="(inodeused $inodeUsed) (superused $superUsed)(dquotused $dquotUsed))\n";
+    $inodeString= "$pad(inodeinfo (dentrynum $dentryNum) (dentryunused $dentryUnused) ";
+    $inodeString.="(inodeinfo.filesalloc $filesAlloc) (inodeinfo.filesmax $filesMax) (inodeinfo.inodeused $inodeUsed))\n";
   }
 
   # No lustre details, at least not for now...
@@ -185,8 +226,9 @@ sub sexprRaw
   {
     $memString= "$pad(meminfo (memtot $memTot) (memused $memUsed) (memfree $memFree) ";
     $memString.="(memshared $memShared) (membuf $memBuf) (memcached $memCached) ";
-    $memString.="(memslab $memSlab) (memmap $memMap) ";
-    $memString.="(swaptot $swapTotal) (swapused $swapUsed))\n";
+    $memString.="(memslab $memSlab) (memmap $memMap) (meminact $inactive) ";
+    $memString.="(memhugetot $memHugeTot) (memhugefree $memHugeFree) (memhugersvd $memHugeRsvd) ";
+    $memString.="(swaptot $swapTotal) (swapused $swapUsed) (swapfree $swapFree))\n";
   }
 
   my $netSumString=$netDetString='';
@@ -281,28 +323,34 @@ sub sexprRaw
     }
   }
 
+  #  if doing --import, those modules may wish to supply some s-expr output
+  my ($impSumString, $impDetString)=('','');
+  for (my $i=0; $i<$impNumMods; $i++) { &{$impPrintExport[$i]}('s', \$impSumString, \$impDetString, 'raw'); }
+  $sumFlag=1    if $impSumString ne '';
+  $detFlag=1    if $impDetString ne '';
+
   # Build up as a single string
   $sexprRec='';
   $sexprRec.="(collectl_summary\n"    if $XCFlag && $sumFlag;
   $sexprRec.="$pad(sample (time $lastSecs))\n"    if $sumFlag;
   $sexprRec.="$cpuSumString$diskSumString$nfsString$inodeString$memString$netSumString";
-  $sexprRec.="$lusSumString$sockString$tcpString$intString";
+  $sexprRec.="$lusSumString$sockString$tcpString$intString$impSumString";
   $sexprRec.=")\n"                    if $XCFlag && $sumFlag;
 
-  $sexprRec.="(collectl_detail\n"     if $XCFlag && $detFlag;
   $sexprRec.="$pad(sample (time $lastSecs))\n"    if !$sumFlag;
-  $sexprRec.="$cpuDetString$diskDetString$netDetString$envDetString";
+  $sexprRec.="(collectl_detail\n"     if $XCFlag && $detFlag;
+  $sexprRec.="$cpuDetString$diskDetString$netDetString$envDetString$impDetString";
   $sexprRec.=")\n"                    if $XCFlag && $detFlag;
 
   # Either send data over socket or print to terminal OR write to
   # a file, but not both!
-  if ($sockFlag || $expDir eq '')
+  if ($sockFlag || $sexprFilename eq '')
   {
     printText($sexprRec, 1);    # include EOL marker at end
   }
-  elsif ($expDir ne '')
+  elsif ($sexprFilename ne '')
   {
-    open  SEXPR, ">$expDir/S" or logmsg("F", "Couldn't create '$expDir/S'");
+    open  SEXPR, ">$sexprFilename" or logmsg("F", "Couldn't create '$sexprFilename'");
     print SEXPR  $sexprRec;
     close SEXPR;
   }
@@ -402,15 +450,15 @@ sub sexprRate
   my $nfsString='';
   if ($subsys=~/f/)
   {
-    $nfsString=sprintf("$pad(nfsinfo (read %d) (write %d) (calls %d))\n", 
-	$nfsRead/$intSecs, $nfsWrite/$intSecs, $rpcCalls/$intSecs);
+    $nfsString=sprintf("$pad(nfsinfo (reads %d) (writes %d) (meta %d) (commits %d)\n", 
+	$nfsReadsTot/$intSecs, $nfsWritesTot/$intSecs, $nfsCommitTot/$intSecs, $nfsMetaTot/$intSecs);
   }
 
   my $inodeString='';
   if ($subsys=~/i/)
   {
-    $inodeString= "$pad(inodeinfo (unuseddcache $unusedDCache) (openfiles $openFiles) ";
-    $inodeString.="(inodeused $inodeUsed) (superused $superUsed)(dquotused $dquotUsed))\n";
+    $inodeString= "$pad(inodeinfo (dentrynum $dentryNum) (dentryunused $dentryUnused) ";
+    $inodeString.="(inodeinfo.filesalloc $filesAlloc) (inodeinfo.filesmax $filesMax) (inodeinfo.inodeused $inodeUsed))\n";
   }
 
   # No lustre details, at least not for now...
@@ -444,8 +492,9 @@ sub sexprRate
   {
     $memString= "$pad(meminfo (memtot $memTot) (memused $memUsed) (memfree $memFree) ";
     $memString.="(memshared $memShared) (membuf $memBuf) (memcached $memCached) ";
-    $memString.="(memslab $memSlab) (memmap $memMap) ";
-    $memString.="(swaptot $swapTotal) (swapused $swapUsed))\n";
+    $memString.="(memslab $memSlab) (memmap $memMap) (meminact $inactive) ";
+    $memString.="(memhugetot $memHugeTot) (memhugefree $memHugeFree) (memhugersvd $memHugeRsvd) ";
+    $memString.="(swaptot $swapTotal) (swapused $swapUsed) (swapfree $swapFree)\n";
   }
 
   my $netSumString=$netDetString='';
@@ -534,27 +583,33 @@ sub sexprRate
     }
   }
 
+  #  if doing --import, those modules may wish to supply some s-expr output
+  my ($impSumString, $impDetString)=('','');
+  for (my $i=0; $i<$impNumMods; $i++) { &{$impPrintExport[$i]}('s', \$impSumString, \$impDetString, 'rate'); }
+  $sumFlag=1    if $impSumString ne '';
+  $detFlag=1    if $impDetString ne '';
+
   $sexprRec='';
   $sexprRec.="(collectl_summary\n"    if $XCFlag && $sumFlag;
   $sexprRec.="$pad(sample (time $lastSecs))\n"    if $sumFlag;
   $sexprRec.="$cpuSumString$diskSumString$nfsString$inodeString$memString$netSumString";
-  $sexprRec.="$lusSumString$sockString$tcpString$intString";
+  $sexprRec.="$lusSumString$sockString$tcpString$intString$impSumString";
   $sexprRec.=")\n"                    if $XCFlag && $sumFlag;
 
   $sexprRec.="(collectl_detail\n"     if $XCFlag && $detFlag;
   $sexprRec.="$pad(sample (time $lastSecs))\n"    if !$sumFlag;
-  $sexprRec.="$cpuDetString$diskDetString$netDetString$envDetString";
+  $sexprRec.="$cpuDetString$diskDetString$netDetString$envDetString$impDetString";
   $sexprRec.=")\n"                    if $XCFlag && $detFlag;
 
   # Either send data over socket or print to terminal OR write to
   # a file, but not both!
-  if ($sockFlag || $expDir eq '')
+  if ($sockFlag || $sexprFilename eq '')
   {
     printText($sexprRec, 1);
   }
-  elsif ($expDir ne '')
+  elsif ($sexprFilename ne '')
   {
-    open  SEXPR, ">$expDir/S" or logmsg("F", "Couldn't create '$expDir/S'");
+    open  SEXPR, ">$sexprFilename" or logmsg("F", "Couldn't create '$sexprFilename'");
     print SEXPR  $sexprRec;
     close SEXPR;
   }
@@ -566,9 +621,6 @@ sub sexprHeaderPrint
   my $pad=$XCFlag ? '  ' : '';
   my $sumFlag=$subsys=~/[cdfilmnstx]/ ? 1 : 0;
   my $detFlag=$subsys=~/[CDN]/        ? 1 : 0;
-
-  print "Create sexpr header file: $expDir/#\n"    if $debug & 8192;
-  $sexprHeaderPrinted=1;
 
   $sexprHdr='';
   $sexprHdr.="(collect_summary\n"    if $XCFlag && $sumFlag;
@@ -589,7 +641,7 @@ sub sexprHeaderPrint
 	if $subsys=~/l/ && $MdsFlag;
   $sexprHdr.="$pad(lusoss (reads val) (readkbs val) (writes val) (writekbs val))\n"
 	if $subsys=~/l/ && $OstFlag;
-  $sexprHdr.="$pad(meminfo (memtot val) (memused val) (memfree val) (memshared val) (membuf val) (memcached val) (memslab val) (memmap val))\n"
+  $sexprHdr.="$pad(meminfo (memtot val) (memused val) (memfree val) (memshared val) (membuf val) (memcached val) (memslab val) (memmap val) (meminact val))\n"
         if $subsys=~/m/;
   $sexprHdr.="$pad(nettotals (netkbin val) (netpktin val) (netkbout val) (netpktout val))\n"
         if $subsys=~/n/;
@@ -656,11 +708,16 @@ sub sexprHeaderPrint
   $sexprHdr.=")\n"    if $detFlag && $XCFlag;
 
   # The header only goes to a file
-  if ($expDir ne '')
+  if ($sexprFilename ne '')
   {
-    open  SEXPR, ">$expDir/#" or logmsg("F", "Couldn't create '$expDir/#'");
+    my $headerFilename=sprintf("%s/#", dirname($sexprFilename));
+    print "Create sexpr header file: $headerFilename\n"    if $sexprDebug & 2;
+
+    open  SEXPR, ">$headerFilename" or logmsg("F", "Couldn't create '$headerFilename/#'");
     print SEXPR  $sexprHdr;
     close SEXPR;
+
+    $sexprHeaderPrinted=1;
   }
 }
 1;

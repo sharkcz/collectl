@@ -11,7 +11,7 @@ my $printTermFirst=0;
 # is being played back on
 sub initRecord
 {
-  print "initRecord()\n"    if $debug & 1;
+  print "initRecord() - Subsys: $subsys\n"    if $debug & 1;
   initDay();
 
   # In some case, we need to know if we're root.
@@ -97,7 +97,7 @@ sub initRecord
   $procfile=($kernel2_4) ? '/proc/partitions' : '/proc/diskstats';
   $NumDisks=0;
   $DiskNames='';
-  $diskFilter="cciss\/c\\d+d\\d+ |hd[ab] | sd[a-z]+ |xvd[a-z] |dm-\\d+";
+  $diskFilter="cciss\/c\\d+d\\d+ |hd[ab] | sd[a-z]+ |xvd[a-z] |dm-\\d+|emcpower";
   @temp=`cat $procfile`;
   foreach $line (@temp)
   {
@@ -162,9 +162,9 @@ sub initRecord
     my $lspciVendorField=($lspciVer<2.2) ? 3 : 2;
 
     # Turns out SuSE put 'Class' string back into V2.4.4 without changing
-    # version number and so at some point (and I don't know when), this
-    # will have to change if/when they use the 'official' version.
-    $lspciVendorField=3    if $Distro=~/SUSE/;
+    # version number in SLES 10.  It also looks like they got it right in
+    # SLES 11, but who know what will happen in SLES 12!
+    $lspciVendorField=3    if $Distro=~/SUSE.*10/;
     print "lspci -- Version: $lspciVer  Vendor Field: $lspciVendorField\n"
 	if $debug & 1;
 
@@ -237,7 +237,6 @@ sub initRecord
           # I hate support questions and this is the place to catch perfquery problems!
           my $message='';
           my $temp=`$PQuery`;
-          $message="unexpected perfquery error";
           $message="Permission denied"            if $temp=~/Permission denied/;
           $message="Required module missing"      if $temp=~/required by/;
           $message="No such file or directory"    if $temp=~/No such file/;
@@ -366,6 +365,11 @@ sub initRecord
 
   #    E n v i r o n m e n t a l    C h e c k s
 
+  $ProductName=($rootFlag) ? `dmidecode | grep -m1 'Product Name'` : '';
+  $ProductName=~s/\s*Product Name: //;
+  chomp $ProductName;
+  $ProductName=~s/\s*$//;   # some have trailing whitespace
+
   if ($subsys=~/E/)
   {
     # Note that these tests are in the reverse order since the last value of $message
@@ -377,6 +381,8 @@ sub initRecord
                 if !-e '/dev/ipmi0' && !-e '/dev/ipmi/0' && !-e '/dev/ipmidev/0';
     $message="cannot find 'ipmitool' in '$ipmitoolPath'"
                 if $Ipmitool eq '';
+    $message="you must be 'root' to do environmental monitoring"
+		if !$rootFlag;
 
     if ($message eq '')
     {
@@ -687,8 +693,12 @@ sub initFormat
     $version=$1;
     $hiResFlag=$1    if $header=~/HiRes:\s+(\d+)/;   # only after V1.5.3
 
-    $header=~/Distro:\s+(.+)/;
-    $Distro=(defined($1)) ? $1 : '';
+    $Distro='';
+    if ($header=~/Distro:\s+(.+)/)    # was optional before 'Platform' added
+    {
+      $Distro=$1;
+      $ProductName=$1    if $Distro=~s/Platform: (.*)//;
+    }
 
     # Prior to collect V3.2.1-4, use the header to determine the type of nfs data in the
     # file noting very old versions used SubOpts.
@@ -723,7 +733,8 @@ sub initFormat
     # also want to override it if user did a -s.  If user specified a
     # +/- we also need to deal with as in collectl.pl, but in this
     # case without the error checking since it already passed through.
-    $header=~/SubSys:\s+(\S+)/;
+    $header=~/SubSys:\s+(\S*) Options/;
+
     $recSubsys=$subsys=$1;
     $recHdr1.=" Subsys: $subsys";
     $recSubsys=$subsys='Y'    if $topSlabFlag;
@@ -957,8 +968,6 @@ sub initFormat
       }
     }
 
-    $header=~s/Envron/Environ/;   # to handle typo in pre 1.12 versions
-
     $header=~/Host:\s+(\S+)/;
     $Host=$1;
     $HostLC=lc($Host);
@@ -1151,6 +1160,7 @@ sub initFormat
   $pagein=$pageout=$swapin=$swapout=$swapTotal=$swapUsed=$swapFree=0;
   $pagefault=$pagemajfault=0;
   $memTot=$memUsed=$memFree=$memShared=$memBuf=$memCached=$memSlab=$memAnon=$memMap=$memCommit=0;
+  $memHugeTot=$memHugeFree=$memHugeRsvd=0;
   $sockUsed=$sockTcp=$sockOrphan=$sockTw=$sockAlloc=0;
   $sockMem=$sockUdp=$sockRaw=$sockFrag=$sockFragM=0;
 
@@ -1219,6 +1229,7 @@ sub initFormat
 
   # these all need to be initialized in case we use /proc/stats since not all variables
   # supplied by that
+
   for ($i=0; $i<$NumDisks; $i++)
   {
     $dskOps[$i]=$dskTicks[$i]=0;
@@ -1292,7 +1303,7 @@ sub initFormat
   $interval3Counter=0;
   $ipmiFile->{pre}=[];    # in case no --envrules specified
   $ipmiFile->{post}=[];
-  loadEnvRules()    if $envRules ne '';
+  loadEnvRules()    if $ProductName ne '';
 
   #    A r c h i t e c t u r e    S t u f f
 
@@ -1663,6 +1674,10 @@ sub initInterval
   }
 
   $envFanIndex=$envTempIndex=$envFirstHeader=$envNewHeader=0;
+
+  # Interval initialization for imported modules, noting we're passing the constants in
+  # a hash that we only look at once.
+  for (my $i=0; $i<$impNumMods; $i++) { &{$impInitInterval[$i]}($intSecs); }
 }
 
 # End of interval processing/printing
@@ -1697,7 +1712,7 @@ sub intervalEnd
     my $lastInt2Secs=$lastSecs      if $lastInt2Secs==0;
     my $lastInterval=$seconds-$lastInt2Secs;
     $interval2Secs=$interval2SecsReal=($lastInterval!=0) ? $lastInterval : $interval2;
-    $interval2Secs=1                if $options=~/n/ || !$interval2Secs;
+    $interval2Secs=$interval2SecsReal=1                if $options=~/n/ || !$interval2Secs;
     $lastInt2Secs=$seconds;
   }
 
@@ -1729,6 +1744,12 @@ sub dataAnalyze
   ($type, $data)=split(/\s+/, $line, 2);
   return    if (!defined($data) || $data eq "");
 
+  # Custom data analysis based on KEY which must be defined in custom module
+  for (my $i=0; $i<$impNumMods; $i++)
+  { 
+    &{$impAnalyze[$i]}($type, \$data)    if $type=~/$impKey[$i]/;
+  }
+
   if ($type=~/^buddy/ && $subsys=~/b/i)
   {
     my @fields=split(/\s+/, $data);
@@ -1747,7 +1768,7 @@ sub dataAnalyze
   # if user requested -sd, we had to force -sc so we can get 'jiffies'
   # NOTE - 2.6 adds in wait, irq and softIrq.  2.6 disk stats also need
   # cpu to get jiffies for micro calculations
-  if ($type=~/^cpu/ && $subsys=~/c|d/i)
+  elsif ($type=~/^cpu/ && $subsys=~/c|d/i)
   {
     $type=~/^cpu(\d*)/;   # can't do above because second "~=" kills $1
     $cpuIndex=($1 ne "") ? $1 : $NumCpus;    # only happens in pre 1.7.4
@@ -1775,8 +1796,8 @@ sub dataAnalyze
     $total=$user+$nice+$sys+$idle+$wait+$irq+$soft+$steal;
     $total=1    if !$total;  # has seen to be 0 when interval=0;
 
-    # For some calculations, like disk performance, we use a more exact measure
-    # to work with times that are in jiffies
+    # For disk detail performance when no HiRes timer, we use a 
+    # more exact measure to work with times that are in jiffies
     $microInterval=$total/$NumCpus    if $cpuIndex==$NumCpus;
 
     $userP[$cpuIndex]= 100*$user/$total;
@@ -2203,7 +2224,7 @@ sub dataAnalyze
     ($name, $ops, $value)=(split(/\s+/, $data))[0,1,6];
     $ost=$CltOstMap[$ost]    if $playback ne '';
 
-    if ($name=~/ost_r/)
+    if ($name=~/^read_bytes|ost_r/)
     {
       $lustreCltLunRead[$ost]=fix($ops-$lustreCltLunReadLast[$ost]);
       $lustreCltLunReadLast[$ost]=$ops;
@@ -2213,7 +2234,7 @@ sub dataAnalyze
         $lustreCltLunReadKBLast[$ost]=$value;
       }
     }
-    elsif ($name=~/ost_w/)
+    elsif ($name=~/^write_bytes|ost_w/)
     {
       $lustreCltLunWrite[$ost]=fix($ops-$lustreCltLunWriteLast[$ost]);
       $lustreCltLunWriteLast[$ost]=$ops;
@@ -2287,10 +2308,12 @@ sub dataAnalyze
     # These are applied BEFORE the pattern match below
     print "$data\n"    if $envDebug;
     my $premap=$fields[0];
+    $fields[0]=~s/\.|\///g;    # get rid of any '.'s or '/'s
     for (my $i=0; $i<scalar(@{$ipmiFile->{pre}}); $i++)
     {
       my $f1=$ipmiFile->{pre}->[$i]->{f1};
       my $f2=$ipmiFile->{pre}->[$i]->{f2};
+      print "/$f1/$f2/\n"    if $envDebug;
 
       # No need paying the price of an eval if not symbols to interpret
       if ($f2!~/\$/)
@@ -2365,6 +2388,7 @@ sub dataAnalyze
       $index=$envFanIndex++     if $type eq 'fan';
       $index=$envTempIndex++    if $type eq 'temp';
       $index=0                  if $type eq 'power';
+      $fields[1]=-1             if $fields[1] eq 'no reading';
       $ipmiData->{$type}->[$index]->{name}=  $name;
       $ipmiData->{$type}->[$index]->{inst}=  $instance;
       $ipmiData->{$type}->[$index]->{value}= ($fields[1]!~/h$/) ? $fields[1] : $fields[3];
@@ -2943,7 +2967,7 @@ sub dataAnalyze
     $memFree=$data    if $type=~/^MemFree/;
   }
 
-  elsif ($subsys=~/m/ && $kernel2_6 && $type=~/^Buffers|^Cached|^Dirty|^Active|^Inactive|^AnonPages|^Mapped|^Slab:|^Committed_AS:/)
+  elsif ($subsys=~/m/ && $kernel2_6 && $type=~/^Buffers|^Cached|^Dirty|^Active|^Inactive|^AnonPages|^Mapped|^Slab:|^Committed_AS:|^Huge/)
   {
     $data=(split(/\s+/, $data))[0];
     $memBuf=$data             if $type=~/^Buf/;
@@ -2955,6 +2979,9 @@ sub dataAnalyze
     $memAnon=$data            if $type=~/^Anon/;
     $memMap=$data+$memAnon    if $type=~/^Map/;
     $memCommit=$data          if $type=~/^Com/;
+    $memHugeTot=$data         if $type=~/^HughPages_T/;
+    $memHugeFree=$data        if $type=~/^HughPages_F/;
+    $memHugeRsvd=$data        if $type=~/^HughPages_R/;
   }
 
   elsif ($subsys=~/m/ && $kernel2_6 && $type=~/^Swap/)
@@ -3609,6 +3636,7 @@ sub printHeaders
     $headers.="[MEM]SwapTot${SEP}[MEM]SwapUsed${SEP}[MEM]SwapFree${SEP}[MEM]SwapIn${SEP}[MEM]SwapOut${SEP}";
     $headers.="[MEM]Dirty${SEP}[MEM]Clean${SEP}[MEM]Laundry${SEP}[MEM]Inactive${SEP}";
     $headers.="[MEM]PageIn${SEP}[MEM]PageOut${SEP}[MEM]PageFaults${SEP}[MEM]PageMajFaults${SEP}";
+    $headers.="[MEM]HugeTotal${SEP}[MEM]HugeFree${SEP}[MEM]HugeRsvd${SEP}";
   }
 
   if ($subsys=~/s/)
@@ -3720,9 +3748,15 @@ sub printHeaders
     }
   }
 
+  # custom import headers get appended here if doing summary data.
+  for (my $i=0; $impSummaryFlag && $i<$impNumMods; $i++)
+  {
+    &{$impPrintPlot[$i]}(1, \$headers)    if $impOpts[$i]=~/s/;
+  }
+
   # only if at least one core subsystem selected.  if not, make sure
   # $headersAll contains the date/time in case writing to the terminal
-  writeData(0, '', \$headers, $LOG, $ZLOG, 'log', \$headersAll)    if $coreFlag;
+  writeData(0, '', \$headers, $LOG, $ZLOG, 'log', \$headersAll)    if $coreFlag || $impSummaryFlag;
   $headersAll=$headers    if !$coreFlag;
 
   #################################
@@ -3736,7 +3770,6 @@ sub printHeaders
 
   $cpuHeaders=$dskHeaders=$envHeaders=$nfsHeaders=$netHeaders='';
   $ostHeaders=$mdsHeaders=$cltHeaders=$tcpHeaders=$elanHeaders='';
-  $budHeaders='';
 
   # Whenever we print a header to a file, we do both the common header
   # and date/time.  Remember, if we're printing the terminal, this is
@@ -3990,6 +4023,7 @@ sub printHeaders
     writeData(0, $ch, \$ibHeaders, IB, $ZIB, 'ib', \$headersAll);
   }
 
+  $budHeaders='';
   if ($subsys=~/B/)
   {
     for (my $i=0; $i<$NumBud; $i++)
@@ -4001,6 +4035,17 @@ sub printHeaders
       }
     }
     writeData(0, $ch, \$budHeaders, BUD, $ZBUD, 'bud', \$headersAll);
+  }
+
+  # only make call(s) if respective modules if detail reporting has been requested
+  for (my $i=0; $impDetailFlag && $i<$impNumMods; $i++)
+  {
+    if ($impOpts[$i]=~/d/)
+    {
+      my $impHeaders='';
+      &{$impPrintPlot[$i]}(2, \$impHeaders);
+      writeData(0, $ch, \$impHeaders, $impText[$i], $impGz[$i], 'imp-$i', \$headersAll);
+    }
   }
 
   # When going to the terminal OR socket we need a final call with no 'data' 
@@ -4056,7 +4101,7 @@ sub intervalPrint
   $tempSubsys=~s/Y//    if $slabAnalOnlyFlag;
   $tempSubsys=~s/Z//    if $procAnalOnlyFlag;
 
-  printPlot($seconds, $usecs)     if  $plotFlag && $tempSubsys ne '';
+  printPlot($seconds, $usecs)     if  $plotFlag && ($tempSubsys ne '' || $import ne '');
   printTerm($seconds, $usecs)     if !$plotFlag && $expName eq '';
   procAnalyze($seconds, $usecs)   if  $procAnalFlag && $interval2Print;
   slabAnalyze($seconds, $usecs)   if  $slabAnalFlag && $interval2Print;
@@ -4122,7 +4167,7 @@ sub printPlot
   #######################
 
   $plot=$oneline='';
-  if ($coreFlag)
+  if ($coreFlag || $impSummaryFlag)
   {
     # CPU Data cols
     if ($subsys=~/c/)
@@ -4146,6 +4191,7 @@ sub printPlot
                 $swapTotal, $swapUsed, $swapFree, $swapin/$intSecs, $swapout/$intSecs,
                 $dirty, $clean, $laundry, $inactive,
                 $pagein/$intSecs, $pageout/$intSecs, $pagefault/$intSecs, $pagemajfault/$intSecs);
+      $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS", $memHugeTot, $memHugeFree, $memHugeRsvd);
     }
 
     # SOCKETS
@@ -4328,6 +4374,12 @@ sub printPlot
       {
         $plot.=sprintf("$SEP%d", $buddyInfoTot[$i]);
       }
+    }
+
+    # only if summary data
+    for (my $i=0; $impSummaryFlag && $i<$impNumMods; $i++)
+    {
+      &{$impPrintPlot[$i]}(3, \$plot)    if $impOpts[$i]=~/s/;
     }
 
     writeData(0, $datetime, \$plot, $LOG, $ZLOG, 'log', \$oneline);
@@ -4673,7 +4725,7 @@ sub printPlot
 
   #########################
   #    B U D D Y I N F O
-  ###########################
+  #########################
 
   if ($subsys=~/B/)
   {
@@ -4687,6 +4739,21 @@ sub printPlot
       }
     }
     writeData(0, $datetime, \$budPlot, BUD, $ZBUD, 'bud', \$oneline);
+  }
+
+  #####################
+  #    I M P O R T S
+  #####################
+
+  # only if detail data
+  for (my $i=0; $impDetailFlag && $i<$impNumMods; $i++)
+  {
+    if ($impOpts[$i]=~/d/)
+    {
+      $impPlot='';
+      &{$impPrintPlot[$i]}(4, \$impPlot); 
+      writeData(0, $datetime, \$impPlot, , $impText[$i], $impGz[$i], $impKey[$i], \$oneline);
+    }
   }
 
   #    F i n a l    w r i t e
@@ -5966,6 +6033,12 @@ sub printTerm
     }
   }
 
+  for (my $i=0; $i<$impNumMods; $i++)
+  {
+    &{$impPrintVerbose[$i]}(printHeader(), $homeFlag, \$line);
+    printText($line);
+  }
+
   # Since slabs/processes both report rates, we need to skip first printable interval
   # unless we're doing consecutive files
   printTermSlab()    if $subsys=~/Y/ && $interval2Print && (!$firstTime2 || $consecutiveFlag);
@@ -6391,16 +6464,14 @@ sub fix
   # ok because perl isn't restricted by word size.
   if ($counter<0)
   {
-    my $divisor= shift;
-    my $archFlag=shift;
-    my ($add, $wordsize);
+    my $divisor=shift;
+    my $maxSize=shift;
 
-    # if the archflag set in param3, we use the max counter size for this 
-    # architecture.  otherwise we just use a 32 bit wide word.
-    $wordsize=defined($archFlag) ? $maxword : $word32;
+    # if param3 exists (rare), we use this as the max counter size;  otherwidse 32 bit
+    my $wordsize=defined($maxSize) ? $maxSize : $word32;
 
     # only adjust divisor when we're told to do so in param2.
-    $add=defined($divisor) ? $wordsize/$divisor : $wordsize;
+    my $add=defined($divisor) ? $wordsize/$divisor : $wordsize;
     $counter+=$add;
   }
   return($counter);
@@ -6599,7 +6670,7 @@ sub printHeader
   return(1)    if $headerRepeat>-1 && (!$sameColsFlag || $totalCounter==1 || $homeFlag);
 
   # Note that in detail mode (and that includes processes/slabs with filters) there's no
-  # real easy way to tell when to redo the header so rather we'll just repeat then every
+  # real easy way to tell when to redo the header so rather we'll just repeat them every
   # --hr set of intervals rather than lines.
   return(1)    if ($headerRepeat>0 &&
                      ( ($interval1Counter % $headerRepeat)==1 ||
@@ -6774,8 +6845,9 @@ sub printBrief
       $line.="<-------------Lustre Client------------->"                 if  $ioSizeFlag && $lustOpts!~/R/;
       $line.="<--------------------Lustre Client-------------------->"   if  $ioSizeFlag && $lustOpts=~/R/;
     }
-
+    for (my $i=0; $i<$impNumMods; $i++) { &{$impPrintBrief[$i]}(1, \$line); }
     $line.="\n";
+
     $line.="#$miniDateTime";
     $line.="cpu sys inter  ctxsw "                 if $subsys=~/c/;
     if ($subsys=~/j/)
@@ -6815,6 +6887,7 @@ sub printBrief
       $line.=" KBRead  Reads Size  KBWrite Writes Size"    if $ioSizeFlag;
       $line.="   Hits Misses"                              if $lustOpts=~/R/;
     }
+    for (my $i=0; $i<$impNumMods; $i++) { &{$impPrintBrief[$i]}(2, \$line); }
     $line.="\n";
     $headersPrinted=1;
   }
@@ -7015,6 +7088,8 @@ sub printBrief
     # Add in cache hits/misses if --lustopts R
     $line.=sprintf(" %6d %6d", $lustreCltRAHitsTot, $lustreCltRAMissesTot)    if $lustOpts=~/R/;
   }
+
+  for (my $i=0; $i<$impNumMods; $i++) { &{$impPrintBrief[$i]}(3, \$line); }
   $line.="\n";
 
   #   S p e c i a l    ' h o t '    K e y    P r o c e s s i n g
@@ -7078,6 +7153,8 @@ sub resetBriefCounters
   { $intrptTOT[$i]=0; }
   for (my $i=0; $i<11; $i++)
   { $buddyInfoTOT[$i]=0; }
+
+  for (my $i=0; $i<$impNumMods; $i++) { &{$impPrintBrief[$i]}(4); }
 }
 
 sub countBriefCounters
@@ -7178,6 +7255,8 @@ sub countBriefCounters
       $buddyInfoTOT[$i]+=$buddyInfoTot[$i];
     }
   }
+
+  for (my $i=0; $i<$impNumMods; $i++) { &{$impPrintBrief[$i]}(5); }
 }
 
 sub printBriefCounters
@@ -7358,7 +7437,8 @@ sub printBriefCounters
     printf " %6s %6s", 
 	cvt($lustreCltRAHitsTOT/$aveSecs,6),cvt($lustreCltRAMissesTOT/$aveSecs,6)
 	    if $lustOpts=~/R/;
- }
+  }
+  for (my $i=0; $i<$impNumMods; $i++) { &{$impPrintBrief[$i]}(6); }
   print "\n";
 }
 
@@ -8381,13 +8461,27 @@ sub getOfedPath
 # While tempted to put this in collectl main line, this is really only used during formatting
 sub loadEnvRules
 {
-  open TMP, "<$envRules" || logmsg('F', "Cannot open '$envRules'");
+  my $envStdFlag=($envRules eq '') ? 1 : 0;
+  my $ruleFile=($envStdFlag) ? "$BinDir${Sep}envrules.std" : $envRules;
+  open TMP, "<$ruleFile" or logmsg('F', "Cannot open '$ruleFile'");
 
+  my $skipFlag=1    if $envStdFlag;    # if 'std', need to find right stanza
   my ($index, $type);
   while (my $line=<TMP>)
   {
     next    if $line=~/^#|^\s*$/;
     chomp $line;
+
+    if ($line=~/>(.*)</)
+    {
+      last           if !$skipFlag;    # already found so we're now done
+      my $stanza=$1;
+      $skipFlag=0    if $stanza=~/$ProductName/;
+      print "Found '$ProductName' in envrules.std\n"    if $debug & 1 && !$skipFlag;
+      next
+    }
+    next    if $skipFlag;
+
     if ($line eq '[pre]' || $line eq '[post]')
     {
       $line=~/(pre|post)/;

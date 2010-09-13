@@ -18,12 +18,14 @@ with force --verbose format.
 .B cpu
 .RS
 Percent of time the cpu was busy during the current interval averaged across all CPUs, which
-which includes to system, user and nice times.  Note that this does NOT include wait.
+which includes to system, user and nice times.  For kernels that support additional fields, 
+this can also include irq, softirq and steal (see verbose field formats for more details).  
+Note that this does NOT include wait.
 .RE
 .B sys
 .RS
 Percentage of time the cpu was executing in system mode during the current interval.  To
-determine the amount of time spent not at the system you need to subtract this from the cpu
+determine the amount of time spent as a user you need to subtract this from the total cpu
 field.
 .RE
 .B inter
@@ -345,14 +347,47 @@ as summary and detail data as well.
 .SH CPU
 .nf
 # CPU SUMMARY (INTR, CTXSW & PROC /sec)
-# USER  NICE   SYS  IDLE  WAIT  INTR  CTXSW  PROC  RUNQ   RUN   AVG1  AVG5 AVG15
+# USER  NICE   SYS  WAIT   IRQ  SOFT STEAL  IDLE  INTR  CTXSW  PROC  RUNQ   RUN   AVG1  AVG5 AVG15
 .fi
 
-.B User, Nice, Sys, Idle, Wait
+These are the percentage of time the system in running is one of the modes, noting that
+these are averaged across all CPUs.  While User and Sys modes are self-eplanitory, the others
+may not be:
+
+.B User
 .RS
-These are the percentage of time the system in running is one of these modes, noting that
-these are averaged across all CPUs
+Time spent in User mode, not including time spend in "nice" mode.
 .RE
+.B Nice
+.RS
+Time spent in Nice mode, that is lower priority as adjusted by the nice command and have the "N" 
+status flag set when examined with "ps".
+.RE
+.B Sys
+.RS
+This is time spent in "pure" system time.
+.RE
+.B Wait
+.RS
+Also known as "iowait", this is the time the CPU was idle during an outstanding disk I/O request.  
+This is not considered to be part of the total or system times reported in brief mode.
+.RE
+.B Irq
+.RS
+Time spent processing interrupts and also considered to be part of the summary system time 
+reported in "brief" mode.
+.RE
+.B Soft
+.RS
+Time spent processing soft interrupts and also considered to be part of the summary system time 
+reported in "brief" mode.
+.RE
+.B Steal
+.RS
+Time spend in involuntary wait state while the hypervisor was servicing another virtual processor.
+.RE
+
+This next set of fields apply to processes
 .B Proc
 .RS
 Process creations/sec.

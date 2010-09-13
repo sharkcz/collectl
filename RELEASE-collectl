@@ -50,6 +50,29 @@ KNOWN PROBLEMS/RESTRICTIONS
   - this version may generate errors "Ignoring '!' modifier for short option P" with
     older versions of perl OR at least older version of the 'getopts' module.
 
+2.3.3   Oct 16, 2007
+  - added 3 new fields to CPU values -- irq, soft and total, which resulted in
+    a change of order of the verbose output, the theory being it's more 
+    important to have the display in a readable order rather than just append 
+    the fields to the end.  While at it the same was done to ALL most CPU
+    output formats for consistency
+  - incorrectly included !$plotFlag in test to set $zFlag and as a result 
+    'flush' wasn't working for raw files
+  - extended IB interface support to include ConnectX mlx4
+  - when printing 'brief' subtotals for infiniband, do not average errors since
+    intermittent error rates may be too small to see so just print increasing
+    totals
+  - rare case - if doing slab/proc and we only specify int 2 AND less than 
+    default interval (say we do -i:.1), we need to force int1 to be int2 so
+    we don't get error that int2<int1.  sheesh...
+  - include device mapper devices in disk details however don't include numbers
+    if disk summary since already accounted for in individual disk numbers
+  - added 'Services' field to Lustre section because when generating a tab file
+    with -L, you can't tell without looking at column headers which servers
+    have data and this is annoying
+  - as of release 2.2, lspci now reported the vendor info in a different
+    position and so collectl now grabs the lspci version
+
 2.3.2   Sep 4, 2007
   - if you created a plot file and then reran trying to send plot data to terminal, 
     you were told you needed to force creation of a new file.  this has been fixed

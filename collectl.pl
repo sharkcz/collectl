@@ -84,7 +84,7 @@ if ($Config{'version'} lt '5.8.0')
 #  exit;
 }
 
-$Version=  '2.3.2';
+$Version=  '2.3.3';
 $Copyright='Copyright 2003-2007 Hewlett-Packard Development Company, L.P.';
 $License=  "collectl may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
@@ -784,8 +784,8 @@ if (!$hiResFlag && $options=~/m/)
 
 $pidOnlyFlag=($subOpts=~/P/) ? 1 : 0;
 
-# We always compress plot files unless zlib not there or explicity turned off
-$zFlag=($options=~/z/ || $noHardDriveFlag || $filename eq "" || !$plotFlag) ? 0 : 1;
+# We always compress files unless zlib not there or explicity turned off
+$zFlag=($options=~/z/ || $noHardDriveFlag || $filename eq "") ? 0 : 1;
 if (!$zlibFlag && $zFlag)
 {
   $options.="z";
@@ -1456,8 +1456,8 @@ $SIG{"PIPE"}=\&sigPipe;    # socket comm errors
 $flushTime=($flush ne '') ? time+$flush : 0;
 
 # intervals...  note that if no main interval specified, we use
-# interval2 (if defined) and if not that, interval3.
-# also, if there is an interval3, interval3 IS defined, so we
+# interval2 (if defined OR if only doing slabs/procs) and if not 
+# that, interval3. Also, if there is an interval3, interval3 IS defined, so we
 # have to compare it to ''.  Also note that since newlog() can change subsys
 # we need to wait until after we call it to do interval/limit validation.
 $origInterval=$interval;
@@ -1468,7 +1468,7 @@ error("interval3 only applies to -sE")
     if defined($interval3)  && $subsys!~/E/;
 $interval2=$Interval2   if !defined($interval2);
 $interval3=$Interval3   if !defined($interval3);
-$interval=$interval2    if $origInterval=~/^:/;
+$interval=$interval2    if $origInterval=~/^:/ || $subsys=~/^[yz]+$/i;
 $interval=$interval3    if $origInterval=~/^::/;
 
 if ($interval!=0)
@@ -2628,6 +2628,7 @@ sub getProc
       if ($line=~/cciss\/c\d+d\d+ /)   { record(2, "$tag $line"); next; }
       if ($line=~/hd[ab] /)            { record(2, "$tag $line"); next; }
       if ($line=~/sd[a-z]+ /)          { record(2, "$tag $line"); next; }
+      if ($line=~/dm-\d+ /)            { record(2, "$tag $line"); next; }
     }
 
     # /proc/fs/lustre/llite/fsX/stats
@@ -3211,6 +3212,7 @@ sub buildCommonHeader
     # Only include both if sfs system.
     $commonHeader.="# LustreVersion:  $cfsVersion"    if $cfsVersion ne '';
     $commonHeader.="  SfsVersion: $sfsVersion"        if $sfsVersion ne '';
+    $commonHeader.="  Services: $lustreSvcs";
     $commonHeader.="\n"                               if $cfsVersion ne '';
 
     $commonHeader.="# LustreServer:   NumMds: $NumMds MdsNames: $MdsNames  NumOst: $NumOst OstNames: $OstNames\n"

@@ -1,4 +1,4 @@
-<html>
+FAQ-collectl.html<html>
 <title>collectl Freuqently Asked Questions</title>
 <body>
 
@@ -46,6 +46,8 @@
   <li><a href="#ops7">Why does collectl say <i>waiting for 60 second sample...</i> but doesn't?</a></li>
   <li><a href="#ops8">Why am I not seeing exceptions only with -ox?</a></li>
   <li><a href="#ops9">I'm seeing a bogus data point!</a></li>
+  <li><a href="#ops10">What does the error <i>-sj or -sJ with -P also requires CPU details so add C or remove J.</i> mean?</a></li>
+  <li><a href="#ops11">Why can't I see Process I/O statistics?</a></li>
 </ul>
 
 <h1>General Questions</h1>
@@ -401,6 +403,34 @@ It either exceeds twice the inteface rate, the record is considered bogus
 and ignored.  This will cause collectl to report the previous rate
 for this interval.  While not foolproof, it is hoped this will reduce the
 frequency of this type of data.
+
+<a name="ops10"></a>
+<h2>What does the error <i>-sj or -sJ with -P also requires CPU details so add C or remove J.</i> mean?</h2>
+Interrupt reporting has a unique property in that summary data provides CPU specific data
+while detail data provides data about individual interrupts and you will get this error
+if you request interrupt plot data but not CPU detail data.  The most common place this
+can happen is if you run collectl V2.5.0 as a daemon because it collectl interrupt data
+but not CPU detail data.
+<p>
+In order to play back plot data from a file that did not specify CPU details be 
+collected, you can either tell collectl not to include interrupts by the command
+<i>collectl -s-j...</i> or tell it to also include CPU details with the command
+<i>collectl -s+C...</i>.
+<p>
+In order to make this less confusing with future releases, and until I think of simpler
+way to do this, the collectl daemon will be set up to include CPU details, noting this
+has no impact on data collection but only on the playback.  You can always request CPU
+detail data not be generated on playback but will now also have to request interrupts
+not be included as well by <i>collectl -s-jC...</i>.
+
+<a name="ops11"></a>
+<h2>Why can't I see Process I/O statistics?</h2>
+You need to be running version 2.6.22 of the kernel or greater <i>and</i> it must have
+process I/O statistics enabled.  The easiest way to check is to see if <i>/proc/self/io</i>
+exists.  If not, you don't have them enabled and will need to rebuild your kernel and the
+instructions for doing so are beyong the scope of this FAQ.  If you do rebuild, make sure
+you have the following symbols enabled: <i>CONFIG_TASKSTATS, CONFIG_TASK_XACCT</i> and
+<i>CONFIG_TASK_IO_ACCOUNTING</i>.
 
 </body>
 </html>

@@ -1,0 +1,274 @@
+<html>
+<head>
+<link rel=stylesheet href="style.css" type="text/css">
+<title>Brief Data</title>
+</head>
+
+<body>
+<center><h1>Brief Data</h1></center>
+<p>
+This format does NOT include data for any individual devices such as cpu, disk, 
+network, nfs, lustre, process, slabs or tcp.  If you do select any one of them
+collectl will force --verbose format.
+
+<h3>CPU Data, <i>collectl -sc</i></h3>
+
+<div class=terminal>
+<pre>
+#<--------CPU-------->
+#cpu sys inter  ctxsw
+</pre>
+</div>
+
+<table>
+<tr valign=top>
+<td><b>cpu</b></td>
+<td>Percent of time the cpu was busy during the current interval averaged 
+across all CPUs and is actually the total percentage of time the CPU in one of the following:
+<i>system, user, nice, irq, soft-irq and steal</i>.  Note that this does NOT include time
+spend in I/O wait.</td>
+</tr>
+
+<tr valign=top>
+<td><b>sys</b></td>
+<td>Percentage of time the cpu was executing in system mode during the current
+interval.  This includes all those modes as above except <i>user</i> and <i>nice</i> to to 
+determine the amount of time spent as a user you need to subtract these from the total cpu
+field.</td>
+</tr>
+
+<tr>
+<td><b>inter</b></td>
+<td>Total number of interrupts/sec.</td>
+</trtr>
+
+<tr>
+<td><b>ctxsw</b></td><td>Total number of context switches/sec.</td>
+</tr>
+</table>
+<p>
+<h3>Disk, <i>collectl -sd</i></h3>
+<p>
+There are currently 3 places that collectl can gather disk performance data from.
+Fortunately you don't really have to worry about it unless you really care.
+In the 2.4 kernel, the most detailed disk data is stored in /proc/partitions and that
+is indeed where collectl tries to get it from.  However, some older kernels may not
+have been configured to provide this data in which case collectl will grab less 
+detailed data from /proc/stat.  In the 2.6 kernel, performance data has been moved 
+from /proc/partitions to /proc/diskstats and so it is gathered from there.
+<p>
+In any event, regardless of where the data comes from it is all presented in the same
+format.  This means some fields may be 0 (2.4 kernels and /proc/stat) when displayed
+with --verbose, but it is expected few systems will fall into this category.
+
+<div class=terminal>
+<pre>
+#<-----------Disks----------->
+#KBRead  Reads  KBWrit Writes
+</pre>
+</div>
+
+<table>
+<tr><td><b>KBRead</b></td><td>KB read/sec</td></tr>
+<tr><td><b>Reads</b></td><td>Number of reads/sec</td></tr>
+<tr><td><b>KBWrite<b></td><td>KB written/sec</td></tr>
+<tr><td><b>Writes</b></td><td>Number of writes/sec</td></tr>
+</table>
+<p>
+<h3>Infiniband, <i>collectl -sx</i></h3>
+
+<div class=terminal>
+<pre>
+#<----------InfiniBand---------->
+#  KBin  pktIn  KBOut pktOut Errs
+</pre>
+</div>
+
+<table>
+<tr><td><b>KBin</b></td><td>KB received/sec.</td></tr>
+<tr><td><b>pckIn</b></td><td>Packets received/sec.</td></tr>
+<tr><td><b>KBout</b></td><td>KB sent/sec.</td></tr>
+<tr><td><b>pktOut</b></td><td>Packets sent/sec.</td></tr>
+<tr valign=top><td><b>Errs</b></td><td>Count of current errors.  Since these 
+are typically infrequent, it is felt that reporting them as a rate would result 
+in either not seeing them OR round-off hiding their values.</td></tr>
+</table>
+
+<p><h3>Lustre</b></h3>
+<p>
+Lustre data actually falls into one of 3 categories - client, mds and oss.  Collectl
+determines the type of system it is running on (a system can have multiple 
+personalities) and reports on all it finds, unless specifically selected via -L.
+
+<p><b>Lustre Client</b>, <i>collectl -sl</i>
+
+<div class=terminal>
+<pre>
+#<-------Lustre Client------>
+# Reads KBRead Writes KBWrite
+</pre>
+</div>
+
+<table>
+<tr><td valign=top><b>Reads</b></td><td>Reads/sec delivered to the client, 
+not necessarily from the lustre
+storage servers.</td></tr>
+<tr><td><b>KBRead</b></td><td>KB/sec delivered to the client.</td></tr>
+<tr><td><b>Writes</b></td><td>Writes/sec delievered to the storage servers.</td></tr>
+<tr><td><b>KBWrite</b></td><td>KB Writes/sec delievered to the storage servers.</td></tr>
+</table>
+
+<p>The following format of lustre client data is selected by including -OR and
+adds readahead statistics to the previous four.
+
+<div class=terminal>
+<pre>
+#<-------------Lustre Client-------------->
+# Reads KBRead Writes KBWrite   Hits Misses
+</pre>
+</div>
+
+<table>
+<tr><td valign=top><b>Reads</b></td><td>Reads/sec delivered to the client, 
+not necessarily from the lustre
+storage servers.</td></tr>
+<tr><td><b>KBRead</b></td><td>KB/sec delivered to the client.</td></tr>
+<tr><td><b>Writes</b></td><td>Writes/sec delievered to the storage servers.</td></tr>
+<tr><td><b>KBWrite</b></td><td>KB Writes/sec delievered to the storage servers.</td></tr>
+<tr><td><b>Hits</b></td><td>Number of reads/sec from the lustre data cache.</td></tr>
+<tr><td><b>Misses</b></td><td>Number of misses/sec which must then be satisfied by 
+reading from the storage servers.</td></tr>
+</table>
+<p>
+<b>Lustre MDS (Meta-Data Server)</b>
+
+<p>
+<div class=terminal>
+<pre>
+#<--------Lustre MDS-------->
+#mdsCls Getatt  Reint   sync
+</pre>
+</div>
+
+<table>
+<tr><td><b>mdsCls</b></td><td>Number of file closes/sec.</td></tr>
+<tr><td><b>Getatt</b></td><td>Number of getattrs/sec.</td></tr>
+<tr><td><b>Reint</b></td><td>Reintegrated operations/sec which are inode modifications and unklinks.</td></tr>
+<tr><td><b>Sync</b></td><td>Number of syncs/sec.</td></tr>
+</table>
+
+<p><b>Lustre OSS (Object Storage Server)</b>, <i>collectl -sc</i>
+
+<div class=terminal>
+<pre>
+#<--------Lustre OST------->
+#KBRead  Reads KBWrit Writes
+</pre>
+</div>
+
+<table>
+<tr><td><b>KBRead</b></td><td>KB/sec read</td></tr>
+<tr><td><b>Reads</b></td><td>Reads/sec</td></tr>
+<tr><td><b>KBWrite</b></td><td>KB/sec written</td></tr>
+<tr><td><b>Writes</b></td><td>Writes/sec</li>
+</table>
+
+<p><h3>Memory, <i>collectl -sm</i></h3>
+
+<div class=terminal>
+<pre>
+#<-----------Memory---------->
+#free buff cach inac slab  map
+</pre>
+</div>
+
+<table>
+<tr valign=top><td><b>free</b></td><td>Total free memory, which unfortunately is NOT the 
+difference between total memory and the following amounts allocated to used memory.</td></tr>
+<tr valign=top><td><b>buff</b></td><td>Memory used as system buffers.</td></tr>
+<tr valign=top><td><b>cach</b></td><td>This is also commonly known as the file system buffer 
+cache as buffered I/O uses this memory to cache the data.</td></tr>
+<tr><td><b>inac</b></td><td>Inactive memory.</td></tr>
+<tr><td><b>slab</b></td><td>Total memory allocated to slabs.</td></tr>
+<tr><td><b>map</b></td><td>Total mapped memory, which include AnonPages.</td></tr>
+</table>
+
+<p><h3>Network, <i>collectl -sn</i></h3>
+
+<div class=terminal>
+<pre>
+#<-----------Network---------->
+#netKBi pkt-in  netKBo pkt-out
+</pre>
+</div>
+
+<table>
+<tr valign=top><td><b>netKBi</b></td><td>KB received/sec over all real network interfaces and therefore 
+excludes 'lo' and 'sit'.</td></tr>
+<tr><td><b>pkt-in</b></td><td>Packets received/sec over all real network interfaces.</td></tr>
+<tr><td><b>netKBo</b></td><td>KB sent/sec over all real network interfaces.</td></tr>
+<tr><td><b>pkt-out</b></td><td>Packets sent/sec over all real network interfaces.</td></tr>
+</table>
+
+<p><h3>NFS</b>, <i>collectl -sf</i></h3>
+
+<div class=terminal>
+<pre>
+#<--NFS Svr Summary-->
+#  read  write  calls
+</pre>
+</div>
+
+<table>
+<tr><td><b>read</b></td><td>Total nfs reads/sec.</td></tr>
+<tr><td><b>write</b></td><td>Total nfs writes/sec.</td></tr>
+<tr><td><b>calls</b></td><td>Total nfs calls/sec.</td></tr>
+</table>
+
+<p><h3>Slabs, <i>collectl -sy</i></h3>
+
+<div class=terminal>
+<pre>
+#<----slab---->
+# Alloc   Bytes
+</pre>
+</div>
+
+<table>
+<tr><td><b>Alloc</b></td><td>Total Number of slabs allocated</td></tr>
+<tr><td><b>Bytes</b></td><td>Total Number of bytes allocated as slabs</td></tr>
+</table>
+
+<p><h3>Sockets, <i>collectl -ss</i></h3>
+
+<div class=terminal>
+<pre>
+#<------Sockets----->
+#  Tcp  Udp  Raw Frag
+</pre>
+</div>
+
+<table>
+<tr><td><b>Tcp</b></td><td>Total TCP sockets currently in use.</td></tr>
+<tr><td><b>Udp</b></td><td>Total UDP sockets currently in use.</td></tr>
+<tr><td><b>Raw</b></td><td>Total RAW sockets currently in use.</td></tr>
+<tr><td><b>Frag</b></td><td>Total number of IP fragments queues currently in use.</td></tr>
+</table>
+
+<p><h3>TCP, <i>collectl -st</i></h3>
+<div class=terminal>
+<pre>
+#<------------TCP------------>
+#PureAcks HPAcks   Loss FTrans
+</pre>
+</div>
+
+<table>
+<tr><td><b>PureAcks</b></td><td>ACKs/sec that only contain acks (ie no data).</td></tr>
+<tr><td><b>HPAcks</b></td><td>Fast-path acks/sec.</td></tr>
+<tr><td><b>Loss</b></td><td>Packets/sec TCP thinks have been lost coming in.</td></tr>
+<tr><td><b>FTrans</b></td><td>Fast retransmissions/sec.</td></tr>
+</table>
+
+</body>
+</html>

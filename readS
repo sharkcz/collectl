@@ -1,0 +1,183 @@
+#!/usr/bin/perl -w
+
+# Copyright 2003-2007 Hewlett-Packard Development Company, L.P.
+#
+# readS may be copied only under the terms of either the Artistic License
+# or the GNU General Public License, which may be found in the source kit
+
+use Switch;
+use Getopt::Std;
+
+my $Version=  '1.0';
+my $Copyright='Copyright 2008 Hewlett-Packard Development Company, L.P.';
+my $License=  "readS may be copied only under the terms of either the Artistic License\n";
+$License.= "or the GNU General Public License, which may be found in the source kit";
+
+# just to handle debugging switcjh, noting we have to have 2nd
+# instances of '$opt_d', '$opt_h', 'opt_t' and $opt_v to get rid of -w warning.
+getopts('dhp:tv');
+help($Copyright, $License)    if defined($opt_h);
+error("readS V$Version\n$Copyright\n$License")    if defined($opt_v);
+
+my $debug=    defined($opt_d) ?      1 : 0;
+my $precision=defined($opt_p) ? $opt_p : 0;
+my $timeFlag= defined($opt_t) ?      1 : 0;
+$opt_d=$opt_h=$opt_t=$opt_v='';
+
+use strict;
+
+# We need a minimum of 2 args
+error("V$Version usage: readS dir expr0 [oper1 expr1 [oper2 expr2...]]")
+    if !defined($ARGV[1]);
+
+# parse first argument, directory where S file should be written by Collectl
+my $directory=shift;
+error("$directory/S doesn't exist, aborting...")    if !-e "$directory/S";
+
+# read S file and store lines into the 'lines' array
+open S, "<$directory/S" or error("Couldn't open '$directory/S'");
+my @lines=<S>;
+close S;
+
+my $time='';
+if ($timeFlag)
+{
+  # Since we know the time is in the first line, this is faster than
+  # calling getValue() to do the work.
+  $lines[0]=~/time (\S+?)\)/;
+  $time="$1 ";
+}
+
+# concatenate all remaining args into one long string starting with '+'
+# such that we have groups of <operator><obect> followed by a trailing
+# '+' to make the pattern matching work
+my $catvar='+';
+foreach my $arg (@ARGV)
+{
+  $catvar.="$arg ";
+}
+$catvar=~s/ $/+/;
+
+my $result=0;
+while ($catvar ne '+')
+{
+  # Format of the form: 'sign expression sign...' where whitespace optional
+  print "Processing: $catvar\n"    if $debug;
+  $catvar=~/\s*([+\-X\/])\s*(.+?)\s*([+\-X\/].*)/;
+  my $oper=$1;
+  my $expr=$2;
+  $catvar=$3;
+
+  # Let's look at the expression and it's either numeric OR something in the
+  # s-expression.  Since the regx will pass '.' as a numeric we need to see
+  # if one slipped through and so treat as an s-expr to be caught in getValue()
+  my $value=($expr!~/^[-\+]?\d*?[.]?\d*$/ || $expr eq '.') ? getValue($expr) : $expr;
+  print "  Oper: $oper  Expr: $expr  Leftover: $catvar\n"    if $debug;
+
+  # take appropriate action, aborting when unkown operator
+  switch ($oper)
+  {
+    case '+' { $result+=$value; }
+    case '-' { $result-=$value; }
+    case 'X' { $result*=$value; }
+    case '/' { $result/=$value; }
+    else { error("Unkown operator '$oper', aborting..."); }
+  }
+  print "  Value: $value  Subtotal: $result\n"    if $debug;
+}
+
+# output result, with appropriate floating point format
+printf "$time%.${precision}f\n", $result;
+
+# retrieve metric from content of S files previously put into the 
+# 'lines' array, according to single category.variable argument 
+# passed to this subroutine
+sub getValue
+{
+  # retrieve category and variable from argument
+  my $catvar=shift;
+
+  my ($category, $variable, $instance)=split(/\./, $catvar);
+  error("Could not split '$catvar' in category.variable[.instance], aborting...")    if !defined($variable);
+
+  # find numerical value in content of 'S' file
+  if (!defined($instance))
+  {
+    # reading a summary, of the form category.variable
+    foreach my $line (@lines)
+    {
+      return $1    if $line=~/^\($category .*$variable (\d+)/;
+    }
+    error("Could not find variable '$variable' in category '$category', aborting...");
+}
+  else
+  {
+    # reading a detailed value, of the form category.variable.instance; tricky...
+    my $pass=0;
+    my $instNum=0;
+    foreach my $line (@lines)
+    {
+      if ($pass==0 && $line=~/^\($category/)
+      {
+	$pass=1;
+      }
+
+      # pass #1: look for a line where instances are listed (contains 'name')
+      if ($pass==1 && $line=~/\(name/)
+      {
+        foreach my $inst (split /\s+/, $line)
+        {
+	  $inst=~s/[()]//g; # strip leading and trailing '()' if any
+          if ($instNum>1 && $instance=~/$inst/)
+          {
+	    $pass=2;    # instance number found in 'name' entry
+	    last;
+          }
+	  $instNum++;
+        }
+      }
+
+      # pass #2: read now $instNum-th numerical value
+      if ($pass==2 && $line=~/\($variable/)
+      {
+	my @array=split(/\s+/, $line);
+	$array[$instNum]=~s/[()]//g; # strip leading and trailing '()' if any
+	return $array[$instNum];
+      }
+    }
+    error("Could not find instance '$instance' of variable '$variable' in category '$category', aborting...");
+  }
+}
+
+sub help
+{
+  my $copyright=shift;
+  my $license=shift;
+  my $help=<<EOF;
+CMUreadS [-d] [-p prec] [-h] [-t] dir expr0 [oper1 expr1 [oper2 expr2...]
+  -d       enables debugging/expression evaluation tracing
+  -h       print this text
+  -p prec  precision of result, default=0
+  -t       preface output with UTC time
+  dir      directory connating s-expression file 'S'
+  expr     expression to evaluate, either a numerical constant OR
+	   category1.variable1[.instance1] which names the category
+              on the data, one of multiple variables of that category
+              and if detail data, the instance name
+  Examples
+      readS /var/log/collectl ctxint.ctx
+      readS -p2 /var/log/collectl ctxint.ctx/1024
+      readS -p2 /var/log/collectl cpuinfo.cpu0.user+cpuinfo.cpu0.nice
+EOF
+
+print $help;
+print "\n$copyright\n$license\n";
+exit;
+}
+
+# print error message, passed as single argument
+sub error
+{
+  print "$_[0]\n";
+  exit;
+}

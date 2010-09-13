@@ -51,6 +51,25 @@ KNOWN PROBLEMS/RESTRICTIONS
   - if system time is changed by more then the log rolling frequency after collectl
     starts, multiple log files will be created during the next polling cycle(s)
 
+2.5.1 Mar 21, 2008
+  - added OFED 1.3 location for perfquery to collectl.conf
+  - added new constant for ofed_info to collectl.conf
+  - if can't find perfquery and/or ofed_info, ask rpm and if there update collectl.conf
+  - redefined debug flag of 8 for lustre checks and leave 2 for interconnect only
+  - adding more debugging details for infiniband initialization
+  - changed daemon startup switches to include -sC. this will NOT generate any extra
+    load on collectl but will cause CPU details to be generated in plot format which
+    will include interrupts/cpu
+  - make sure user have privileges to run perfquery
+  - moved location of --sexpr with -sj check
+  - for lustre versions < 1.6 don't limit BRW stats to being in directory with
+    MNT in its name, which was certainly the case for HP-SFS
+  - changed headers for lustre rpc buffers to 'P' rather than 'K' 
+  - changed directory on MDS that we look in for stats from .../MDT/mds/stats for
+    older versions of lustre to ...MDS/mds/stats for versions >= 1.6
+  - need to check lustre version BEFORE calling lustreCheck() routines
+  - in lustreCheckClt(), only do OST level tests if really a client
+
 2.5.0   Feb 29, 2008
   - if HCA present but IB stack not completely loaded, the cat of /sys/class/infiniband/*
     fails and reports error.  redirecting STDERR supresses that error
@@ -220,6 +239,8 @@ KNOWN PROBLEMS/RESTRICTIONS
   - special check for 'bogus' network data never seen before.  is this a kernel
     bug and will it go away with newer releases?  too soon to tell, but watch
     the message log or playback messages
+  - added readS to the distribution, which is a utility for retrieving data
+    from a file in s-expression format
 
 2.2.5   May 18, 2007  
   - Open Source Release

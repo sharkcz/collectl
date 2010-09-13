@@ -7,9 +7,9 @@
 
 # debug
 #    1 - print interesting stuff
-#    2 - print more details, currently only lustre/IB service checks
+#    2 - print Interconnect specific checks (mostly Infiniband)
 #    4 - show each line processed by record(), replaces -H
-#    8 - do NOT remove error file after execution of shell commands
+#    8 - print lustre specific checks
 #   16 - print headers of each file processed
 #   32 - skip call to dataAnalyze during interactive processing
 #   64 - print raw data as processed in playback mode, with timestamps
@@ -35,7 +35,6 @@
 #  -s i      sar -v
 #  -s m      sar -rB, free, vmstat (note - sar does pages by pagesizsie NOT bytes)
 #  -s n/N    netstat -i
-#  -s p/P    iostat -x
 #  -s s      sar -n SOCK
 #  -s y/Y    slabtop
 #  -s Z      ps or top
@@ -71,7 +70,7 @@ $kernel2_4=$kernel2_6=$PageSize=0;
 $PidFile='/var/run/collectl.pid';
 $PerlVers=$Memory=$Swap=$Hyper=$Distro='';
 $CpuVendor=$CpuMHz=$CpuCores=$CpuSiblings='';
-$PQuery=$PCounter=$VStat=$VoltaireStats=$IBVersion=$HCALids='';
+$PQuery=$PCounter=$VStat=$VoltaireStats=$IBVersion=$HCALids=$OfedInfo='';
 $numBrwBuckets=$cfsVersion=$sfsVersion='';
 
 # Find out ASAP if we're linux or WNT based as well as whether or not XC based
@@ -85,7 +84,7 @@ if ($Config{'version'} lt '5.8.0')
 #  exit;
 }
 
-$Version=  '2.5.0';
+$Version=  '2.5.1';
 $Copyright='Copyright 2003-2008 Hewlett-Packard Development Company, L.P.';
 $License=  "collectl may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
@@ -159,6 +158,10 @@ $OFMax=$SBMax=$DQMax=$FS=$ScsiInfo=$cls=$HCAPortStates='';
 $SlabVersion=$XType=$XVersion='';
 $dentryFlag=$inodeFlag=$filenrFlag=$supernrFlag=$dquotnrFlag=0;
 
+# This tells us we have not yet made our first pass through the data
+# collection loop and gets reset to 0 at the bottom.
+$firstPass=1;
+
 # Check the switches to make sure none requiring -- were specified with -
 # since getopts doesn't!  Also save the list of switches we were called with.
 $cmdSwitches=preprocSwitches();
@@ -191,6 +194,7 @@ $DefNetSpeed=10000;
 $IbDupCheckFlag=1;
 
 $Passwd=       '/etc/passwd';
+$Cat=          '/bin/cat';
 $Grep=         '/bin/grep';
 $Egrep=        '/bin/egrep';
 $Ps=           '/bin/ps';
@@ -459,10 +463,8 @@ $utcFlag=1    if $options=~/U/;
 error("you can only specify -s with --top with -p")        if $numTop ne 0 && $userSubsys ne '' && $playback eq '';
 error("you cannot specify -f with --top")                  if $numTop ne 0 && $filename ne '';
 
-# Note we have to do a separate test for -sj in playback mode section
+# NOTE - we can't do any $subsys tests here because we have not yet processed $userSubsys
 error("--sexpr does not work in playback mode")            if $sexprType ne '' && $playback ne '';
-error("--sexpr does not support -sJ")                      if $sexprType ne '' && $subsys=~/J/;
-error("--sexpr with -sj also requires -sC")                if $sexprType ne '' && $subsys=~/j/ && $subsys!~/C/;
 error("--sexpr types are 'raw' and 'rate'")                if $sexprType ne '' && $sexprType!~/raw|rate/;
 error("--rawtoo does not work in playback mode")           if $rawtooFlag && $playback ne '';
 error("--rawtoo requires -f")                              if $rawtooFlag && $filename eq '';
@@ -1030,7 +1032,8 @@ if ($playback ne '')
     print "  ignoring redundant pre-collectl 1.3.0 -sd in favor of -sp in $file\n"    if $IgnoreDiskData;
 
     # We can only do this test after figuring out what's in the header.
-    error("-sj or -sJ with -P also requires -sC")    if $subsys=~/j/i && $subsys!~/C/ && $plotFlag;
+    error("-sj or -sJ with -P also requires CPU details so add C or remove J.")
+	if $subsys=~/j/i && $subsys!~/C/ && $plotFlag;
 
     # Need to reset the globals for the intervals that gets recorded in the header.
     # Note the conditional on the assignments for i2 and i3.  This is because they SHOULD be
@@ -1428,10 +1431,15 @@ checkSubOpts();
 
 #    L a s t    M i n u t e    V a l i d a t i o n
 
+# These don't exactly have to be last minute, but they do need to be done after
+# $userSubsys has been processed and $subsys generated...
+error("--sexpr does not support -sJ")                      if $sexprType ne '' && $subsys=~/J/;
+error("--sexpr with -sj also requires -sC")                if $sexprType ne '' && $subsys=~/j/ && $subsys!~/C/;
+
 # These can only be done after initRecord()
 error("-sL only applies to MDS services when used with -OD")
     if $subsys=~/L/ && $NumMds && $subOpts!~/D/;
-error("-OD only applies to SFS")
+error("-OD only applies to HP-SFS")
     if $subOpts=~/D/ && $sfsVersion eq '';
 
 if ($options=~/x/i)
@@ -1443,6 +1451,21 @@ if ($options=~/x/i)
 	      ($subsys=~/l/ && $NumMds+$CltFlag==0));
   error("exception reporting must be to a terminal OR a file in -P format")
            if ($filename ne "" && !$plotFlag) || ($filename eq "" &&  $plotFlag);
+}
+
+#    L a s t    M i n u t e    C h a n g e s    T o    F o r m a t t i n g
+
+# OK, so it's getting messy.  The decision to use brief/verbose is made in setOutputFormat()
+# but it's called much earlier, certainly before if we know what types of lustre node that
+# gets determined in initFormat() which gets called up above.  Perhaps over time other 
+# last minute tests will need a home and this may prove to be it.
+
+# The purpose of this is that in verbose mode when a single type of data is being displayed
+# we'll have set $options to 'h' which means to only display headers periodically.  Now that
+# we know more about the lusre configuration we may have to clear that setting.
+if ($subsys=~/l/i && $verboseFlag)
+{
+  $options=~s/h//    if $CltFlag+$OstFlag+$MdsFlag>1;
 }
 
 # demonize if necessary
@@ -1614,7 +1637,7 @@ $lustreCheckCounter=0;
 $lustreCheckIntervals=($interval!=0) ? 
     int($lustreConfigInt/$interval) : int($count/(86400/$lustreConfigInt));
 $lustreCheckIntervals=1    if $lustreCheckIntervals==0;
-print "Lustre Check Intervals: $lustreCheckIntervals\n"    if $debug & 2;
+print "Lustre Check Intervals: $lustreCheckIntervals\n"    if $debug & 8;
 
 # Same thing (sort of) for interconnect interval
 $interConnectCounter=0;
@@ -1633,7 +1656,6 @@ if ($options=~/i/)
 
 # This is where efficiency really counts
 $doneFlag=0;
-$firstPass=1;
 for (; $count!=0 && !$doneFlag; $count--)
 {
   # Use the same value for seconds for the entire cycle
@@ -1787,7 +1809,8 @@ for (; $count!=0 && !$doneFlag; $count--)
     # MDS Processing
     if ($NumMds)
     {
-      getProc(3, "/proc/fs/lustre/mdt/MDT/mds/stats", "MDS", 22, 21);
+      my $type=($cfsVersion lt '1.6.0.0') ? 'MDT' : 'MDS';
+      getProc(3, "/proc/fs/lustre/mdt/$type/mds/stats", "MDS", 22, 21);
     }
 
     # CLIENT Processing
@@ -2368,7 +2391,7 @@ sub configChange
 
   ($services, $mdss, $osts, $clts)=split(/\|/, $config);
   print "configChange() -- Pre: $prefix  Svcs: $services Mds: $mdss Osts: $osts Clts: $clts Int: $interval\n"
-      if $debug & 2;
+      if $debug & 8;
 
   # Usually there are no existing messages, but we gotta check...
   $index=defined($preprocMessages{$prefix}) ? $preprocMessages{$prefix} : 0;
@@ -2578,7 +2601,7 @@ sub setNames
   my $name;
 
   print "SET NAME -- Type: $type Old: $oldNames  New: $newNames\n"
-      if $debug & 2;
+      if $debug & 8;
 
   # remember, it's ok for names to go away.  we just want new ones!
   $oldNames=" $oldNames ";    # to make pattern match work
@@ -3422,7 +3445,7 @@ sub setOutputFormat
   # headers for each interval and rather than complicate the logic above, do it separately.
   $options=~s/h//  if $verboseFlag && $subsys=~/[YZ]/;
 
-  # As usual, lustre complicate things since we can get multiple lines of
+  # As usual, lustre complicates things since we can get multiple lines of
   # output.  Therefore we need to see how many lustre options there actually
   # are and remove -oh if more than 1.
   my $numOpts=0;
@@ -3802,7 +3825,8 @@ sub loadConfig
   {
     if (open CONFIG, "<$file")
     {
-      print "Reading Config File: $file\n"    if $debug & 2;
+      print "Reading Config File: $file\n"    if $debug & 1;
+      $configFile=$file;
       $openedFlag=1;
       last;
     }
@@ -3912,9 +3936,10 @@ sub loadConfig
 
       # For Infiniband
       $PCounter=$value         if $param=~/^PCounter/;
-      $PQueryList=$value       if $param=~/^PQuery/;
+      $PQuery=$value           if $param=~/^PQuery/;
       $VStat=$value            if $param=~/^VStat/;
       $IbDupCheckFlag=$value   if $param=~/^IbDupCheckFlag/;
+      $OfedInfo=$value         if $param=~/^OfedInfo/;
 
       $Interval=$value         if $param=~/^Interval$/;
       $Interval2=$value        if $param=~/^Interval2/;
@@ -3937,16 +3962,6 @@ sub loadConfig
     }
   }
   close CONFIG;
-
-  foreach my $path (split(/:/, $PQueryList))
-  {
-    if (-e $path)
-    {
-      $PQuery=$path;
-      print "PQuery=$PQuery\n"    if $debug & 128;
-      last;
-    }
-  }
 }
 
 sub loadSlabs

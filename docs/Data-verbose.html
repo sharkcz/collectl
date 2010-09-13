@@ -1,0 +1,547 @@
+<html>
+<head>
+<link rel=stylesheet href="style.css" type="text/css">
+<title>Verbose Data</title>
+</head>
+
+<body>
+<center><h1>Verbose Data</h1></center>
+<p>
+
+Data is reported in this form when either --verbose is used OR if there is at least one
+type of data requested that doesn't have a brief form such as any detail data or 
+ionodes, processes or slabs.  Specifying some of the lustre output options with -O such 
+as B, D and M will also force verbose format.
+
+<p><h3>CPU, <i>collectl -sc</i></h3>
+
+<div class=terminal-wide14>
+<pre>
+# CPU SUMMARY (INTR, CTXSW & PROC /sec)
+# USER  NICE   SYS  WAIT   IRQ  SOFT STEAL  IDLE  INTR  CTXSW  PROC  RUNQ   RUN   AVG1  AVG5 AVG15
+</pre>
+</div>
+
+These are the percentage of time the system in running is one of the modes, noting that
+these are averaged across all CPUs.  While User and Sys modes are self-eplanitory, the others
+may not be:
+<p>
+<table>
+<tr valign=top><td><b>User</b></td>
+<td>Time spent in User mode, not including time spend in "nice" mode.</td></tr>
+
+<tr valign=top><td><b>Nice</b></td>
+<td>Time spent in Nice mode, that is lower priority as adjusted by 
+the nice command and have the "N" status flag set when examined with "ps".</td></tr>
+
+<tr valign=top><td><b>Sys</b></td>
+<td>This is time spent in "pure" system time.</td></tr>
+
+<tr valign=top><td><b>Wait</b></td>
+<td>Also known as "iowait", this is the time the CPU was idle during an 
+outstanding disk I/O request.  This is not considered to be part of the total or 
+system times reported in brief mode.</td></tr>
+
+<tr valign=top><td><b>Irq</b></td>
+<td>Time spent processing interrupts and also considered to be part of 
+the summary system time reported in "brief" mode.</td></tr>
+
+<tr valign=top><td><b>Soft</b></td>
+<td>Time spent processing soft interrupts and also considered to be part 
+of the summary system time reported in "brief" mode.</td></tr>
+
+<tr valign=top><td><b>Steal</b></td>
+<td>Time spend in involuntary wait state while the hypervisor was servicing 
+another virtual processor.</td></tr>
+</table>
+
+<p>
+This next set of fields apply to processes
+<p>
+<table>
+<tr><td><b>Proc</b></td><td>Process creations/sec.</li></td></tr>
+<tr><td><b>Runq</b></td><td>Number of processes in the run queue.</li></td></tr>
+<tr><td><b>Run</b></td><td>Number of processes in the run state.</li></td></tr>
+<tr><td><b>Avg1, Avg5, Avg15</b></td><td>Load average over the last 1,5 and 15 minutes.</td></tr>
+</table>
+
+<p><h3>Disks, <i>collectl -sd</i></h3>
+<div class=terminal>
+<pre>
+# DISK SUMMARY (/sec)
+#Reads  R-Merged  R-KBytes   Writes  W-Merged  W-KBytes
+</div></pre>
+
+<table>
+<tr><td><b>Reads</b></td><td>Number of reads/sec</td></tr>
+<tr valign=top><td><b>R-Merged</b></td>
+<td>Read requests merged per second when being dequeued.
+These statistics are not available in older kernels which 
+only record disk statistics in /proc/stat.</td></tr>
+<tr><td><b>R-KBytes</b></td><td>KB read/sec</td></tr>
+<tr><td><b>Writes</b></td><td>Number of writes/sec</td></tr>
+<tr valign=top><td><b>W-Merged</b></td>
+<td>Write requests merged per second when being dequeued.</tr></tr>
+<tr><td><b>W-KBytes<b></td><td>KB written/sec</td></tr>
+</table>
+
+<p><h3>Inoodes/Filesystem, <i>collectl -si</i></h3>
+
+<div class=terminal>
+<pre>
+# INODE SUMMARY
+#DCache  ---OpenFiles---           -----SBlock-----   ----DQuot----
+# Unusd  Handles   % Max    Inode  Handles    % Max   Entry   % Max
+</pre></div>
+
+<table>
+<tr><td colspan=2>DCache</td></tr>
+<tr><td><b>Unusd</b></td><td>Number of unused entries in directory cache</td</tr>
+<tr><td colspan=2>Open Files</td></tr>
+<tr><td><b>Handles</b></td><td>Number of open file handles</td></tr>
+<tr><td><b>% Max</b></td><td>Percentage of maximum available file handles</td></tr>
+<tr><td><b>Inode</b></td><td>Number of user inode handles</td></tr>
+<tr><td colspan=2>SBlock</td></tr>
+<tr><td><b>Handles</b></td><td>Number of allocated Super Blocks handlers</td></tr>
+<tr><td><b>% Max</b></td><td>Percentage of maximum allowed</li>
+<tr><td colspan=2>DQuot</td></tr>
+<tr><td><b>Entry</b></td><td>Number of allocated Disk Quota Entries</td></tr>
+<tr><td><b>% Max</b></td><td>Percentage of maximum allowed</td></tr>
+</table>
+
+<p><h3>Infiniband, <i>collectl -sx</i></h3>
+
+<div class=terminal>
+<pre>
+# INFINIBAND SUMMARY (/sec)
+# OpsIn  OpsOut   KB-In  KB-Out  Errors
+</pre></div>
+<table>
+<tr><td><b>OpsIn</b></td><td>Packets received/sec.</td></tr>
+<tr><td><b>OpsOut</b></td><td>Packets transmitted/sec.</td></tr>
+<tr><td><b>KB-In</b></td><td>KB received/sec.</td></tr>
+<tr><td><b>KB-Out</b></td><td>KB transmitted/sec.</td></tr>
+<tr valign=top><td><b>Errs</b></td><td>Count of current errors.  Since these
+are typically infrequent, it is felt that reporting them as a rate would result
+in either not seeing them OR round-off hiding their values.</td></tr>
+</table>
+
+<p><h3>Lustre</h3>
+
+<p><b>Lustre Client</b>, <i>collectl -sl</i>
+<p>There are several formats here controlled by the -O switch.  There is 
+also detail data for these available as well.  Specifying -sL results in 
+data broken out by the file system and -sLL breaks it out by OST.
+
+<div class=terminal>
+<pre>
+# LUSTRE CLIENT SUMMARY
+# Reads ReadKB  Writes WriteKB
+</pre></div>
+
+<table>
+<tr><td valign=top><b>Reads</b></td><td>Reads/sec delivered to the client,
+not necessarily from the lustre
+storage servers.</td></tr>
+<tr><td><b>ReadKB</b></td><td>KB/sec delivered to the client.</td></tr>
+<tr><td><b>Writes</b></td><td>Writes/sec delievered to the storage servers.</td></tr>
+<tr><td><b>WriteKB</b></td><td>KB Writes/sec delievered to the storage servers.</td></tr>
+</table>
+
+<div class=terminal-wide14>
+<pre>
+# LUSTRE CLIENT SUMMARY: METADATA
+# Reads ReadKB  Writes WriteKB  Open Close GAttr SAttr  Seek Fsync DrtHit DrtMis
+</pre></div>
+
+<table>
+<tr><td valign=top><b>Reads</b></td><td>Reads/sec delivered to the client,
+not necessarily from the lustre storage servers.</td></tr>
+<tr><td><b>ReadKB</b></td><td>KB/sec delivered to the client.</td></tr>
+<tr><td><b>Writes</b></td><td>Writes/sec delievered to the storage servers.</td></tr>
+<tr><td><b>WriteKB</b></td><td>KB Writes/sec delievered to the storage servers.</td></tr>
+<tr><td><b>Open</b></td><td>File opens/sec</td></tr>
+<tr><td><b>Close</b></td><td>File closes/sec</td></tr>
+<tr><td><b>GAttr</b></td><td>getattrs/sec</td></tr>
+<tr><td><b>Seek</b></td><td>seeks/sec</td></tr>
+<tr><td><b>Fsync</b></td><td>fsyncs/sec</td></tr>
+<tr><td><b>DrtHit</b></td><td>dirty hits/sec</td></tr>
+<tr><td><b>DrtMis</b></td><td>dirty misses/sec</td></tr>
+</table>
+
+<div class=terminal-wide14>
+<pre>
+# LUSTRE CLIENT SUMMARY: READAHEAD
+# Reads ReadKB  Writes WriteKB  Pend  Hits Misses NotCon MisWin LckFal  Discrd ZFile ZerWin RA2Eof HitMax
+</pre></div>
+
+<table>
+<tr><td valign=top><b>Reads</b></td><td>Reads/sec delivered to the client,
+not necessarily from the lustre storage servers.</td></tr>
+<tr><td><b>ReadKB</b></td><td>KB/sec delivered to the client.</td></tr>
+<tr><td><b>Writes</b></td><td>Writes/sec delievered to the storage servers.</td></tr>
+<tr><td><b>WriteKB</b></td><td>KB Writes/sec delievered to the storage servers.</td></tr>
+<tr><td><b>Pend</b></td><td>Pending issued pages</td></tr>
+<tr><td><b>Hits</b></td><td>Cache hits</td></tr>
+<tr><td><b>Misses</b></td><td>Cache misses</td></tr>
+<tr><td><b>NotCon</b></td><td>Read page not consecutive</td></tr>
+<tr><td><b>MisWin</b></td><td>Miss iniside window</td></tr>
+<tr><td><b>LckFal</b></td><td>Failed grab_cache_page</td></tr>
+<tr><td><b>Discrd</b></td><td>Read but discarded</td></tr>
+<tr><td><b>ZFile</b></td><td>Zero length file</td></tr>
+<tr><td><b>ZerWin</b></td><td>Zero size window</td></tr>
+<tr><td><b>RA2Eof</b></td><td>Read ahead to end of file</td></tr>
+<tr><td><b>HitMax</b></td><td>Hit maximum readahead issue</td></tr>
+</table>
+
+<div class=terminal-wide14>
+<pre>
+# LUSTRE CLIENT SUMMARY: RPC-BUFFERS (pages)
+#Rds  RdK   1K   2K   ...  Wrts WrtK   1K   2K   ...
+</pre></div>
+
+This display shows the size of rpc buffer distribution buckets in K-pages.  You can find the 
+page size for you system in the header (<i>collectl --showheader</i>).
+<p>
+<table>
+<tr><td valign=top><b>Rds</b></td><td>Reads/sec</td></tr>
+<tr><td valign=top><b>RdK</b></td><td>KBs read/sec</td></tr>
+<tr><td valign=top><b>nK</b></td><td>Number of pages of of this size read</td></tr>
+<tr><td valign=top><b>Wrts</b></td><td>Writes/sec</td></tr>
+<tr><td valign=top><b>WrtK</b></td><td>KBs written/sec</td></tr>
+<tr><td valign=top><b>nK</b></td><td>Number of pages of of this size written</td></tr>
+</table>
+
+<p><b>Lustre Meta-Data Server</b>, <i>collectl -sl</i>
+
+<div class=terminal>
+<pre>
+# LUSTRE FILESYSTEM SUMMARY
+#<------------- MDS --------------->
+#CLOSE   GETATTR     REINT      SYNC
+</pre></div>
+
+<table>
+<tr><td><b>Close</b></td><td>Number of file closes/sec.</td></tr>
+<tr><td><b>Getattr</b></td><td>Number of getattrs/sec.</td></tr>
+<tr><td><b>Reint</b></td><td>Reintegrated operations/sec which are inode 
+modifications and unklinks.</td></tr>
+<tr><td><b>Sync</b></td><td>Number of syncs/sec.</td></tr>
+</table>
+<p>
+This display is very similar the the RPC buffers in that the sizes of different size
+I/O requests are reported.  In this case there are requests sent to the disk driver.
+Note that this report is only available for HP's SFS.
+
+<div class=terminal-wide14>
+<pre>
+# LUSTRE DISK BLOCK LEVEL SUMMARY
+#Rds  RdK 0.5K   1K   ...  Wrts WrtK 0.5K   1K   ...
+</pre></div>
+
+<table>
+<tr><td valign=top><b>Rds</b></td><td>Reads/sec</td></tr>
+<tr><td valign=top><b>RdK</b></td><td>KBs read/sec</td></tr>
+<tr><td valign=top><b>nK</b></td><td>Number of blocks of of this size read</td></tr>
+<tr><td valign=top><b>Wrts</b></td><td>Writes/sec</td></tr>
+<tr><td valign=top><b>WrtK</b></td><td>KBs written/sec</td></tr>
+<tr><td valign=top><b>nK</b></td><td>Number of blocks of of this size written</td></tr>
+</table>
+
+<p><b>Lustre Object Storage Server</b>, <i>collectl -sl</i>
+<div class=terminal>
+<pre>
+# LUSTRE FILESYSTEM SUMMARY
+#<------------------- OST ------------------>
+#READ OPS   READ KB      WRITE OPS   WRITE KB
+</pre></div>
+
+<table>
+<tr><td><b>Read Ops</b></td><td>Reads/sec</td></tr>
+<tr><td><b>Read KB</b></td><td>KB/sec read</td></tr>
+<tr><td><b>Write Ops</b></td><td>Writes/sec</li>
+<tr><td><b>Write KB</b></td><td>KB/sec written</td></tr>
+</table>
+
+<p><b>Lustre Object Storage Server</b>, <i>collectl -sl -OB</i>
+<div class=terminal>
+<pre>
+# LUSTRE FILESYSTEM SUMMARY
+#<--------read----------------writes-----------------
+#Rds  RdK   1K   2K   ...  Wrts WrtK   1K   2K   ....
+</pre></div>
+
+<table>
+<tr><td valign=top><b>Rds</b></td><td>Reads/sec</td></tr>
+<tr><td valign=top><b>RdK</b></td><td>KBs read/sec</td></tr>
+<tr><td valign=top><b>nK</b></td><td>Number of pages of of this size read</td></tr>
+<tr><td valign=top><b>Wrts</b></td><td>Writes/sec</td></tr>
+<tr><td valign=top><b>WrtK</b></td><td>KBs written/sec</td></tr>
+<tr><td valign=top><b>nK</b></td><td>Number of pages of of this size written</td></tr>
+</table>
+
+<p><b>Lustre Object Storage Server</b>, <i>collectl -sl -OD</i>
+
+<div class=terminal>
+<pre>
+# LUSTRE DISK BLOCK LEVEL SUMMARY
+#Rds  RdK 0.5K   1K   ...   Wrts WrtK 0.5K   1K   ...
+</pre></div>
+
+<table>
+<tr><td valign=top><b>Rds</b></td><td>Reads/sec</td></tr>
+<tr><td valign=top><b>RdK</b></td><td>KBs read/sec</td></tr>
+<tr><td valign=top><b>nK</b></td><td>Number of blocks of of this size read</td></tr>
+<tr><td valign=top><b>Wrts</b></td><td>Writes/sec</td></tr>
+<tr><td valign=top><b>WrtK</b></td><td>KBs written/sec</td></tr>
+<tr><td valign=top><b>nK</b></td><td>Number of blocks of of this size written</td></tr>
+</table>
+
+<p><h3>Memory, <i>collectl -sm</i></h3>
+
+<div class=terminal-wide14>
+<pre>
+# MEMORY STATISTICS
+#<------------------------Physical Memory-----------------------><-----------Swap----------><-Inactive-><Pages/sec>
+#   TOTAL    USED    FREE    BUFF  CACHED    SLAB  MAPPED  COMMIT     TOTAL    USED    FREE     TOTAL     IN    OUT
+</pre></div>
+
+<table>
+<tr><td><b>Total</b></td>
+<td>Total physical memory</td></tr>
+
+<tr valign=top><td><b>Used</b></td>
+<td>Used physical memory.  This does not include memory used by the kernel itself.</td></tr>
+
+<tr valign=top><td><b>Commit</b></td>
+<td>Accorting to RedHat: <i>"An estimate of how much RAM you would need to make a 99.99% guarantee
+that there never is OOM (out of memory) for this workload."</i></td></tr>
+
+<tr><td><b>Swap Total</b></td>
+<td>Total Swap</td></tr>
+
+<tr><td><b>Swap Used</b></td>
+<td>Used Swap</td></tr>
+
+<tr><td><b>Swap Free</b></td>
+<td>Free Swap</td></tr>
+
+<tr valign=top><td><b>Inactive</b></td>
+<td>Inactive pages.  On ealier kernels this number is the sum of the clean, dirty
+and laundry pages.</td></tr>
+
+<tr><td><b>Pages/Sec In</b></td>
+<td>Total number of pages read by block devices</td></tr>
+
+<tr><td><b>Pages/Sec Out</b></td>
+<td>Total number of pages written by block devices</td></tr>
+</table>
+
+<p><h3>Network, <i>collectl -sn</i></h3>
+<p>
+The entries for error counts are actually the total of several types of errors.
+To get individual error counts, you must report details on individual 
+interfaces in plot format by specifying -P.  Transmission errors are categorized 
+by errors, dropped, fifo, collisions and carrier.
+Receive errors are broken out for errors, dropped, fifo and fragments.
+
+<div class=terminal>
+<pre>
+# NETWORK SUMMARY (/sec)
+#InPck  InErr OutPck OutErr   Mult   ICmp   OCmp    IKB    OKB
+</pre></div>
+
+<table>
+<tr><td><b>InPck</b></td>
+<td>Incoming packets/sec</td></tr>
+
+<tr><td><b>InErr</b></td>
+<td>Incoming errors/sec</td></tr>
+
+<tr><td><b>OutPck</b></td>
+<td>Outgoing packets/sec</td></tr>
+
+<tr><td><b>OutErr</b></td>
+<td>Outgoing errors/sec</td></tr>
+
+<tr><td><b>Mult</b></td>
+<td>Outgoing multicast packets/sec</td></tr>
+
+<tr><td><b>ICmp</b></td>
+<td>Incoming compressed packets/sec</td></tr>
+
+<tr><td><b>OCmp</b></td>
+<td>Outgoing compressed packets/sec</td></tr>
+
+<tr><td><b>IKB</b></td>
+<td>Incoming KB/sec</td></tr>
+
+<tr><td><b>OKB</b></td>
+<td>Outgoing KB/sec</td></tr>
+</table>
+
+<p><h3>NFS, <i>collectl -sf</i></h3>
+<p>
+These statistics will be reported for V3 servers by default but you can
+choose a different version and/or client data via -O.  They correspond
+to the net, rpc and protocol specific sections of the nfsstat utility.
+
+<div class=terminal>
+<pre>
+# NFS SERVER (/sec)
+#<----------Network-------><----------RPC---------><---NFS V3--->
+#PKTS   UDP   TCP  TCPCONN  CALLS  BADAUTH  BADCLNT   READ  WRITE
+</pre></div>
+
+<table>
+<tr><td><b>Pkts</b></td><td>Total network packets, which is the sum of UDP and TCP</td></tr>
+<tr><td><b>UDP</b></td><td>Number of UDP packets/sec</td></tr>
+<tr><td><b>TCP</b></td><td>Number of TCP packets/sec</td></tr>
+<tr><td><b>TCPConn</b></td><td>Number of TCP connections/sec</td></tr>
+<tr><td><b>Calls</b></td><td>Number of RPC calls/sec</td></tr>
+<tr><td><b>BadAuth</b></td><td>Number of authentication failures/sec</td></tr>
+<tr><td><b>BadClnt</b></td><td>Number of unknown clients/sec</td></tr>
+<tr><td><b>Read</b></td><td>Number of reads/sec</td></tr>
+<tr><td><b>Write</b></td><td>Number of writes/sec</td></tr>
+</table>
+
+<p><h3>NFS, <i>collectl -sf -OC</i></h3>
+<p>The data reported for clients is slightly different, specifically the 
+retrans and authref fields.
+
+<div class=terminal>
+<pre>
+# NFS CLIENT (/sec)
+#<----------RPC---------><---NFS V3--->
+#CALLS  RETRANS  AUTHREF    READ  WRITE
+</pre></div>
+
+<table>
+<tr><td><b>Calls</b></td><td>Number of RPC calls/sec</td></tr>
+<tr><td><b>Retrans</b></td><td>Retransmitted calls</td></tr>
+<tr><td><b>Authref</b></td><td>Authentication failed</td></tr>
+<tr><td><b>Read</b></td><td>Number of reads/sec</td></tr>
+<tr><td><b>Write</b></td><td>Number of writes/sec</td></tr>
+</table>
+
+<p><h3>Slabs, <i>collectl -sy</i></h3>
+<p>As of the 2.6.22 kernel, there is a new slab allocator, called SLUB, and since 
+there is not a 1:1 mapping between what it reports and the older slab allocator,
+the format of this listing will depend on which allocator is being used.  The following
+format is for the older allocator.
+
+<div class=terminal-wide14>
+<pre>
+# SLAB SUMMARY
+#<------------Objects------------><--------Slab Allocation-------><--Caches--->
+#  InUse   Bytes    Alloc   Bytes   InUse   Bytes   Total   Bytes  InUse  Total
+</pre></div>
+
+<table>
+<tr><td colspan=2>Objects</td></tr>
+<tr valign=top><td><b>InUse</b></td>
+<td>Total number of objects that are currently in use.</td></tr>
+<tr valign=top><td><b>Bytes</b></td>
+<td>Total size of all the objects in use.</td></tr>
+<tr valign=top><td><b>Alloc</b></td>
+<td>Total number of objects that have been allocated but not necessarily in use.</td></tr>
+<tr valign=top><td><b>Bytes</b></td>
+<td>Total size of all the allocated objects whether in use or not.</td></tr>
+
+<tr><td colspan=2>Slab Allocation</td></tr>
+<tr valign=top><td><b>InUse</b></td>
+<td>Number of slabs that have at least one active object in them.</td></tr>
+<tr valign=top><td><b>Bytes</b></td>
+<td>Total size of all the slabs.</td></tr>
+<tr valign=top><td><b>Total</b></td>
+<td>Total number of slabs that have been allocated whether in use or not.</td></tr>
+<tr valign=top><td><b> Bytes</b></td>
+<td>Total size of all the slabs that have been allocted whether in use or not.</td></tr>
+
+<tr><td colspan=2>Caches</td></tr>
+<tr valign=top><td><b>InUse</b></td>
+<td>Not all caches are actully in use.  This included only those with non-zero
+counts.</td></tr>
+<tr valign=top><td><b>Total</b></td>
+<td>This is the count of all caches, whether currently in use or not.</td></tr>
+</table>
+
+<p>This is format for the new <i>slub</i> allocator
+
+<div class=terminal>
+<pre>
+# SLAB SUMMARY
+#<---Objects---><-Slabs-><-----memory----->
+# In Use   Avail  Number      Used    Total
+</pre></div>
+
+One should note that this report summarizes those slabs being monitored.  In general
+this represents all slabs, but if filering is being used these numbers will only
+apply to those slabs that have matched the filter.
+<p>
+<table>
+<tr><td colspan=2>Objects</td></tr>
+<tr><td><b>InUse</b></td>
+<td>The total number of objects that have been allocated to processes.</td></tr>
+<tr valign=top><td><b>Avail</b></td>
+<td>The total number of objects that are available in the currently allocated slabs.
+This includes those that have already been allocated toprocesses.</td></tr>
+
+<tr><td colspan=2>Slabs</td></tr>
+<tr valign=top><td><b>Number</b></td>
+<td>This is the number of individual slabs that have been allocated and
+taking physical memory.</td></tr>
+
+<tr><td colspan=2>Memory</td></tr>
+<tr valign=top><td><b>Used</b></td>
+<td>Used memory corresponds to those objects that have been allocated to
+processes.</td></tr>
+
+<tr valign=top><td><b>Total</b></td>
+<td>Total physical memory allocated to processes.  When there is no filtering
+in effect, this number will be equal to the Slabs field reported by -sm.</td></tr>
+</table>
+
+<p><h3>Sockets, <i>collectl -ss</i></h3>
+
+<div class=terminal>
+<pre>
+# SOCKET STATISTICS
+#      <-------------Tcp------------->   Udp   Raw   <---Frag-->
+#Used  Inuse Orphan    Tw  Alloc   Mem  Inuse Inuse  Inuse   Mem
+</pre></div>
+
+<table>
+<tr><td valign=top><b>Used</b></td><td>Total number if socket allocated which can include additional types such as domain.</td></tr>
+<tr><td colspan=2>Tcp</td></tr>
+<tr><td><b>Inuse</td><td>Number of TCP connections in use</td></tr>
+<tr><td><b>Orphan</td><td>Number of TCP orphaned connections</td></tr>
+<tr><td><b>Tw</td><td>Number of connections in <i>TIME_WAIT</i></td></tr>
+<tr><td><b>Alloc</td><td>TCP sockets allocated</td></tr>
+<tr><td><b>Mem</td><td></td></tr>
+<tr><td colspan=2>Udp</td></tr>
+<tr><td><b>Inuse</td><td>Number of UCP connections in use</td></tr>
+<tr><td colspan=2>Raw</td></tr>
+<tr><td><b>Inuse</td><td>Number of RAW connections in use</td></tr>
+<tr><td colspan=2>Frag</td></tr>
+<tr><td><b>Inuse</td><td></td></tr>
+<tr><td><b>Mem</td><td></td></tr>
+</table>
+
+<p><h3>TCP, <i>collectl -st</i></h3>
+
+<div class=terminal>
+<pre>
+# TCP SUMMARY (/sec)
+# PureAcks HPAcks   Loss FTrans
+</pre></div>
+
+<table>
+<tr><td><b>PureAcks</b></td><td>ACKs/sec that only contain acks (ie no data).</td></tr>
+<tr><td><b>HPAcks</b></td><td>Fast-path acks/sec.</td></tr>
+<tr><td><b>Loss</b></td><td>Packets/sec TCP thinks have been lost coming in.</td></tr>
+<tr><td><b>FTrans</b></td><td>Fast retransmissions/sec.</td></tr>
+</table>
+
+</body>
+</html>

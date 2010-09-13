@@ -174,7 +174,7 @@ sub initRecord
 
       if ($vendorID eq '14fc')
       {
-	print "Found Quadrics Interconnect\n"    if $debug & 1;
+	print "Found Quadrics Interconnect\n"    if $debug & 2;
         $quadricsFlag=1;
 	elanCheck();
       }
@@ -186,17 +186,6 @@ sub initRecord
 	$mellanoxFlag=1;
 	$HCANames='';
         ibCheck('');
-
-        # get IB version noting most systems are moving to ofed
-        if ($PQuery ne '')
-	{
- 	  my $dirname=dirname($PQuery);
-          $IBVersion=(`$dirname/ofed_info|head -n1`=~/OFED-(.*)/) ? $1 : '???';
-	}
-	elsif ( -e $VoltaireStats)
-        {
-  	  $IBVersion=(`head -n1 $VoltaireStats`=~/ibstat\s+(.*)/) ? $1 : '???';
-        }
       }
     }
 
@@ -218,6 +207,56 @@ sub initRecord
         logmsg("W", $message);
         $xFlag=$XFlag=0;
         $subsys=~s/x//ig;
+        $mellanoxFlag=0;
+      }
+
+      if ($mellanoxFlag)
+      {
+        # The way forward is clearly OFED
+	if (-e $SysIB)
+        {
+          print "Looking for 'perfquery' and 'ofed_info'\n"    if $debug & 2;
+          $PQuery=getOfedPath($PQuery, 'perfquery', 'PQuery');
+          if ($PQuery eq '')
+          {
+	    logmsg('E', "Couldn't find perfquery!  Disabling infiniband monitoring");
+            $xFlag=$XFlag=0;
+            $subsys=~s/x//ig;
+            $mellanoxFlag=0;
+          }
+
+          # I hate support questions and this is the place to catch perfquery problems!
+          my $message='';
+          my $temp=`$PQuery`;
+          $message="Permission denied"            if $temp=~/Permission denied/;
+          $message="Required module missing"      if $temp=~/required by/;
+          $message="No such file or directory"    if $temp=~/No such file/;
+          if ($message ne '')
+          {
+            logmsg('E', "perfquery error: $message!  Disabling infiniband monitoring");
+            $xFlag=$XFlag=0;
+            $subsys=~s/x//ig;
+            $mellanoxFlag=0;
+          }
+
+          # get IB version noting most systems are moving to ofed
+          if ($PQuery ne '')
+	  {
+            if (!-e $OfedInfo)
+            {
+              $OfedInfo=getOfedPath($OfedInfo, 'ofed_info', 'OfedInfo');
+              logmsg('W', "Couldn't find 'ofed_info'.  Won't be able to determine OFED version")
+	          if $OfedInfo eq '';
+            }
+            $IBVersion=(`$OfedInfo|head -n1`=~/OFED-(.*)/) ? $1 : '???';
+	    print "OFED V$IBVersion\n"    if $debug & 2;
+	  }
+        }
+	else
+        {
+  	  $IBVersion=(`head -n1 $VoltaireStats`=~/ibstat\s+(.*)/) ? $1 : '???';
+	  print "Voltaire IB V$IBVersion\n"    if $debug & 2;
+        }
       }
     }
 
@@ -384,25 +423,8 @@ sub initRecord
     }
     else
     {
-      $OstWidth=$FSWidth=0;
-      $NumMds=$NumOst=0;
-      $MdsNames=$OstNames=$lustreCltInfo='';
-      $inactiveOstFlag=0;
-      lustreCheckClt();
-      lustreCheckMds();
-      lustreCheckOst();
-      print "Lustre -- CltFlag: $CltFlag  NumMds: $NumMds  NumOst: $NumOst\n"
-	  if $debug & 1;
-
-      if ($CltFlag+$NumMds+$NumOst==0 && $lustreSvcs eq '')
-      {
-        logmsg("W", "-sl data collection disabled because no lustre services running ".
-	          "and I don't know its type.  You will need to use -L to force type.");
-        $lFlag=$LFlag=$LLFlag=0;
-        $subsys=~s/l//ig;
-      }
-
-      # Get Luster and SFS Versions...
+      # Get Luster and SFS Versions before looking at any data structions in the
+      # 'lustreCheck' routines because things change over time
       $temp=`$Lctl lustre_build_version 2>/dev/null`;
       $temp=~/version: (.+?)-/m;
       $cfsVersion=$1;
@@ -419,6 +441,24 @@ sub initRecord
         $llite=`$Rpm -qa | $Grep lustre-client`;
         $llite=~/lustre-client-(.*)/;
         $sfsVersion=$1;
+      }
+
+      $OstWidth=$FSWidth=0;
+      $NumMds=$NumOst=0;
+      $MdsNames=$OstNames=$lustreCltInfo='';
+      $inactiveOstFlag=0;
+      lustreCheckClt();
+      lustreCheckMds();
+      lustreCheckOst();
+      print "Lustre -- CltFlag: $CltFlag  NumMds: $NumMds  NumOst: $NumOst\n"
+	  if $debug & 8;
+
+      if ($CltFlag+$NumMds+$NumOst==0 && $lustreSvcs eq '')
+      {
+        logmsg("W", "-sl data collection disabled because no lustre services running ".
+	          "and I don't know its type.  You will need to use -L to force type.");
+        $lFlag=$LFlag=$LLFlag=0;
+        $subsys=~s/l//ig;
       }
 
       # Global to count how many buckets there are for brw_stats
@@ -1233,7 +1273,7 @@ sub remapLustreNames
     $allNames=~s/\S+:(\S+)/$1/g;
   }
   print "remapLustrenames() -- Type: $cltType HDR: $hdrNames  ALL: $allNames\nREMAPPED: "
-	    if $debug & 2;
+	    if $debug & 8;
 
   if ($hdrNames ne '')
   {
@@ -1246,13 +1286,13 @@ sub remapLustreNames
 	if ($hdrTemp[$i] eq $allTemp[$j])
         {
 	  $maps[$i]=$j;
-	  print "Map[$i]=$j "    if $debug & 2;
+	  print "Map[$i]=$j "    if $debug & 8;
 	  last;
         }
       }
     }
   }
-  print "\n"    if $debug & 2;
+  print "\n"    if $debug & 8;
   return(@maps);
 }
 
@@ -1266,7 +1306,7 @@ sub initLustre
   my ($i, $j);
 
   printf "initLustre() -- Type: $type  From: $from  Number: %s\n",
-	  defined($to) ? $to : ''    if $debug & 2;
+	  defined($to) ? $to : ''    if $debug & 8;
 
   # NOTE - we have to init both the 'Last' and running variables in case they're not
   # set during this interval since we don't want to use old values.
@@ -4600,7 +4640,7 @@ sub printTerm
       {
         $temp2='';
         foreach my $i (@brwBuckets)
-        { $temp2.=sprintf(" %3dK", $i); }
+        { $temp2.=sprintf(" %3dP", $i); }
         printText("#$fill1$temp$fill2   Rds  RdK$temp2 Wrts WrtK$temp2\n");
       }
     }
@@ -4722,7 +4762,7 @@ sub printTerm
         {
           $temp='';
   	  foreach my $i (@brwBuckets)
-          { $temp.=sprintf(" %3dK", $i); }
+          { $temp.=sprintf(" %3dP", $i); }
 	  printText("#${miniFiller}Rds  RdK$temp Wrts WrtK$temp\n");
         }
 
@@ -4834,7 +4874,7 @@ sub printTerm
           $temp2=' 'x(length("$fill1$temp$fill2 Ost$fill3 "));
           $temp3='';
   	  foreach my $i (@brwBuckets)
-          { $temp3.=sprintf(" %3dK", $i); }
+          { $temp3.=sprintf(" %3dP", $i); }
 	  printText("#$fill1$temp$fill2 Ost$fill3 Rds  RdK$temp3 Wrts WrtK$temp3\n");
         }
         for ($clt=0; $clt<$NumLustreCltOsts; $clt++)
@@ -6991,7 +7031,7 @@ sub ibCheck
         $HCAPorts[$NumHCAs-1][$port]=$portState;
         if ($portState)
         {
-	  print "  VIB Port: $port\n"    if $debug & 1;
+	  print "  VIB Port: $port\n"    if $debug & 2;
           $HCANames.=":$port";
           $activePorts++;
         }
@@ -7042,7 +7082,7 @@ sub ibCheck
           $HCALids[$NumHCAs][$port]=$lid;
 	  if ($portState)
           {
-	    print "  OFED Port: $port  LID: $lid\n"    if $debug & 1;
+	    print "  OFED Port: $port  LID: $lid\n"    if $debug & 2;
             $HCANames.=":$port";
             $activePorts++;
            }
@@ -7141,7 +7181,7 @@ sub lustreCheckClt
   undef %lustreCltOstMappings;
   $inactiveFlag=0;
   $NumLustreCltOsts='-';    # only meaningful for -sLL
-  if ($subsys=~/LL/ || $subOpts=~/B/)
+  if ($CltFlag && ($subsys=~/LL/ || $subOpts=~/B/))
   {
     # we first need to get a list of all the OST uuids for all the filesystems, noting
     # the 1 passed to cat() tells it to read until EOF
@@ -7162,7 +7202,18 @@ sub lustreCheckClt
     @lustreDirs=glob("/proc/fs/lustre/osc/*");
     foreach $dir (@lustreDirs)
     {
-      next    if $dir!~/\d+_MNT/;
+      # Since we're looking for OST subdirectories, ignore anything not a directory
+      # which for now is limted to 'num_refs', but who knows what the future will
+      # hold.  As for the 'MNT' test, I think that only applied to older versions
+      # of lustre, certainlu tp HP-SFS.
+      next    if !-d $dir;   # currently only the 'num_refs' file
+      next    if $cfsVersion lt '1.6.0.0' && $dir!~/\d+_MNT/;
+
+      # Looks like if you're on a 1.6.4.3 system (and perhaps earlier) that is both
+      # a client as well as an MDS, you'll see MDS specific directories with names
+      # like - lustre-OST0000-osc, whereas lustre-OST0000-osc-000001012e950400 is the
+      # client directory we want, so...
+      next    if $dir=~/\-osc$/;
 
       # if ost closed (this happens when new filesystems get created), ignore it.
       my ($uuid, $state)=split(/\s+/, cat("$dir/ost_server_uuid"));
@@ -7190,8 +7241,15 @@ sub lustreCheckClt
   }
   $lustreCltInfo=~s/ $//;
 
-  print "CLT Change -- OldInfo: $saveInfo  New: $lustreCltInfo\n"
-        if $debug & 2 && $lustreCltInfo ne $saveInfo;
+  # Change info is important even when not logging except during initialization
+  if ($lustreCltInfo ne $saveInfo)
+  {
+    my $comment=($filename eq '') ? '#' : '';
+    my $text="Lustre CLT OSTs Changed -- Old: $saveInfo  New: $lustreCltInfo";
+    logmsg('W', "${comment}$text")    if !$firstPass;
+    print "$text\n"       if $firstPass && $debug & 8;
+  }
+
   return ($lustreCltInfo ne $saveInfo) ? 1 : 0;
 }
 
@@ -7200,8 +7258,9 @@ sub lustreCheckMds
   # don't bother checking if specific services were specified and not this one
   return 0    if $lustreSvcs ne '' && $lustreSvcs!~/m/;
 
-  # if this wasn't an MDS and still isn't, nothing has changed.
-  return 0    if !$NumMds && !-e "/proc/fs/lustre/mdt/MDT/mds/stats";
+  # if this wasn't an MDS and still isn't, nothing has changed
+  my $type=($cfsVersion lt '1.6.0.0') ? 'MDT' : 'MDS';
+  return 0    if !$NumMds && !-e "/proc/fs/lustre/mdt/$type/mds/stats";
 
   my ($saveMdsNames, @mdsDirs, $mdsName);
   $saveMdsNames=$MdsNames;
@@ -7219,8 +7278,15 @@ sub lustreCheckMds
   }
   $MdsNames=~s/ $//;
 
-  print "MDS Change -- Old:    $saveMdsNames  New: $MdsNames\n"
-        if $debug & 2 && $MdsNames ne $saveMdsNames;
+  # Change info is important even when not logging except during initialization
+  if ($MdsNames ne $saveMdsNames)
+  {
+    my $comment=($filename eq '') ? '#' : '';
+    my $text="Lustre MDS FS Changed -- Old: $saveMdsNames  New: $MdsNames";
+    logmsg('W', "${comment}$text")    if !$firstPass;
+    print "$text\n"       if $firstPass && $debug & 8;
+  }
+
   return ($MdsNames ne $saveMdsNames) ? 1 : 0;
 }
 
@@ -7261,8 +7327,15 @@ sub lustreCheckOst
   $OstWidth=3    if $OstWidth<3;
   initLustre('o', $saveOst, $NumOst)    if $NumOst>$saveOst;
 
-  print "OST Change -- Old:    $saveOstNames  New: $OstNames\n"
-	if $debug & 2 && $OstNames ne $saveOstNames;
+  # Change info is important even when not logging except during initialization
+  if ($OstNames ne $saveOstNames)
+  {
+    my $comment=($filename eq '') ? '#' : '';
+    my $text="Lustre OSS OSTs Changed -- Old: $saveOstNames  New: $OstNames";
+    logmsg('W', "${comment}$text")    if !$firstPass;
+    print "$text\n"       if $firstPass && $debug & 8;
+  }
+
   return ($OstNames ne $saveOstNames) ? 1 : 0;
 }
 
@@ -7283,6 +7356,47 @@ sub transLustreUUID
   $name=0    if $name eq '';
 
   return($name);
+}
+
+# since it seems OFED changes the locations of perfquery and ofed_info
+# with each release, we're gonna check for them here and if we can't find
+# them, do an 'rpm -qal' and look for them there and on finding them,
+# update /etc/collectl.conf (if we can)
+sub getOfedPath
+{
+  my $list= shift;
+  my $name= shift;
+  my $label=shift;
+
+  my $found='';
+  foreach my $path (split(/:/, $list))
+  {
+    if (-e $path)
+    {
+      $found=$path;
+      last;
+    }
+  }
+
+  if ($found eq '')
+  {
+    # This is something we really don't want to have to be doing
+    logmsg('W', "Cannot find '$name' in ${configFile}'s OFED search list, checking with rpm");
+    $command="$Rpm -qal | $Grep $name | $Grep -v man";
+    print "Command: $command\n"    if $debug & 2;
+    $found=`$command`;
+    if ($found ne '')
+    {
+      chomp($found);
+      logmsg('I', "Adding '$found' to '$label' in $configFile");
+      my $conf=`$Cat $configFile`;
+      $conf=~s/($label\s+=\s+)(.*)$/$1$found:$2/m;
+      open  CONF, ">/etc/collectl.conf" or logmsg("F", "Couldn't write to /etc/collectl.conf so do it manually!");
+      print CONF $conf;
+      close CONF;
+    }
+  }
+  return($found);
 }
 
 ##################################################

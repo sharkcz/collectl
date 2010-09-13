@@ -135,6 +135,21 @@ at the same frequency (but a lot easier!).  If 0, a flush will occur every
 data collection interval.
 .RE
 
+.B --grep pattern
+.RS
+The main purpose of this switch is for those users who have discovered there is
+some data in the raw files that never appears in any display and have taken to
+displaying it themselves with grep.  Unfortunately this method does not include
+timestamps and so makes it difficult to interpret the results.  Even if you 
+include the timestamp from the file it is in UTC and so needs to be translated 
+to be of any real value.  This switch does just that and then some.
+
+Specifically, it allows you to playback a file and instead of processing it normally
+it simply searches for any entries that match the perl pattern and reports those
+lines prefaced with time stamps.  You can optionally change the time format
+with the usual -o options and can even select the timeframe with --from and --thru.
+.RE
+
 .B -G, --group
 .RS
 Treat process data as an entirely separate group of data, writing it into its own raw file, named
@@ -307,9 +322,10 @@ Control the level of debugging information, not typically used.  For details
 see the source code.
 .RE
 
-.B -h, --help, -x, --helpext
+.B -h, --help, -x, --helpext, -X, --helpall
 .RS
-Display a standard or extended help message.
+Display standard, extended help message (which doesn't include the optional displays
+such as --showoptions, --showsubsys, --showsubopts, --showtopopts) or everything.
 .RE
 
 .B --hr, --headerrepeat num
@@ -703,6 +719,17 @@ This command shows only the portion of the help text that desribes the -o and --
 to save the time of wading through the entire help screen.
 .RE
 
+.B --showsubopts
+.RS
+List all the subsystem specifice options
+.RE
+
+.B --showtopopts
+.RS
+Show all the different values for the --top type field, which specify the
+field(s) by to sort the data
+.RE
+
 .B --showrootslabs
 .RS
 This command only works on systems using the new slab allocator and will list the root 
@@ -749,9 +776,7 @@ allocations changed between samples will be displayed.
 Include the top "num" consumers by resource for this interval.  The default number is the height
 of the window if it can be determined otherwise 24, and the 
 default resource is the total cpu time which is taken as the sum of SysT and UsrT.  
-One can also specify a different type as either "io"
-for total process IO (for kernels supporting process I/O stats) or "flt" for total page faults
-per process.
+See --showtopopts for a list of other types of data you can sort on.
 
 This switch can also be used with -s in which case a portion of the window is reserved at the
 top to fill in the subsystem data, which is currently in verbose mode though a brief format

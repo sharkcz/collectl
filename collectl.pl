@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 
-# Copyright 2003-2007 Hewlett-Packard Development Company, L.P. 
+# Copyright 2003-2008 Hewlett-Packard Development Company, L.P. 
 #
 # collectl may be copied only under the terms of either the Artistic License
 # or the GNU General Public License, which may be found in the source kit
@@ -73,6 +73,10 @@ $Ethtool=      '/sbin/ethtool';
 $Lspci=        '/sbin/lspci';
 $Lctl=         '/usr/sbin/lctl';
 
+%TopTypes=qw(vsz '' rss '' syst '' usrt '' time '' rkb '' wkb '' iokb ''
+             rkbc '' wkbc '' iokbc '' ioall '' rsys '' wsys '' iosys  ''
+             iocncl '' majf '' minf '' flt '');
+
 # Constants and removing -w warnings
 $miniDateFlag=0;
 $kernel2_4=$kernel2_6=$PageSize=0;
@@ -81,7 +85,8 @@ $PerlVers=$Memory=$Swap=$Hyper=$Distro='';
 $CpuVendor=$CpuMHz=$CpuCores=$CpuSiblings='';
 $PQuery=$PCounter=$VStat=$VoltaireStats=$IBVersion=$HCALids=$OfedInfo='';
 $numBrwBuckets=$cfsVersion=$sfsVersion='';
-$Resize='';
+$Resize=$IpmiCache='';
+$i1DataFlag=$i2DataFlag=$i3DataFlag=0;
 
 # Find out ASAP if we're linux or WNT based as well as whether or not XC based
 $PcFlag=($Config{"osname"}=~/MSWin32/) ? 1 : 0;
@@ -98,7 +103,7 @@ if ($PerlVers lt '5.08.00')
   print "See /opt/hp/collectl/docs/FAQ-collectl.html for details.\n";
 }
 
-$Version=  '3.0.0-4';
+$Version=  '3.1.0-8';
 $Copyright='Copyright 2003-2008 Hewlett-Packard Development Company, L.P.';
 $License=  "collectl may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
@@ -127,9 +132,23 @@ else
 $BinDir=dirname($ExeName);
 $Program=basename($ExeName);
 $Program=~s/\.pl$//;    # remove extension for production
-$MyDir= ($PcFlag) ?   `cd` : `pwd`;
-$Cat=   ($PcFlag) ? 'type' : 'cat';
-$Sep=   ($PcFlag) ?   '\\' : '/';
+
+# Note that if someone redirects stdin or runs it out of a script it will look like 
+# we're in the background
+if (!$PcFlag)
+{
+  $MyDir=`pwd`;
+  $Cat=  'cat';
+  $Sep=  '/';
+  $backFlag=(getpgrp()!=tcgetpgrp(0)) ? 1 : 0;
+}
+else
+{
+  $MyDir=`cd`;
+  $Cat=  'type';
+  $Sep=  '\\';
+  $backFlag=0;
+}
 chomp $MyDir;
 
 # This is a little messy.  In playback mode of process data, we want to use
@@ -167,7 +186,7 @@ $NumSlabs=$SlabGetProc=$SlabSkipHeader=$newSlabFlag=0;
 $wideFlag=$coreFlag=$newRawFlag=0;
 $totalCounter=$separatorCounter=0;
 $NumCpus=$NumDisks=$NumNets=$DiskNames=$NetNames=$HZ='';
-$NumOst=$NumFans=$NumPwrs=$NumTemps=0;
+$NumOst=0;
 $OFMax=$SBMax=$DQMax=$FS=$ScsiInfo=$HCAPortStates='';
 $SlabVersion=$XType=$XVersion='';
 $dentryFlag=$inodeFlag=$filenrFlag=$allThreadFlag=0;
@@ -191,7 +210,7 @@ $SubsysDefDaemon='cdijlmnstx';
 $SubsysDef=$SubsysCore=$SubsysDefDaemon;
 $Interval=     10;
 $Interval2=    60;
-$Interval3=   300;
+$Interval3=   120;
 $LimSVC=       30;
 $LimIOS=       10 ;
 $LimLusKBS=   100;
@@ -220,6 +239,12 @@ $SubsysExcore="fy";
 # These are the subsystems allowed in brief mode
 $BriefSubsys="cdfFijlmnstxy";    # note - use of y requires SAME intervals!
 
+# And the default environmentals
+$envOpts='ft';
+$envRules='';
+$envDebug=0;
+$envTestFile='';
+
 $configFile='';
 $ConfigFile='collectl.conf';
 $daemonFlag=$debug=0;
@@ -245,9 +270,9 @@ $limLusKBS=$LimLusKBS;
 $limLusReints=$LimLusReints;
 $termHeight=$TermHeight;
 
-# On LINUX and only if associated with a terminal and we can find 'resize', 
-# use the value of LINES to set $headerRepeat but also subtract room for header
-if (!$PcFlag && !$daemonFlag && $Resize ne '' && defined($ENV{TERM}) && $ENV{TERM}=~/xterm/)
+# On LINUX and only if associated with a terminal in the foreground and we can find 'resize',
+# use the value of LINES to set the terminal height
+if (!$PcFlag && !$daemonFlag && !$backFlag && $Resize ne '' && defined($ENV{TERM}) && $ENV{TERM}=~/xterm/)
 {
   `$Resize`=~/LINES.*?(\d+)/m;
   $termHeight=$1;
@@ -275,9 +300,10 @@ $export=$expName=$expDir=$expOpts=$topOpts=$topType='';
 $homeFlag=$rawtooFlag=$autoFlush=$allFlag=0;
 $procOpts=$slabOpts='';
 $procFilt=$slabFilt='';
-$procAnalFlag=$procAnalyzed=0;
+$procAnalFlag=$procAnalyzed=$lastInt2Secs=0;
 $lastLogPrefix=$passwdFile='';
-$nfsOpts=$lustOpts='';
+$nfsOpts=$lustOpts=$userEnvOpts='';
+$grepPattern='';
 
 # Since --top has optionals arguments, we need to see if it was specified without
 # one and stick in the defaults noting -1 means to use the window size for size
@@ -355,6 +381,8 @@ GetOptions('align!'     => \$alignFlag,
 	   'w!'         => \$wideFlag,
            'x!'         => \$xSwitch,
            'helpextend!'=> \$xSwitch,
+           'X!'         => \$XSwitch,
+           'helpall!'   => \$XSwitch,
 	   'Y=s'        => \$slabFiltX,
 	   'slabfilt=s' => \$slabFilt,
 	   'Z=s'        => \$procFiltX,
@@ -369,6 +397,11 @@ GetOptions('align!'     => \$alignFlag,
            'hr=i'          => \$headerRepeat,
            'lustopts=s'    => \$lustOpts,
            'nfsopts=s'     => \$nfsOpts,
+           'envopts=s'     => \$userEnvOpts,
+           'envrules=s'    => \$envRules,
+           'envdebug!'     => \$envDebug,
+           'envtest=s'     => \$envTestFile,
+           'grep=s'        => \$grepPattern,
            'offsettime=s'  => \$offsetTime,
            'procanalyze!'  => \$procAnalFlag,
 	   'procopts=s'    => \$procOpts,
@@ -376,6 +409,7 @@ GetOptions('align!'     => \$alignFlag,
            'showsubsys!'   => \$showSubsysFlag,
            'showoptions!'  => \$showOptionsFlag,
            'showsubopts!'  => \$showSuboptsFlag,
+           'showtopopts!'  => \$showTopoptsFlag,
 	   'showheader!'   => \$showHeaderFlag,
            'showplotheader!'  =>\$showPHeaderFlag,
 	   'showslabaliases!' =>\$showSlabAliasesFlag,
@@ -451,7 +485,19 @@ extendHelp()       if $xSwitch;
 showSubsys()       if $showSubsysFlag;
 showOptions()      if $showOptionsFlag;
 showSubopts()      if $showSuboptsFlag;
+showTopopts()      if $showTopoptsFlag;
 showSlabAliases($slabFilt)  if $showSlabAliasesFlag || $showRootSlabsFlag;
+if ($XSwitch)
+{
+  extendHelp(1);
+  showSubsys(1);
+  showOptions(1);
+  showSubopts(1);
+  showTopopts(1);
+  printText("$Copyright\n");
+  printText("$License\n");
+  exit;
+}
 
 # These switches/options have changed and will hopeefully be dropped mid 2009
 error('-oP replaced with --passwd')                    if $userOptions=~/P/;
@@ -524,29 +570,6 @@ if (!$daemonFlag)
   $subsys=$SubsysDef       if $userSubsys eq '';
 }
 
-# This is tricky as the main logic for checking intervals lives further
-# down the code and says it needs to be there!  So, let's do a very 
-# minimal/temporary thing here, noting '$interval' is always defined but
-# not yet validated so it can still contain a ':'.  '$interval2' not
-# yet defined so we either use default or what's in '$interval'.
-if ($briefFlag)
-{
-  $temp1=$interval;
-  $temp2=$Interval2;    # default
-  if ($interval=~/:/)
-  {
-    @temp=split(/:/, $interval);
-    $temp1=($temp[0] eq '') ? $Interval : $temp[0];
-    $temp2=$temp[1]    if $temp[1] ne '';
-  }
-
-  # if more than one subsys and one of them is 'y', they MUST have same
-  # interval.
-
-  error("main and secondary intervals must match when -sy included OR use --verbose")
-      if length($subsys)>1 && $subsys=~/y/ && $temp1!=$temp2;
-}
-
 # subsystems  - must preceed +
 error("+/- must start -s arguments if used")
                     if $subsys=~/[+-]/ && $subsys!~/^[+-]/;
@@ -578,6 +601,29 @@ if ($subsys=~/[+-]/)
 
 # note that --procanalyze and --top can change $subsys
 setOutputFormat();
+
+# This is tricky as the main logic for checking intervals lives further
+# down the code and says it needs to be there!  So, let's do a very 
+# minimal/temporary thing here, noting '$interval' is always defined but
+# not yet validated so it can still contain a ':'.  '$interval2' not
+# yet defined so we either use default or what's in '$interval'.
+if ($briefFlag)
+{
+  $temp1=$interval;
+  $temp2=$Interval2;    # default
+  if ($interval=~/:/)
+  {
+    @temp=split(/:/, $interval);
+    $temp1=($temp[0] eq '') ? $Interval : $temp[0];
+    $temp2=$temp[1]    if $temp[1] ne '';
+  }
+
+  # if more than one subsys and one of them is 'y', they MUST have same
+  # interval.
+
+  error("main and secondary intervals must match when -sy included OR use --verbose")
+      if length($subsys)>1 && $subsys=~/y/ && $temp1!=$temp2;
+}
 
 #    S p e c i a l    F o r m a t s
 
@@ -645,10 +691,8 @@ if ($topOpts ne '')
 
   error("not enough lines in window for display")
       if $numTop<1;
-  error("--top flt does not make sense with --procopt i")
-      if $topType eq 'flt' && $procOpts=~/i/;
-  error("only valid types for --top are flt, io, ioc, ioall and time")
-      if $topType!~/^time$|^io$|^ioc$|^ioall$|^flt$/;
+  error("invalid --top type.  see --showtopopts for list")
+      if !defined($TopTypes{$topType});
 
   if ($playback eq '')
   {
@@ -664,8 +708,6 @@ if ($topOpts ne '')
 # These checks can only be done after setOutputFormat()
 error("--top only reports timestamps for single subsystem verbose data")
       if $options=~/[dDT]/ && $numTop && ($playback ne '' || !$sameColsFlag);
-#error("time formatting options only apply to non-top processes when filtering")
-#      if $options=~/[dDT]/ && $subsys eq 'Z' && ($numTop || $procFilt eq '');
 
 #    E x p o r t    M o d u l e s
 
@@ -723,6 +765,10 @@ error("you cannot specify -f with --top")                  if $topOpts ne '' && 
 error("--home does not apply to -p")                       if $homeFlag && $playback ne '';
 error("--home and -sZ doesn't make sense.  use --top")     if $homeFlag && $subsys=~/Z/ && $topOpts eq '';
 error('--procopts only makes sense with --top or -sZ')     if $procOpts ne '' && $subsys!~/Z/ && !$topType;
+error("--envopts does not apply to -P")                    if $userEnvOpts ne '' && $plotFlag;
+error("--envrules does not exist")                         if $envRules ne '' && !-e $envRules;
+
+error("--grep only applies to -p")                         if $grepPattern ne '' && $playback eq '';
 
 error('--headerrepeat must be an integer')                 if $headerRepeat!~/^[\-]?\d+$/;
 error('--headerrepeat must be >= -1')                      if $headerRepeat<-1;
@@ -749,6 +795,9 @@ error("--align require HiRes time module")                 if $alignFlag && !$hi
 
 error("--passwd only allow in playback mode")              if $passwdFile ne '' && $playback eq '';
 error("can't find file specified with --passwd")           if $passwdFile ne '' && !-e $passwdFile;
+
+# if user enters --envOpts, we need to add it to the defaults; otherwise override them
+$envOpts=($userEnvOpts eq 'M') ? "M$envOpts" : $userEnvOpts    if $userEnvOpts ne '';
 
 $passwdFile='/etc/passwd'    if $passwdFile eq '';
 $allThreadFlag=($procOpts=~/t/) ? 1 : 0;
@@ -975,6 +1024,7 @@ if ($playback ne "")
       if defined($offsetTime) && $offsetTime!~/^-?\d+/;
 
   $playback=~s/['"]//g;    # in case quotes passed through from script
+  $playback=~s/,/ /g;      # so glob below will work
   error("--align only applies to record mode")    if $alignFlag;
   error("-p filename must end in '*', 'raw' or 'gz'") 
       if $playback!~/\*$|raw$|gz$/;
@@ -1198,6 +1248,11 @@ if ($playback ne '')
     $fileRoot=basename($prefix);
     if ($prefix ne $lastPrefix)
     {
+      # For each day's set of files, we need to reset this variable so interval
+      # lengths are calculared correctly.  Since int3 doesn't contain any rate
+      # data we don't care about that one.
+      $lastInt2Secs=0;
+
       if ($msgFlag && defined($preprocMessages{$prefix}))
       {
         # Whatever the messages may be, we only want to display them once for
@@ -1473,6 +1528,21 @@ if ($playback ne '')
       }
       next    if $skip;
 
+      if ($grepPattern ne '')
+      {
+        if ($line=~/$grepPattern/)
+        {
+          my $msec=(split(/\./, $newSeconds))[1];
+          my ($ss, $mm, $hh, $mday, $mon, $year)=localtime($newSeconds);
+	  $datetime=sprintf("%02d:%02d:%02d", $hh, $mm, $ss);
+	  $datetime=sprintf("%02d/%02d %s", $mon+1, $mday, $datetime)                   if $options=~/d/;
+	  $datetime=sprintf("%04d%02d%02d %s", $year+1900, $mon+1, $mday, $datetime)    if $options=~/D/;
+	  $datetime.=".$msec"                                                          if ($options=~/m/);
+	  print "$datetime $line";
+        }
+	next;
+      }
+
       # when new interval, since we don't have an end-of-interval marker,
       # print data for last one (except first time through)
       printf "PLAYBACK [%s]: $line", getTime($newSeconds)    if $debug & 64;
@@ -1486,7 +1556,7 @@ if ($playback ne '')
 
       $newInterval=$firstTime=0;
     }
-    if ($firstTime)
+    if ($firstTime && $grepPattern eq '')
     {
       print "No records selected for playback!  Are -b/-e wrong?\n";
       next;
@@ -1499,7 +1569,7 @@ if ($playback ne '')
     close PLAY           if !$zInFlag;
 
     # if we reported data from this file (we may have skipped it entirely if -b
-    # used with mulitple files), calculate how many seconds reported on.
+    # used with multiple files), calculate how many seconds reported on.
     if (!$skip)
     {
       # we always skip the beginning interval and if we terminated by hitting
@@ -1576,11 +1646,23 @@ loadSlabs($slabFilt)    if $subsys=~/y/i;
 initFormat();
 $recVersion=$Version;
 
+# This has to go after initFormat() since it loads '$envRules' and may init
+# stuff needed by printTerm()
+if ($envTestFile ne '')
+{
+  envTest();
+  exit;
+}
+
 # Since we have to check subsystem specific options against data in recorded 
 # file, let's not do it twice, but we have to do it AFTER initFormat()
 checkSubsysOpts();
 
 #    L a s t    M i n u t e    V a l i d a t i o n
+
+# This needs to be done after loadConfig and only in record mode
+logmsg('W', "Couldn't find 'ipmitool' in '$ipmitoolPath'")
+      if $subsys=~/E/ && $Ipmitool eq '';
 
 # These can only be done after initRecord()
 error("-sL only applies to MDS services when used with --lustopts D")
@@ -1657,10 +1739,8 @@ $origInterval=$interval;
 ($interval, $interval2, $interval3)=split(/:/, $interval);
 error("interval2 only applies to -s y,Y or Z")
     if defined($interval2) && $interval2 ne '' && $subsys!~/[yYZ]/;
-error("interval3 only applies to -sE")     
-    if defined($interval3)  && $subsys!~/E/;
 error("interval2 must be >= interval1")
-      if defined($interval) && defined($interval2) && $interval>$interval2;
+      if defined($interval) && defined($interval2) && $interval2 ne '' && $interval>$interval2;
 $interval2=$Interval2   if !defined($interval2);
 $interval3=$Interval3   if !defined($interval3);
 $interval=$interval2    if $origInterval=~/^:/ || ($subsys=~/^[yz]+$/i && $interval!=0);
@@ -1771,7 +1851,7 @@ if ($debug & 1 && $options=~/x/i)
 $temp=$interval;
 $temp=$interval2    if $subsys=~/^[EyYZ]+$/;
 $temp=$interval3    if $subsys eq 'E';
-print "waiting for $temp second sample...\n"    if $filename eq "";
+print "waiting for $temp second sample...\n"    if $filename eq "" && !$quietFlag;
 
 # Need to make sure proc's and env's align with printing of other vars first 
 # time.  In other words, do the first read immediately.
@@ -2013,8 +2093,8 @@ for (; $count!=0 && !$doneFlag; $count--)
     # MDS Processing
     if ($NumMds)
     {
-      my $type=($cfsVersion lt '1.6.0.0') ? 'MDT' : 'MDS';
-      getProc(3, "/proc/fs/lustre/mdt/$type/mds/stats", "MDS", 22, 21);
+      my $type=($cfsVersion lt '1.6.0') ? 'MDT' : 'MDS';
+      getProc(3, "/proc/fs/lustre/mdt/$type/mds/stats", "MDS");
     }
 
     # CLIENT Processing
@@ -2285,14 +2365,20 @@ for (; $count!=0 && !$doneFlag; $count--)
   #    I n t e r v a l 3    P r o c e s s i n g
   #############################################
 
-  # NOTE - since this currently only works for DL360/380 and may
-  # be changing, this may end up being dropped, so let's use types
-  # in the 100 range...
   if ($EFlag && ++$counted3==$limit3)
   {
-    getProc(100, "/proc/cpqfan",  "fan ",  1);
-    getProc(101, "/proc/cpqpwr",  "pwr ",  1);
-    getProc(102, "/proc/cpqtemp", "temp ", 1);
+    # On the off chance someone deleted it (how do you say overkill?)
+    if (!-e $IpmiCache)
+    {
+      logmsg('E', "Who deleted my cache file '$IpmiCache'?");
+      logmsg('I', "Recreated missing cache file");
+      $command="$Ipmitool sdr dump $IpmiCache";
+      `$command`;
+    }
+
+    # About the same overhead to invoke ipmitool twice but much less elapsed time.
+    getExec(3, "$Ipmitool -c -S $IpmiCache sdr type fan", 'ipmi');
+    getExec(3, "$Ipmitool -c -S $IpmiCache sdr type temp", 'ipmi');
     $counted3=0;
   }
 
@@ -2588,7 +2674,7 @@ sub lci
   }
   else
   {
-    # same thing only see if $old a mulitple of $new
+    # same thing only see if $old a multiple of $new
     $lci=($old==int($old/$new)*$new) ? $old : $old*$new;
   }
 }
@@ -2665,7 +2751,8 @@ sub checkSubSys
 
 sub checkSubsysOpts
 {
-  error("invalid slab option '$slabOpts'")    if $slabOpts ne '' && $slabOpts!~/^[sS]+$/;
+  error("invalid slab option in '$slabOpts'")    if $slabOpts ne '' && $slabOpts!~/^[sS]+$/;
+  error("invalid env option in '$envOpts")       if $envOpts ne ''  && $envOpts!~/^[ftM]+$/;
 
   # When in playback, $nfsOpts is set to header values and we don't know what
   # the user typed (not do we care)
@@ -2684,8 +2771,10 @@ sub checkSubsysOpts
 
   # it's possible this is not recognized as running a particular type of service
   # from the 'flag's if that service is isn't yet started and so we need
-  # to check $lustreSvcs too.  It's just easier to do it this way...
-  error("--lustsvcs only applies to lustre")    if $lustreSvcs ne '' && $subsys!~/l/i;
+  # to check $lustreSvcs too.  Be sure to include '$userSubsys' in case -sl was
+  # specified by the user and then disabled by collectl.
+  error("--lustsvcs only applies to lustre")    
+      if $lustreSvcs ne '' && $subsys!~/l/i && $userSubsys!~/l/i;
   my $cltFlag=($CltFlag || $lustreSvcs=~/c/) ? 1 : 0;
   my $mdsFlag=($MdsFlag || $lustreSvcs=~/m/) ? 1 : 0;
   my $ostFlag=($OstFlag || $lustreSvcs=~/o/) ? 1 : 0;
@@ -2912,10 +3001,7 @@ sub getProc
     # MDS stats
     elsif ($type==3)
     {
-      if ($line=~/^mds_sync/)      { record(2, "$tag $line"); next; }
-      if ($line=~/^mds_close/)     { record(2, "$tag $line"); next; }
-      if ($line=~/^mds_getattr\s/) { record(2, "$tag $line"); next; }
-      if ($line=~/^mds_reint/)     { record(2, "$tag $line"); next; }
+      if ($line=~/^mds_/)      { record(2, "$tag $line"); next; }
     }
 
     # /proc/meminfo 2.4 kernel
@@ -3029,30 +3115,6 @@ sub getProc
       record(2, "$tag$spacer$line", undef, 1);
       next;
     }
-
-    elsif ($type==100)   # cpqfan
-    {
-      chomp $line;
-      $a=substr($line, 0, 2);
-      $b=substr($line, 33, 10);
-      $c=substr($line, 52, 12);
-      $line="$a $b $c\n";
-      record(2, "$tag$line");
-    }
-    elsif ($type==101)   # cpqpwr
-    {
-      $a=substr($line, 0, 2);
-      $b=substr($line, 33, 10);
-      $line="$a $b\n";
-      record(2, "$tag$line");
-    }
-    elsif ($type==102)   # cpqtemp
-    {
-      $a=substr($line, 0, 2);
-      $b=substr($line, 42, 3);
-      $line="$a $b\n";
-      record(2, "$tag$line");
-    }
   }
   close PROC;
   return(1);
@@ -3094,6 +3156,8 @@ sub getExec
       $line=~/([0x]*\d+$)/; 
       $oneLine.="$1 ";
     }
+    $oneLine=~s/ $//;
+    record(2, "$tag: $oneLine\n");
   }
 
   # Voltaire
@@ -3107,15 +3171,22 @@ sub getExec
 	  next;
       }
 
-      # If counter, append to list.  Not the funky patter match that will catch
+      # If counter, append to list.  Note the funky pattern match that will catch
       # both decimal and hex numbers.
-	$oneLine.="$1 "    if $line=~/\s(\S*\d)$/;
+      $oneLine.="$1 "    if $line=~/\s(\S*\d)$/;
     }
+    $oneLine=~s/ $//;
+    record(2, "$tag: $oneLine\n");
   }
 
-  # For now, both types return the same thing
-  $oneLine=~s/ $//;
-  record(2, "$tag: $oneLine\n");
+  # impi
+  elsif ($type==3)
+  {
+    foreach my $line (<CMD>)
+    {
+      record(2, "$tag: $line");
+    }
+  }
 }
 
 # This guy is in charge of reading single valued entries, which are
@@ -3133,7 +3204,7 @@ sub getSys
   {
     # as of writing this for slub, I'm not expecting file open failures
     # but might as well put in here in case needed in the future
-    $filename="$sys/$dir/$file";
+    my $filename="$sys/$dir/$file";
     if (!open SYS, "<$filename")
     {
       # but just report it once
@@ -3317,7 +3388,7 @@ sub newLog
   }
 
   # track number of times same file processed, primarily for options 'a/c'.  in
-  # case mulitiple raw files for same day, only check on initial one
+  # case multiple raw files for same day, only check on initial one
   # If we're in playback mode and writing a plotfile, either the user specified
   # an option of 'a', 'c' or 'u', we just created it (newFiles{} defined) OR it had 
   # better not exist!  If is does, return it name so a contextual error message
@@ -3554,7 +3625,6 @@ sub newLog
   # Save as a global for later use.  Could probably avoid passing back the name
   # on error below, but I'm afraid to change it if I don't have to.
   $lastLogPrefix=$filename;
-
   return 1;
 }
 
@@ -3614,8 +3684,6 @@ sub buildCommonHeader
   $commonHeader.="# IConnect:   NumXRails: $NumXRails XType: $XType  XVersion: $XVersion\n"    if $NumXRails;
   $commonHeader.="# IConnect:   NumHCAs: $NumHCAs PortStates: $HCAPortStates IBVersion: $IBVersion\n"                if $NumHCAs;
   $commonHeader.="# SCSI:       $ScsiInfo\n"    if $ScsiInfo ne '';
-  $commonHeader.="# Environ:    Fans: $NumFans  Power: $NumPwrs  Temp: $NumTemps\n"
-      if $NumFans || $NumPwrs || $NumTemps;
   if ($subsys=~/l/i)
   {
     # Lustre Version and services (if any) info
@@ -3687,6 +3755,9 @@ sub setOutputFormat
   # the cols  are the same after all, such as a single subsystem or '-sCj'
   $sameColsFlag=1    if $verboseFlag && (length($subsys)==1 || $subsys=~/^[Cj]+$/);
 
+  # Environmental data is multipart if '--envopts M' so we only have same columns when 1 type
+  $sameColsFlag=0    if $subsys eq 'E' && length($envOpts)>1 && $userEnvOpts=~/M/;
+
   # As usual, lustre complicates things since we can get multiple lines of
   # output and if more than 1 clear the flag.
   $sameColsFlag=0    if length($lustOpts)>1;
@@ -3700,6 +3771,11 @@ sub setOutputFormat
   }
   $briefFlag=($verboseFlag) ? 0 : 1;
   print "SET OUTPUT -- Subsys: $subsys Verbose: $verboseFlag SameCols: $sameColsFlag\n"    if $debug & 1;
+
+  # This also feels like a good place to do these
+  $i1DataFlag=($subsys!~/^[EYZ]+$/i) ? 1 : 0;
+  $i2DataFlag=($subsys=~/[yYZ]/)    ? 1 : 0;
+  $i3DataFlag=($subsys=~/E/)        ? 1 : 0;
 }
 
 # Control C Processing
@@ -4189,6 +4265,8 @@ sub loadConfig
       $Lspci=$value            if $param=~/^Lspci/;
       $Lctl=$value             if $param=~/^Lctl/;
       $resizePath=$value       if $param=~/^Resize/;
+      $ipmitoolPath=$value     if $param=~/^Ipmitool/;
+      $IpmiCache=$value        if $param=~/^IpmiCache/;
 
       # For Infiniband
       $PCounter=$value         if $param=~/^PCounter/;
@@ -4225,6 +4303,13 @@ sub loadConfig
   }
   logmsg('I', "Couldn't find 'resize' so assuming terminal height of 24")
       if $Resize eq '';
+
+  # Even though currently one entry, let's make this a path like above
+  $Ipmitool='';
+  foreach my $bin (split/:/, $ipmitoolPath)
+  {
+      $Ipmitool=$bin    if -e $bin;
+  }
 }
 
 sub loadSlabs
@@ -4825,6 +4910,22 @@ sub showDefaults
   exit;
 }
 
+sub envTest
+{
+  $subsys='E';
+  open ENV, "<$envTestFile" or error("Couldn't open '$envTestFile'");
+  while (my $line=<ENV>)
+  {
+    next    if $line=~/^\s*$|^#/;
+    dataAnalyze('E', "ipmi $line");
+  }
+  close ENV;
+  $briefFlag=0;
+  $verboseFlag=1;
+  intervalPrint(time);
+  `stty echo`;
+}
+
 sub error
 {
   my $text=shift;
@@ -4864,10 +4965,12 @@ Various types of help
   -v, --version               print version
   -V, --showdefs              print operational defaults
   -x, --helpextend            extended help, more details descritions too
+  -X, --helpall               shows all help concatenated together
 
   --showoptions               show all the options
   --showsubsys                show all the subsystems
   --showsubopts               show all substem specific options
+  --showtopopts               show --top options
 
   --showheader                show file header that 'would be' generated
   --showplotheader            show plot headers that 'would be' generated
@@ -4893,10 +4996,12 @@ This is the complete list of switches, more details in man page
   -c, --count      count        collect this number of samples and exit
   -d, --debug      debug        see source for details or try -d1 to get started
   -D, --daemon                  run as a daemon
-      --from       time         time from which to playback data, -thru optional
-                                   [yyyymmdd:]hh:mm[:ss][-[yyyymmdd:]hh:mm[:ss]]
   -f, --filename   file         name of directory/file to write to
   -F, --flush      seconds      number of seconds between output buffer flushes
+      --from       time         time from which to playback data, -thru optional
+                                   [yyyymmdd:]hh:mm[:ss][-[yyyymmdd:]hh:mm[:ss]]
+      --grep       pattern      print timestamped entries in raw file for each
+                                occurance of pattern
   -G, --group                   write process/slab data to separate, rawp file
   -h, --help                    print basic help
       --home                    move cursor to top before printing interval data
@@ -4911,11 +5016,11 @@ This is the complete list of switches, more details in man page
   -N, --nice                    give yourself a 'nicer' priority
       --offsettime secs         seconds by which to offset times during playback
   -o, --options                 misc formatting options, --showoptions for all
-      --quiet                   do note echo warning messages on the terminal
       --procanalyze             analyze process data, generating prcs file
   -p, --playback   file         playback results from 'file'
   -P, --plot                    generate output in 'plot' format
       --procanalyze             analyze process data, generating prcs file
+      --quiet                   do note echo warning messages on the terminal
   -r, --rolllogs   time,d,m     roll logs at 'time', retaining for 'd' days, 
                                   every 'm' minutes [default: d=7,m=1440]
   -R, --runtime    duration     time to run in <number><units> format
@@ -4925,9 +5030,8 @@ This is the complete list of switches, more details in man page
   -s, --subsys     subsys       record/playback data from one or more subsystems
                                   --showsubsys for details
       --thru       time         time thru which to playback data (see --from)
-      --top        [type][,num] show top 'num' consumers of a resource and can
-                                  also mix with -s.  type='time','io' or 'flt'
-                                  [def=time,window height]
+      --top        [type][,num] show top 'num' processes sorted by type
+                                  --showtopopts for details
       --verbose                 display output in verbose format (automatically
                                 selected when brief doesn't make sense)
   -w, --wide                    print wide field contents (don't use K/M/G)
@@ -4948,10 +5052,12 @@ Various types of help
   -v, --version               print version
   -V, --showdefs              print operational defaults
   -x, --helpext               extended help
+  -X, --helpall               shows all help concatenated together
 
   --showoptions               show all the options
   --showsubopts               show all substem specific options
   --showsubsys                show all the subsystems
+  --showtopopts               show --top options
 
   --showheader                show file header that 'would be' generated
   --showplotheader            show plot headers that 'would be' generated
@@ -4959,6 +5065,8 @@ Various types of help
   --showrootslabs             same as --showslabaliases but use 'root' names
 EOF2
 printText("$extended\n");
+return    if defined($_[0]);
+
 printText("$Copyright\n");
 printText("$License\n");
 exit;
@@ -5060,6 +5168,18 @@ These options are all subsystem specific and all take one or more arguments.
 Options typically effect the type of data collectl and filters effect the way
 it is displayed.  In the case of lustre there are also 'services'
 
+Environmental
+  --envopts [def=ft]
+      f - display fan data
+      t - display temperature data
+      M - display data on multiple lines (useful when too much to see on 1 line)
+
+  The following are for those needed to develop/debug remapping rules.
+  See online documentation OR Ipmi.html in docs/
+  --envrules  filename     file containin remapping rules
+  --envdebug               show processing of ipmi data
+  --envtest   filename     file containing extract of 'ipmitool -c sdr'
+
 Lustre
   --lustopts
       B - only for OST's and clients, collect buffer/rpc stats
@@ -5117,6 +5237,48 @@ Slab Options and Filters
    --slabfilt: restricts which slabs are listed, where 'slab's is of the form: 
                'slab[,slab...].  if 'slab' is a filename (you CAN mix them), 
                it must contain a list of slabnames, one per line
+
+EOF5
+
+printText($subopts);
+exit    if !defined($_[0]);
+}
+
+sub showTopopts
+{
+  my $subopts=<<EOF5;
+The following is a list of --top's sort types which themselves apply to
+different categories of data.  In some cases you may be allowed to sort
+by a field that is not part of the display if you so desire
+
+Memory
+  vsz    virtual memory
+  rss    resident (physical) memory
+
+Time
+  syst   system time
+  usrt   user time
+  time   total time
+
+I/O
+  rkb    KB read
+  wkb    KB written
+  iokb   total I/O KB
+
+  rkbc   KB read from pagecache
+  wkbc   KB written to pagecache
+  iokbc  total pagecacge I/O
+
+  rsys   read system calls
+  wsys   write system calls
+  iosys  total system calls
+
+  iocncl Cancelled write bytes
+
+Page Faults
+  majf   major page faults
+  minf   minor page faults
+  flt    total page faults
 
 EOF5
 

@@ -156,27 +156,29 @@ generating this interrut</td></tr>
 There are several formats the lustre detail data can take based on whether you're
 looking at a client or an OSS (there is not any MDS specific detail data, though it does
 share the same disk-level buffer size data as the OSS).  Furthermore, if one specifies
-<i>--lustopts I</i> client OST level details will be reported.
-
+the <i>-sLL</i> form of the detail switch OST level details will be reported where
+appropriate.
 <p>
 <b>Lustre Client</b>, <i>collectl -sL</i>
 <div class=terminal><pre>
-# LUSTRE CLIENT DETAIL
-#Fil  KBRead  Reads KBWrite  Writes
+# LUSTRE CLIENT DETAIL (/sec)
+#Fils  KBRead  Reads SizeKB KBWrite Writes SizeKB
 </pre></div>
 <table>
 <tr><td valign=top><b>Filsys</b></td><td>Name of the filesystem these stats apply to</td></tr>
 <tr><td valign=top><b>KBRead</b></td><td>KBs read/sec</td></tr>
+<tr><td valign=top><b>SizeKB</b></td><td>Average read size</td></tr>
 <tr><td valign=top><b>Reads</b></td> <td>Reads/sec</td></tr>
 <tr><td valign=top><b>KBWrite</b></td><td>KBs written/sec</td></tr>
 <tr><td valign=top><b>Writes</b></td><td>Writes/sec</td></tr>
+<tr><td valign=top><b>SizeKB</b></td><td>Average write size</td></tr>
 <tr><td valign=top><b>
 </table>
 <p>
-<b>Lustre Client</b>, <i>collectl -sL --lustopts O</i>
+<b>Lustre Client</b>, <i>collectl --lustops O</i>
 <div class=terminal><pre>
-# LUSTRE CLIENT DETAIL
-#Filsys  Ost    KBRead  Reads KBWrite Writes
+# LUSTRE CLIENT DETAIL (/sec)
+#Fils  Ost     KBRead  Reads SizeKB KBWrite Writes SizeKB
 </pre></div>
 The data here is the same as that reported for the standard client side lustre data except
 now it is broken down by OST within the file system.
@@ -186,18 +188,20 @@ now it is broken down by OST within the file system.
 <tr><td valign=top><b>Ost</b></td>   <td>OST name within the filesystem</td></tr>
 <tr><td valign=top><b>KBRead</b></td><td>KBs read/sec</td></tr>
 <tr><td valign=top><b>Reads</b></td> <td>Reads/sec</td></tr>
+<tr><td valign=top><b>SizeKB</b></td><td>Average read size</td></tr>
 <tr><td valign=top><b>KBWrite</b></td><td>KBs written/sec</td></tr>
 <tr><td valign=top><b>Writes</b></td><td>Writes/sec</td></tr>
+<tr><td valign=top><b>SizeKB</b></td><td>Average write size</td></tr>
 </table>
 <p>
-<b>Lustre Client RPB-Buffer Stats</b>, <i>collectl -sL --lustopts BO</i>
+<b>Lustre Client RPB-Buffer Stats</b>, <i>collectl --lustopts B</i>
 <div class=terminal><pre>
 # LUSTRE CLIENT DETAIL: RPC-BUFFERS (pages)
 #Filsys  Ost   RdK  Rds   1K   2K   ...   WrtK Wrts   1K   2K   ...
 </pre></div>
 This form also includes the reads/writs within the filesystem, but also add the sizes of
-the RPM buffers.  Since these numbers always apply to OSTs you need to include <i>--lustopts O/i>
-or the the details will be summarized by filesystem and not OST.
+the RPM buffers.  Since these numbers always apply to OSTs you need to use the <i>-sLL</i>
+form of the subsystem switch.
 <p>
 <table>
 <tr><td valign=top><b>Filsys</b></td><td>Name of the filesystem these stats apply to</td></tr>
@@ -259,15 +263,17 @@ or the the details will be summarized by filesystem and not OST.
 <p>
 <b>Lustre OSS</b>, <i>collectl -sL</i>
 <div class=terminal><pre>
-# LUSTRE FILESYSTEM SINGLE OST STATISTICS
-#Ost           KBRead   Reads    KBWrite  Writes
+# LUSTRE FILESYSTEM SINGLE OST STATISTICS (/sec)
+#Ost            KBRead   Reads  SizeKB    KBWrite  Writes  SizeKB
 </pre></div>
 <table>
 <tr><td valign=top><b>Ost</b></td><td>OST name</td></tr>
 <tr><td valign=top><b>KBRead</b></td><td>KBs read/sec</td></tr>
 <tr><td valign=top><b>Reads</b></td><td>Reads/sec</td></tr>
+<tr><td valign=top><b>SizeKB</b></td><td>Average read size</td></tr>
 <tr><td valign=top><b>KBWrite</b></td><td>KBs written/sec</td></tr>
 <tr><td valign=top><b>Writes</b></td><td>Writes/sec</td></tr>
+<tr><td valign=top><b>SizeKB</b></td><td>Average write size</td></tr>
 </table>
 <p>
 
@@ -460,7 +466,7 @@ unless <i>--procopts w</i></td></tr>
 <p>
 <h3>Process I/O Data, <i>collectl --procopts i</i></h3>
 <div class=terminal-wide14><pre>
-# PID  User     S  SysT  UsrT   RKB   WKB  RKBC  WKBC  RSys  WSys  Cncl  Command
+# PID  User    PPID S  SysT  UsrT   RKB   WKB  RKBC  WKBC  RSys  WSys  Cncl  Command
 </pre></div>
 
 <table>
@@ -472,6 +478,9 @@ unless <i>--procopts w</i></td></tr>
 different machine, use -oP to direct collectl to use the password file named in
 collectl.conf (default is /etc/passwd) to lookup the corresponding username.
 Otherwise the UID will be reported instead.</td></tr>
+
+<tr valign=top><td><b>PPID<b></td>
+<td>PID of this process's parent</td></tr>
 
 <tr valign=top><td><b>S<b></td>
 <td>Process State: S - Sleeping, D - Uninterruptable Sleep, R - Running, Z - Zombie or T - Stopped/Traced</td></tr>

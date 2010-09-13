@@ -412,7 +412,9 @@ enabled: CONFIG_TASKSTATS, CONFIG_TASK_XACCT and CONFIG_TASK_IO_ACCOUNTING.</li>
 that when you exclude threads from the display the parent process I/O counts are not 
 aggregated into the I/O counts from the threads resulting in misleading results.
 Andrea Righi has provided a patch <a href=http://lkml.org/lkml/2008/5/19/463>here</a> that
-provides the correct aggregation, but of course that will require a kernel rebuild.
+provides the correct aggregation, but of course that will require a kernel rebuild.  He
+has also informed me that his patch has been included in the 2.6.26 kernel so this should no
+longer be an issue from that version forward.
 </ul>
 </body>
 </html>

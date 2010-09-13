@@ -23,8 +23,8 @@
                       I collected the data.  Now what?</a></li>
   <li><a href="#run5">How do I configure collectl to run all the time as a service?</a></li>
   <li><a href="#run6">How do I change the monitoring parameters for the 'service'?</a></li>
-  <li><a href="#run7">What are the differences between --rawtoo and --sexpr</a></li>
-  <li><a href="#run8">How can I pass collectl data to other applications like CMU?</a></li>
+  <li><a href="#run7">What are the differences between --rawtoo, --lexpr and --sexpr</a></li>
+  <li><a href="#run8">How can I pass collectl data to other applications?</a></li>
 </ul>
 <h2>Operational Problems</h2>
 <ul>
@@ -192,25 +192,38 @@ that line into a collectl run command to make sure they work before trying to
 start the service.
 
 <a name="run7"></a>
-<h2>What are the differences between --rawtoo and --sexpr</h2>
---rawtoo will cause data to be written to the <i>raw</i> file in addition
-to a plottable one, which can be overkill in many situations.  --sexpr
-will cause the contents of most counters to be written to the same file
-as an <i>s-expression</i> after each monitoring cycle and is intended to 
-be consumed by a program and not a human.  
-For more details see <i>man collectl-logging</i>
-
-<a name="run8">
-</a><h2>How can I pass collectl data to other applications like CMU?</h2>
-In environments such as CMU that support the integration of external data 
-sources all you need to do is run collectl with <i>--sexpr</i> as described
-above.  You can now pass the counters of interest to CMU WITH with the 
-collectl <i>readS</i>  utility, which is
-installed as part of the <i>collectl-utils</i> rpm.  This utility will
-read a specific counter from an s-expression and print it to stdout, 
-which is the way CMU integrates external data.
+<h2>What are the differences between --rawtoo, --lexpr and --sexpr</h2>
+Looking at --lexpr and --sexpr first, these will cause the contents of most
+counters to be written as a list or s-expression to either a file or socket
+based on whether -f or -A is specified.  If both are specified the data will
+be sent over the socket and written locally as a raw file.
+Adding -P will cause the local file to be written in plot format while adding
+--rawtoo will cause both plot and raw files to be written locally.
 <p>
-The arguments to readS take the following form:
+For more information also see <a href=Logging.html>Logging</a>.
+<a name="run8">
+</a><h2>How can I pass collectl data to other applications?</h2>
+You actually have several choices, all of which are based on
+<i>--export</i> in which you specify a routine that will export collectl's
+output in some other format that your application 
+may prefer to see it in.  There are currently 2 such routines:
+<ul>
+<li>lexpr.ph formats data as a list</li>
+<li>sexpr.ph formats data as an s-expresstion</li>
+</ul>
+If you don't like either, you're free to write your own.
+<p>
+The next thing you need to decide is whether you simply want to write a
+data snapshot to a local file which some other program/script can retrieve
+OR send the data over a socket to your application.  Clearly using the socket
+is more efficient, but the choice is all yours.
+<p>
+An example parser script called <i>readS</i> had been provided as a convenient
+way to parse a file that is an s-expression, but just keep in mind that it is 
+written in perl and every invocation involved starting up the perl interpretter
+which may be a little heavier-weight than you wish to use.
+<p>
+If you do choose to use it, the arguments to readS take the following form:
 <p><tt>dir category variable [instance [divisor]]</tt>
 <ul>
   <li>dir - directory in which the s-expression S exists, often
@@ -224,7 +237,7 @@ The arguments to readS take the following form:
 </ul>
 
 Detailed customization instructions for use of data returned by <i>readS</i> 
-within CMU or other applications is beyond the scope of this FAQ.
+is beyond the scope of this FAQ.
 
 <h1>Operational Problems</h1>
 

@@ -12,7 +12,7 @@ Using the rpm
 Installing from source
 
     unpack the tarball, which you've obviously done
-    follow the instructions in the README, which basicall saw to run INSTALL
+    follow the instructions in the README, which basically says to run INSTALL
 
 KNOWN PROBLEMS/RESTRICTIONS
 
@@ -35,6 +35,54 @@ KNOWN PROBLEMS/RESTRICTIONS
     cycle(s)
   - if a symlink is used to point to the executable, it MUST contain the full
     path or collectl will not be able to find 'formatit.ph'
+
+3.1.0	September 3, 2008
+  - fixed 2 problems in INSTALL (thanks sebastien)
+    - forgot to copy collect.conf to BINDIR/etc
+    - forgot to set protections on collectl and inet.d script
+  - cleaned up interval header printing
+  - new feature: environmental monitoring via ipmitool
+    - added environments to daemon defaults in collectl.conf
+    - changed default interval3 monitoring interval to 2 minutes
+  - 1st line of brief headers were 1 column too narrow for -t,m,h&f
+  - when reading lustre MDS stats, don't tell getProc to skip over anything and
+    save everything that starts with 'mds_'
+  - extended lustre MDS data reporting
+  - added I/O size to lustre Client/OST verbose/detail output and make it honor 
+    --iosize in brief mode
+  - fixed a 1 column formatting shift when using -oT with some lustre client/ost output
+  - fixed problem in which --hr 1 wasn't causing a new header every intereval for
+    detail data of same type
+  - increased size of KBBytes for lustre/interconnect data to 7 digits
+  - very minor, but if user specified -s+l and --lustsvc and lustre
+    disabled, only looking at subsys in checkSubsysOpts was generating an error
+    so now it looks at '$userSubsys' too.
+  - make $filename local in getSys()
+  - another pair of switches: -X, --helpall lists ALL help making it possible to
+    grep for something if you can't remember where it is
+  - added --grep which allows printing all entries in raw file as timestamped
+    lines.  may mix with other playback switches
+  - if filtering processes and no data initially collected, interval2Secs will be
+    0 first time and flt/sec will generate illegal division error so set i2 to 1
+  - was calling procAnalyze even if no data processed during an interval and as a result
+    the last pid seen was being credited for that interval when it shouldn't have been
+  - added parent pid to top i/o display
+  - when looking for collectl procsses with -sx, be sure to ignore those instances
+    where the command is 'ssh'
+  - discovered '$lastInt2Secs' not getting reset when a new set of prefixes
+    were being played back.  This meant the denominator for first line of 
+    process/slab rate data would be wrong, but most people probably wouldn't
+    have even seen this
+  - a couple of fixes to correct --procanalyze reporting errors
+  - removed extra space from --procopts i header.
+  - significantly expanded --top sort types
+  - "waiting for..." message will now honor --quiet
+  - if more than one file played back with interrupt data AND latter one had more
+    CPUs $intrptLast{}->[$cpu] wasn't getting getting initialized
+  - allow commas in addition to spaces to separate files in 'playback' list
+  - discovered a user app can modify contents of /proc/pid/cmdline and so cannot
+    assume it will always end in null (see test of $cmd1)
+  - change test of !$slubinfoFlab to $slabinoFlag since both may be missing
 
 3.0.0-4 July 1, 2008
   - major switch cleanup

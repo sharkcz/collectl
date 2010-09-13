@@ -134,20 +134,22 @@ in either not seeing them OR round-off hiding their values.</td></tr>
 <p>There are several formats here controlled by the --lustopts switch.  There is 
 also detail data for these available as well.  Specifying -sL results in 
 data broken out by the file system and --lustopts O further breaks it out by OST.
+Also note the average read/write sizes are only reported when --lustopts is <i>not</i> specified.
 
 <div class=terminal>
 <pre>
 # LUSTRE CLIENT SUMMARY
-# KBRead  Reads  KBWrite Writes
+# KBRead  Reads SizeKB  KBWrite Writes SizeKB
 </pre></div>
 
 <table>
 <tr><td><b>KBRead</b></td><td>KB/sec delivered to the client.</td></tr>
 <tr><td valign=top><b>Reads</b></td><td>Reads/sec delivered to the client,
-not necessarily from the lustre
-storage servers.</td></tr>
+not necessarily from the lustre storage servers.</td></tr>
+<tr><td><b>SizeKB</b></td><td>Average read size in KB</td></tr>
 <tr><td><b>KBWrite</b></td><td>KB Writes/sec delievered to the storage servers.</td></tr>
 <tr><td><b>Writes</b></td><td>Writes/sec delievered to the storage servers.</td></tr>
+<tr><td><b>SizeKB</b></td><td>Average write size in KB</td></tr>
 </table>
 
 <div class=terminal-wide14>
@@ -220,23 +222,38 @@ page size for you system in the header (<i>collectl --showheader</i>).
 </table>
 
 <p><b>Lustre Meta-Data Server</b>, <i>collectl -sl</i>
+<p>As of Lustre 1.6.5, the data reported for the MDS had changed, breaking out the <i>Reint</i>
+data into 5 individual buckets which are the last 5 fields described below.  For earlier
+versions those 5 fields will be replaced by a single one named <i>Reint</i>.
 
-<div class=terminal>
+<div class=terminal-wide14>
 <pre>
-# LUSTRE FILESYSTEM SUMMARY
-#<------------- MDS --------------->
-#Close   Getattr     Reint      Sync
+# LUSTRE MDS SUMMARY
+#Getattr GttrLck  StatFS    Sync  Gxattr  Sxattr Connect Disconn Create   Link Setattr Rename Unlink
 </pre></div>
 
 <table>
-<tr><td><b>Close</b></td><td>Number of file closes/sec.</td></tr>
-<tr><td><b>Getattr</b></td><td>Number of getattrs/sec.</td></tr>
-<tr><td><b>Reint</b></td><td>Reintegrated operations/sec which are inode 
-modifications and unklinks.</td></tr>
-<tr><td><b>Sync</b></td><td>Number of syncs/sec.</td></tr>
+<tr><td valign=top><b>Getattr</b></td><td>Number of getattr calls, for example <i>lfs osts</i>.
+Note that this counter is <i>not</i> incremented as the result of <i>ls</i> - see <i>Gxattr</i></td></tr>
+<tr><td><b>GttrLck</b></td><td>These are getattrs that also return a lock on the file</td></tr>
+<tr><td valign=top><b>StatFS</b></td><td>Number of stat calls, for example <i>df</i> or <i>lfs df</i>.
+Note that lustre caches data for up to a second so many calls within a second may only show
+up as a single <i>statfs</i></td></tr>
+<tr><td><b>Sync</b></td><td>Number of sync calls</td></tr>
+<tr><td valign=top><b>Gxattr</b></td><td>Extended attribute get operations, for example <i>getfattr</i>, 
+<i>getfacl</i> or even <i>ls.</i>  Note that the MDS must have been mounted with <i>-o acl</i> 
+for this counter to be enabled.</td></tr>
+<tr><td><b>Sxattr</b></td><td>Extended attribute set operations, for example <i>setfattr</i> or <i>setfacl</i></td></tr>
+<tr><td><b>Connect</b></td><td>Client mount operations</td></tr>
+<tr><td><b>Disconn</b></td><td>Client umount operations</td></tr>
+<tr><td><b>Create</b></td><td>Count of mknod and mkdir operations, also used by NFS servers internally when creating files</td></tr>
+<tr><td><b>Link</b></td><td>Hard and symbolic links, for example <i>ln</i></td></tr>
+<tr><td><b>Setattr</b></td><td>All operations that modify inode attributes including chmod, chown, touch, etc</td></tr>
+<tr><td><b>Rename</b></td><td>File and directory renames, for example <i>mv</i></td></tr>
+<tr><td><b>Unlink</b></td><td>File/directory removals, for example <i>rm</i> or <i>rmdir</i></td></tr>
 </table>
 <p>
-This display is very similar the the RPC buffers in that the sizes of different size
+The following display is very similar the the RPC buffers in that the sizes of different size
 I/O requests are reported.  In this case there are requests sent to the disk driver.
 Note that this report is only available for HP's SFS.
 
@@ -258,23 +275,27 @@ Note that this report is only available for HP's SFS.
 <p><b>Lustre Object Storage Server</b>, <i>collectl -sl</i>
 <div class=terminal>
 <pre>
-# LUSTRE FILESYSTEM SUMMARY
-#<----------------- OST ---------------->
-#KBRead     Reads      KBWrite    Writes
+# LUSTRE OST SUMMARY
+# KBRead   Reads  SizeKB KBWrite  Writes  SizeKB
 </pre></div>
 
 <table>
 <tr><td><b>KBRead</b></td><td>KB/sec read</td></tr>
 <tr><td><b>Reads</b></td><td>Reads/sec</td></tr>
+<tr><td><b>SizeKB</b></td><td>Average read size in KB</td></tr>
 <tr><td><b>KBWrite</b></td><td>KB/sec written</td></tr>
 <tr><td><b>Writes</b></td><td>Writes/sec</li>
+<tr><td><b>SizeKB</b></td><td>Average write size in KB</td></tr>
 </table>
 
 <p><b>Lustre Object Storage Server</b>, <i>collectl -sl --lustopts B</i>
+<p>
+As with client data, when you only get read/write average sizes when
+--lustopt is <i>not</i> specified.
 <div class=terminal>
 <pre>
-# LUSTRE FILESYSTEM SUMMARY
-#<--------read----------------writes-----------------
+# LUSTRE OST SUMMARY
+#<--------reads-----------|----writes-----------------
 #RdK  Rds   1K   2K   ...  WrtK Wrts   1K   2K   ....
 </pre></div>
 

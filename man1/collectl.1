@@ -106,18 +106,6 @@ will happily play back/process these files it can take a long time.  By using th
 still gets a hugh rawp file, but the raw file is a much more manageable size and as a result much
 faster to process.
 
-.B -H, --nohard command
-.RS
-Do not record data to hard drive, but rather execute
-.BR command, 
-passing the data to it as an argument.  In other words, -H "echo -n" will echo
-each line of text that would have been written to the 'raw' file.
-This is intended for developers with  the need to record data 
-in a non-standard way.  If 
-.BR command
-contains embedded spaces, but sure to enclose it in quotes.
-.RE
-
 .B "-i, --interval interval[:interval2[:interval3]]"
 .RS
 This is the sampling interval in seconds.  The default is 10 seconds when run

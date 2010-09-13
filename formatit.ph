@@ -113,7 +113,8 @@ sub initRecord
 
   # if doing interconnect, the first thing to do is see what interconnect
   # hardware is present via lspci.  Note that from the H/W database, we get
-  # the following IDS -Quadrics: 14fc, Myricom: 14c1, Mellanox (IB): 15b3.
+  # the following IDS -Quadrics: 14fc, Myricom: 14c1, Mellanox (IB): 15b3
+  # OR 0c06.
   # we also have to make sure in the right position of output of lspci command
   # so need to be a little clever
   $NumXRails=$NumHCAs=0;
@@ -127,7 +128,7 @@ sub initRecord
     print "lspci -- Version: $lspciVer  Vendor Field: $lspciVendorField\n"
 	if $debug & 1;
 
-    $command="$Lspci -n | $Egrep '15b3|14c1|14fc'";
+    $command="$Lspci -n | $Egrep '15b3|0c06|14c1|14fc'";
     print "Command: $command\n"    if $debug & 1;
     @pci=`$command`;
     foreach $temp (@pci)
@@ -146,7 +147,7 @@ sub initRecord
 	elanCheck();
       }
 
-      if ($vendorID eq '15b3')
+      if ($vendorID=~/15b3|0c06/)
       {
 	next    if $type eq '5a46';    # ignore pci bridge
 	print "Found Infiniband Interconnect\n"    if $debug & 1;
@@ -1318,6 +1319,10 @@ sub intervalEnd
 {
   my $seconds=shift;
 
+  # Only for debugging and typically used with -d4, we want to see the /proc
+  # fields as they're read but NOT process them
+  return()    if $debug & 32;
+
   # we need to know how long the interval was (integer for now, but this is the
   # place to handle finer grained time if we change our mind)
   # note that during development/testing, it's sometimes useful to set the
@@ -1359,6 +1364,10 @@ sub dataAnalyze
   my $subsys=shift;
   my $line=  shift;
   my $i;
+
+  # Only for debugging and typically used with -d4, we want to see the /proc
+  # fields as they're read but NOT process them
+  return()    if $debug & 32;
 
   # if running 'live' & non-flushed buffer or in some cases simply no data
   # as in the case of a diskless system, if no data to analyze, skip it
@@ -3133,11 +3142,11 @@ sub printPlot
   # Furthermore, if we're doing -rawtoo, we DON'T generate these files since
   # the data is already being recorded in the raw file and we don't want to do
   # both
-  if (!$rawFlag && $subsys=~/[YZ]/ && $interval2Print && $interval2Counter>1)
+  if (!$rawtooFlag && $subsys=~/[YZ]/ && $interval2Print && $interval2Counter>1)
   {
     printPlotSlab($date, $time)    if $subsys=~/Y/;
     printPlotProc($date, $time)    if $subsys=~/Z/;
-    return;
+    return    if $subsys=~/^[YZ]$/;    # we're done if ONLY printing slabs or processes
   }
 
   printHeaders()
@@ -3646,8 +3655,8 @@ sub printPlot
       if !$logToFileFlag || $addrFlag;
 }
 
-# First and formost, this is ONLY used to print plot or socket related data AND the 
-# socket data itself must be plot formatted as well.
+# First and formost, this is ONLY used to plot data.  It will send it to the terminal,
+# a socket, a data file or a combination of socket and data file.
 # Secondly, we only call after processing a complete subsystem so in the case of
 # core ones there's a single call but for detail subsystems one per.
 # Therefore, when writing to a file, we write the whole string we're passed, but when 
@@ -3687,6 +3696,12 @@ sub writeData
     }
     return;
   }
+
+  # There is a very special case (so special maybe nobody will ever use it) in
+  # which one specifies --sexpr -P -f in conjunction with -A.  By definition
+  # this should mean to send the sexpr over the socket but log data in plot
+  # format.  To make the test easier, we're using a special flag for this.
+#  return    if $sexprFlag && $plotFlag && $filename ne '';
 
   # Final Write!!!
   # Doing these two writes this way will allow writing to the
@@ -5002,16 +5017,20 @@ sub printSexprRaw
   {
     if ($subsys=~/c/)
     {
-      my ($uTot, $nTot, $sTot, $iTot, $wTot)=(0,0,0,0,0);
+      my ($uTot, $nTot, $sTot, $iTot, $wTot, $irTot, $soTot, $stTot)=(0,0,0,0,0,0,0,0);
       for (my $i=0; $i<$NumCpus; $i++)
       {
-        $uTot+=$userLast[$i];
-        $nTot+=$niceLast[$i];
-        $sTot+=$sysLast[$i];
-        $iTot+=$idleLast[$i];
-        $wTot+=$waitLast[$i];
+        $uTot+= $userLast[$i];
+        $nTot+= $niceLast[$i];
+        $sTot+= $sysLast[$i];
+        $iTot+= $idleLast[$i];
+        $wTot+= $waitLast[$i];
+        $irTot+=$irqLast[$i];
+        $soTot+=$softLast[$i];
+        $stTot+=$stealLast[$i];
       }
-      $cpuSumString.="$pad(cputotals (user $uTot) (nice $nTot) (sys $sTot) (idle $iTot) (wait $wTot))\n";
+      $cpuSumString.="$pad(cputotals (user $uTot) (nice $nTot) (sys $sTot) (idle $iTot) (wait $wTot) ";
+      $cpuSumString.=               "(irq $irTot) (soft $soTot) (steal $stTot))\n";
       $cpuSumString.="$pad(ctxint (ctx $ctxtLast) (int $intrptLast) (proc $procLast) (runq $loadQue))\n";
     }
 
@@ -5213,18 +5232,31 @@ sub printSexprRaw
     $intString="$pad(iconnect (intkbin $kbInT) (intpktin $pktInT) (intkbout $kbOutT) (intpktout $pktOutT))\n";
   }
 
-  open  SEXPR,  ">$sexprDir/S" or logmsg("F", "Couldn't create '$sexprDir/S'");
-  print SEXPR "(collectl_summary\n"    if $XCFlag && $sumFlag;
-  print SEXPR "$pad(sample (time $lastSecs))\n"    if $sumFlag;
-  print SEXPR "$cpuSumString$diskSumString$nfsString$inodeString$memString$netSumString";
-  print SEXPR "$lusSumString$sockString$tcpString$intString";
-  print SEXPR ")\n"                    if $XCFlag && $sumFlag;
+  # Build up as a single string
+  $sexprRec='';
+  $sexprRec.="(collectl_summary\n"    if $XCFlag && $sumFlag;
+  $sexprRec.="$pad(sample (time $lastSecs))\n"    if $sumFlag;
+  $sexprRec.="$cpuSumString$diskSumString$nfsString$inodeString$memString$netSumString";
+  $sexprRec.="$lusSumString$sockString$tcpString$intString";
+  $sexprRec.=")\n"                    if $XCFlag && $sumFlag;
 
-  print SEXPR "(collectl_detail\n"     if $XCFlag && $detFlag;
-  print SEXPR "$pad(sample (time $lastSecs))\n"    if !$sumFlag;
-  print SEXPR "$cpuDetString$diskDetString$netDetString";
-  print SEXPR ")\n"                    if $XCFlag && $detFlag;
-  close SEXPR;
+  $sexprRec.="(collectl_detail\n"     if $XCFlag && $detFlag;
+  $sexprRec.="$pad(sample (time $lastSecs))\n"    if !$sumFlag;
+  $sexprRec.="$cpuDetString$diskDetString$netDetString";
+  $sexprRec.=")\n"                    if $XCFlag && $detFlag;
+
+  # if a file was specified, write the data to it
+  if ($sexprDir ne '')
+  {
+    open  SEXPR, ">$sexprDir/S" or logmsg("F", "Couldn't create '$sexprDir/S'");
+    print SEXPR  $sexprRec;
+    close SEXPR;
+  }
+
+  if ($addrFlag || $sexprDir eq '')
+  {
+    printText($sexprRec);
+  }
 }
 
 sub printSexprRate
@@ -5431,18 +5463,29 @@ sub printSexprRate
 	$kbInT/$intSecs, $pktInT/$intSecs, $kbOutT/$intSecs, $pktOutT/$intSecs);
   }
 
-  open  SEXPR,  ">$sexprDir/S" or logmsg("F", "Couldn't create '$sexprDir/S'");
-  print SEXPR "(collectl_summary\n"    if $XCFlag && $sumFlag;
-  print SEXPR "$pad(sample (time $lastSecs))\n"    if $sumFlag;
-  print SEXPR "$cpuSumString$diskSumString$nfsString$inodeString$memString$netSumString";
-  print SEXPR "$lusSumString$sockString$tcpString$intString";
-  print SEXPR ")\n"                    if $XCFlag && $sumFlag;
+  $sexprRec='';
+  $sexprRec.="(collectl_summary\n"    if $XCFlag && $sumFlag;
+  $sexprRec.="$pad(sample (time $lastSecs))\n"    if $sumFlag;
+  $sexprRec.="$cpuSumString$diskSumString$nfsString$inodeString$memString$netSumString";
+  $sexprRec.="$lusSumString$sockString$tcpString$intString";
+  $sexprRec.=")\n"                    if $XCFlag && $sumFlag;
 
-  print SEXPR "(collectl_detail\n"     if $XCFlag && $detFlag;
-  print SEXPR "$pad(sample (time $lastSecs))\n"    if !$sumFlag;
-  print SEXPR "$cpuDetString$diskDetString$netDetString";
-  print SEXPR ")\n"                    if $XCFlag && $detFlag;
-  close SEXPR;
+  $sexprRec.="(collectl_detail\n"     if $XCFlag && $detFlag;
+  $sexprRec.="$pad(sample (time $lastSecs))\n"    if !$sumFlag;
+  $sexprRec.="$cpuDetString$diskDetString$netDetString";
+  $sexprRec.=")\n"                    if $XCFlag && $detFlag;
+
+  if ($sexprDir ne '')
+  {
+    open  SEXPR, ">$sexprDir/S" or logmsg("F", "Couldn't create '$sexprDir/S'");
+    print SEXPR  $sexprRec;
+    close SEXPR;
+  }
+
+  if ($addrFlag || $sexprDir eq '')
+  {
+    printText($sexprRec);
+  }
 }
 
 sub sexprHeader
@@ -5452,91 +5495,102 @@ sub sexprHeader
   my $sumFlag=$subsys=~/[cdfilmnstx]/ ? 1 : 0;
   my $detFlag=$subsys=~/[CDN]/        ? 1 : 0;
 
-  open SHDR,  ">$sexprDir/#" or logmsg("F", "Couldn't create '$sexprDir/#'");
   print "Create sexpr header file: $sexprDir/S\n"    if $debug & 8192;
   $sexprHeaderWritten=1;
 
-  # Ok, now write out the header file, but only for selected subsystems
-  print SHDR "(collect_summary\n"    if $XCFlag && $sumFlag;
-  print SHDR "$pad(sample (time var))\n";
-  print SHDR "$pad(cputotals (user val) (nice val) (sys val) (idle val) (wait val))\n"
+  $sexprHdr='';
+  $sexprHdr.="(collect_summary\n"    if $XCFlag && $sumFlag;
+  $sexprHdr.="$pad(sample (time var))\n";
+  $sexprHdr.="$pad(cputotals (user val) (nice val) (sys val) (idle val) (wait val) (irq val) (soft val) (steal val))\n"
 	if $subsys=~/c/;
-  print SHDR "$pad(ctxint (ctx val) (int val) (proc val) (runq val))\n"
+  $sexprHdr.="$pad(ctxint (ctx val) (int val) (proc val) (runq val))\n"
 	if $subsys=~/c/;
-  print SHDR "$pad(disktotals (reads val) (readkbs val) (writes val) (writekbs val))\n"
+  $sexprHdr.="$pad(disktotals (reads val) (readkbs val) (writes val) (writekbs val))\n"
 	if $subsys=~/d/;
-  print SHDR "$pad(nfsinfo (read val) (write val) (calls val))\n"
+  $sexprHdr.="$pad(nfsinfo (read val) (write val) (calls val))\n"
         if $subsys=~/f/;
-  print SHDR "$pad(inodeinfo (unuseddcache val) (openfiles val) (inodeused val) (superuer val)(dquotused val))\n"
+  $sexprHdr.="$pad(inodeinfo (unuseddcache val) (openfiles val) (inodeused val) (superuer val)(dquotused val))\n"
 	if $subsys=~/i/;
-  print SHDR "$pad(lusclt (reads val) (readkbs val) (writes val) (writekbs al))\n"
+  $sexprHdr.="$pad(lusclt (reads val) (readkbs val) (writes val) (writekbs al))\n"
 	if $subsys=~/l/ && $CltFlag;
-  print SHDR "$pad(lusmds (close val) (getattr val) (reint val) (sync val))\n"
+  $sexprHdr.="$pad(lusmds (close val) (getattr val) (reint val) (sync val))\n"
 	if $subsys=~/l/ && $MdsFlag;
-  print SHDR "$pad(lusoss (reads val) (readkbs val) (writes val) (writekbs val))\n"
+  $sexprHdr.="$pad(lusoss (reads val) (readkbs val) (writes val) (writekbs val))\n"
 	if $subsys=~/l/ && $OstFlag;
-  print SHDR "$pad(meminfo (memtot val) (memused val) (memfree val) (memshared val) (membuf val) (memcached val) (memslab val) (memmap val))\n"
+  $sexprHdr.="$pad(meminfo (memtot val) (memused val) (memfree val) (memshared val) (membuf val) (memcached val) (memslab val) (memmap val))\n"
         if $subsys=~/m/;
-  print SHDR "$pad(nettotals (netkbin val) (netpktin val) (netkbout val) (netpktout val))\n"
+  $sexprHdr.="$pad(nettotals (netkbin val) (netpktin val) (netkbout val) (netpktout val))\n"
         if $subsys=~/n/;
-  print SHDR "$pad(sockinfo (sockused val) (socktcp val) (sockorphan val) (socktw val) (sockalloc val) (sockmem val)(sockudp val) (sockraw val) (sockfrag val) (sockfragm val))\n"
+  $sexprHdr.="$pad(sockinfo (sockused val) (socktcp val) (sockorphan val) (socktw val) (sockalloc val) (sockmem val)(sockudp val) (sockraw val) (sockfrag val) (sockfragm val))\n"
         if $subsys=~/s/;
-  print SHDR "$pad(tcpinfo (tcppureack val) (tcphpack val) (tcploss val) (tcpftrans val))\n"
+  $sexprHdr.="$pad(tcpinfo (tcppureack val) (tcphpack val) (tcploss val) (tcpftrans val))\n"
         if $subsys=~/t/;
-  print SHDR "$pad(iconnect (intkbin val) (intpktin val) (intkbout val) (intpktout val))\n"
+  $sexprHdr.="$pad(iconnect (intkbin val) (intpktin val) (intkbout val) (intpktout val))\n"
         if $subsys=~/x/;
-  print SHDR ")\n"    if $XCFlag && $sumFlag;
+  $sexprHdr.=")\n"    if $XCFlag && $sumFlag;
 
-  print SHDR "(collect_detail \n"    if $XCFlag && $subsys=~/[CDN]/;
+  $sexprHdr.="(collect_detail \n"    if $XCFlag && $subsys=~/[CDN]/;
   if ($subsys=~/C/)
   {
     my $names='';
-    print SHDR "$pad(cpuinfo\n";
+    $sexprHdr.="$pad(cpuinfo\n";
     for (my $i=0; $i<$NumCpus; $i++)
     {
       $names.="cpu$i ";
     }
-    print SHDR "$pad  (name $names)\n";
-    print SHDR "$pad  (user $names)\n";
-    print SHDR "$pad  (nice $names)\n";
-    print SHDR "$pad  (sys $names)\n";
-    print SHDR "$pad  (idle $names)\n";
-    print SHDR "$pad  (wait $names)\n";
+    $sexprHdr.="$pad  (name $names)\n";
+    $sexprHdr.="$pad  (user $names)\n";
+    $sexprHdr.="$pad  (nice $names)\n";
+    $sexprHdr.="$pad  (sys $names)\n";
+    $sexprHdr.="$pad  (idle $names)\n";
+    $sexprHdr.="$pad  (wait $names)\n";
   }
 
   if ($subsys=~/D/)
   {
     my $names='';
-    print SHDR "$pad(diskinfo\n";
+    $sexprHdr.="$pad(diskinfo\n";
     for (my $i=0; $i<$NumDisks; $i++)
     {
       $names.="$dskName[$i] ";
     }
-    print SHDR "$pad  (name $names)\n";
-    print SHDR "$pad  (reads $names)\n";
-    print SHDR "$pad  (readkbs $names)\n";
-    print SHDR "$pad  (writes $names)\n";
-    print SHDR "$pad  (writekbs $names)\n";
+    $sexprHdr.="$pad  (name $names)\n";
+    $sexprHdr.="$pad  (reads $names)\n";
+    $sexprHdr.="$pad  (readkbs $names)\n";
+    $sexprHdr.="$pad  (writes $names)\n";
+    $sexprHdr.="$pad  (writekbs $names)\n";
   }
 
   if ($subsys=~/N/)
   {
     my $names='';
-    print SHDR "$pad(netinfo\n";
+    $sexprHdr.="$pad(netinfo\n";
     for (my $i=0; $i<$NumNets; $i++)
     {
       next    if $netName[$i]=~/lo|sit/;
       $names.="$netName[$i] ";
     }
     $names=~s/://g;
-    print SHDR "$pad  (name $names)\n";
-    print SHDR "$pad  (netkbin $names)\n";
-    print SHDR "$pad  (netpktin $names)\n";
-    print SHDR "$pad  (netkbout $names)\n";
-    print SHDR "$pad  (netpktout $names)\n";
+    $sexprHdr.="$pad  (name $names)\n";
+    $sexprHdr.="$pad  (netkbin $names)\n";
+    $sexprHdr.="$pad  (netpktin $names)\n";
+    $sexprHdr.="$pad  (netkbout $names)\n";
+    $sexprHdr.="$pad  (netpktout $names)\n";
   }
-  print SHDR ")\n"    if $detFlag && $XCFlag;
-  close SHDR;
+  $sexprHdr.=")\n"    if $detFlag && $XCFlag;
+
+  if ($sexprDir ne '')
+  {
+    open  SEXPR, ">$sexprDir/#" or logmsg("F", "Couldn't create '$sexprDir/#'");
+    print SEXPR  $sexprHdr;
+    close SEXPR;
+  }
+
+  if ($addrFlag || $sexprDir eq '')
+  {
+    printText($sexprHdr);
+  }
+
 }
 
 sub printInterval
@@ -5587,8 +5641,6 @@ sub getHeader
 {
   my $file=shift;
   my ($gzFlag, $header, $TEMP, $line);
-
-  print "GetHeader for: $file\n"    if $debug & 4;
 
   $gzFlag=$file=~/gz$/ ? 1 : 0;
   if ($gzFlag)

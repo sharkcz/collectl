@@ -8,10 +8,10 @@
 # debug
 #    1 - print interesting stuff
 #    2 - print more details, currently only lustre/IB service checks
-#    4 - subroutine call info
+#    4 - show each line processed by record(), replaces -H
 #    8 - do NOT remove error file after execution of shell commands
 #   16 - print headers of each file processed
-#   32 - print each line of raw file
+#   32 - skip call to dataAnalyze during interactive processing
 #   64 - print raw data as processed in playback mode, with timestamps
 #  128 - show collectl.conf processing
 #  256 - show detailed pid processing (this generates a LOT of output)
@@ -24,7 +24,8 @@
 # 8192 - show creation of RAW, PLOT and SEXPR files
 
 # debug tricks
-# use '-H "echo -n"' to see each line of raw data as it would be logged
+# - use '-d36' to see each line of raw data as it would be logged but not 
+#   generate any other output
 
 # Equivalent Utilities
 #  -s c      mpstat, iostat -c, vmstat
@@ -84,7 +85,7 @@ if ($Config{'version'} lt '5.8.0')
 #  exit;
 }
 
-$Version=  '2.3.3';
+$Version=  '2.3.4';
 $Copyright='Copyright 2003-2007 Hewlett-Packard Development Company, L.P.';
 $License=  "collectl may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
@@ -240,10 +241,11 @@ $numTop=0;
 $showPHeaderFlag=0;
 $showMergedFlag=$showHeaderFlag=$verboseFlag=$procmemFlag=$vmstatFlag=$alignFlag=0;
 $quietFlag=$utcFlag=0;
-$address=$beginTime=$endTime=$filename=$flush=$noHardCmd='';
+$address=$beginTime=$endTime=$filename=$flush='';
 $limits=$lustreSvcs=$procopts=$runTime=$subOpts=$playback=$rollLog='';
 $groupFlag=$msgFlag=$niceFlag=$plotFlag=$sshFlag=$wideFlag=$rawFlag=$sexprFlag=0;
 $userOptions=$userInterval=$userSubsys=$slabopts=$custom=$sexprType=$sexprDir='';
+$rawtooFlag=0;
 
 # Since --top has an optional argument, we need to see if it was specified without
 # one and stick in the default
@@ -278,8 +280,6 @@ GetOptions('align!'     => \$alignFlag,
            'interval=s' => \$userInterval,
 	   'h!'         => \$hSwitch,
            'help!'      => \$hSwitch,
-           'H=s'        => \$noHardCmd,
-           'nohard=s'   => \$noHardCmd,
            'l=s'        => \$limits,
            'limits=s'   => \$limits,
 	   'L=s'        => \$lustreSvcs,
@@ -335,7 +335,7 @@ GetOptions('align!'     => \$alignFlag,
            'showplotheader!'  =>\$showPHeaderFlag,
 
            # New for V2.1.2...
-           'rawtoo!'       => \$rawFlag,
+           'rawtoo!'       => \$rawtooFlag,
            'sexpr=s'       => \$sexprType,
            ) or error("type -h for help");
 
@@ -369,7 +369,6 @@ if ($addrFlag)
 {
   error("-p not allowed with -A")       if $playback ne '';
   error("-D not allowed with -A")       if $daemonFlag;
-  error("-A and -f requires -P")        if $filename ne '' && !$plotFlag;
 }
 
 # Since the output could be intended for a socket (called from colgui/colmux),
@@ -452,13 +451,12 @@ error("you can only specify -s with --top with -p")        if $numTop ne 0 && $u
 error("you cannot specify -f with --top")                  if $numTop ne 0 && $filename ne '';
 
 error("--sexpr does not work in playback mode")            if $sexprType ne '' && $playback ne '';
-error("--sexpr requires -f")                               if $sexprType ne '' && $filename eq '';
 error("--sexpr types are 'raw' and 'rate'")                if $sexprType ne '' && $sexprType!~/raw|rate/;
-error("--rawtoo does not work in playback mode")           if $rawFlag && $playback ne '';
-error("--rawtoo requires -f")                              if $rawFlag && $filename eq '';
-error("--rawtoo requires -P or --sexpr")                   if $rawFlag && !$plotFlag && $sexprType ne '';
-error("--rawtoo and -P requires -f")                       if $rawFlag && $plotFlag && $filename eq '';
-error("--rawtoo cannot be used with -p")                   if $rawFlag && $playback ne '';
+error("--rawtoo does not work in playback mode")           if $rawtooFlag && $playback ne '';
+error("--rawtoo requires -f")                              if $rawtooFlag && $filename eq '';
+error("--rawtoo requires -P or --sexpr")                   if $rawtooFlag && !$plotFlag && $sexprType eq '';
+error("--rawtoo and -P requires -f")                       if $rawtooFlag && $plotFlag && $filename eq '';
+error("--rawtoo cannot be used with -p")                   if $rawtooFlag && $playback ne '';
 error("-ou/--utc only apply to -P format")                 if $utcFlag && !$plotFlag;
 error("can't mix -ou with other formats")                  if $utcFlag && $options=~/[dDt]/;
 error("-oz only applies to -P files")                      if $options=~/z/ && !$plotFlag;
@@ -619,23 +617,14 @@ $|=1;
 # Save architecture name as well as perl version.
 $SrcArch= $Config{"archname"};
 $PerlVers=$Config{"version"};
-$logToFileFlag=($filename ne '') ? 1 : 0;
 
-# Only works in a limited way
-$noHardData="";
-$noHardDriveFlag=($noHardCmd ne '') ? 1 : 0;
-if ($noHardDriveFlag)
-{
-  error("Can't use -f with -H")    if $logToFileFlag;
-  error("Can't use -P with -H")    if $plotFlag;
-  error("Can't use -p with -H")    if $playback ne "";
-  $noHardDriveFlag=1;
-
-  # now fake it out to make look like we ARE writing to a file.  This
-  # is necessary so later logic doesn't try to analyze the data
-  $logToFileFlag=1;
-  $filename="xyzzy";
-}
+# If the user explicitly uses --rawtoo, we write to the raw file.
+# If the user specified -f but not in plot or sexpr format, we also write to raw
+# Finally, set a flag to indicate we're writing to rolling logs (unless just --sexpr)
+$rawFlag=$rawtooFlag;
+$rawFlag=1    if $filename ne '' && !$plotFlag && $sexprType eq '';
+$logToFileFlag=($rawFlag || $plotFlag) ? 1 : 0;
+print "RawFlag: $rawFlag PlotFlag: $plotFlag  SexprType: $sexprType\n"    if $debug & 1;
 
 error("-G requires data collection to a file") 
     if $groupFlag && ($playback ne '' || $filename eq '');
@@ -696,9 +685,8 @@ if ($SrcArch!~/linux/)
 # flush
 if ($flush ne '')
 {
-  error("-F must be numeric")        if $flush!~/^\d+$/;
-  error("-F requires -f or -H")      if $filename eq "" && !$noHardDriveFlag;
-  error("-p not allowed with -F")    if $playback ne '';
+  error("-F must be numeric")             if $flush!~/^\d+$/;
+  error("-p not allowed with -F")         if $playback ne '';
 }
 
 # daemon node
@@ -706,7 +694,7 @@ if ($daemonFlag)
 {
   error("no debugging allowed with -D")      if $debug;
   error("-D can only be used by root")       if `whoami`!~/root/i;
-  error("-D requires -f or -H")              if $filename eq "" && !$noHardDriveFlag;
+  error("-D requires -f")                    if $filename eq "";
   error("-p not allowed with -D")            if $playback ne "";
 
   if (-e $PidFile)
@@ -764,8 +752,6 @@ error("-ot only applies to terminal output")
                              if $options=~/t/ && $filename ne "";
 error("-ot cannot be used with -A")
                              if $options=~/t/ && $addrFlag;
-error("-o h/H conflicts with -H")
-                             if $options=~/h/i && $noHardDriveFlag;
 error("-o h/H conflicts with -f")
                              if $options=~/h/i && $filename ne "";
 error("option $1 only apply to -P")
@@ -785,7 +771,7 @@ if (!$hiResFlag && $options=~/m/)
 $pidOnlyFlag=($subOpts=~/P/) ? 1 : 0;
 
 # We always compress files unless zlib not there or explicity turned off
-$zFlag=($options=~/z/ || $noHardDriveFlag || $filename eq "") ? 0 : 1;
+$zFlag=($options=~/z/ || $filename eq "") ? 0 : 1;
 if (!$zlibFlag && $zFlag)
 {
   $options.="z";
@@ -1370,12 +1356,24 @@ error("-T only applies to playback mode")    if defined($timeOffset);
 # This is really a compound switch
 if ($sexprType ne '')
 {
+  # If writing sexpr to a directory, we can override location.  If not writing
+  # to a directory '$sexprDir' needs to be ''.
   ($sexprType, $sexprDir)=split(/,/, $sexprType);
+  if ($filename eq '')
+  {
+    error("use of a directory with --sexpr requires -f")    if defined($sexprDir);
+    $sexprDir='';
+  }
   $sexprFlag=($sexprType eq 'raw') ? 1 : 2;
-  $sexprDir=(-d $filename) ? $filename : dirname($filename)
+
+  # If user in fact specified -f, figure out where to write 'S' file
+  if ($filename ne '')
+  {
+    $sexprDir=(-d $filename) ? $filename : dirname($filename)
       if !defined($sexprDir);
-  error("the directory '$sexprDir' specified with --sexpr cannot be found")
+    error("the directory '$sexprDir' specified with --sexpr cannot be found")
       if !-d $sexprDir;
+  }
 }
 
 # need to load even if interval is 0, but don't allow for -p mode
@@ -1628,7 +1626,7 @@ for (; $count!=0 && !$doneFlag; $count--)
   # run collectl continuously and catch headers when the date changes,
   # hence the support for executing the log rolling code and generating 
   # headers even when not logging to a file.
-  if (($noHardDriveFlag || $logToFileFlag) && $rollSecs)
+  if ($logToFileFlag && $rollSecs)
   {
     # if time to roll, do so and recalculate next roll time.
     if ($intSeconds ge $rollSecs)
@@ -2793,7 +2791,10 @@ sub record
   my $data=    shift;
   my $recMode= shift;    # error recovery mode
   my $rawpFlag=shift;    # if defined, write to rawp or zrawp
-  #print "DATA: $data\n";
+
+  # This essentially replaces -H in that it let's us see everything read
+  # from /proc.  Combine with -d32 to prevent any other output.
+  print "$data"     if $debug & 4;
 
   #    W r i t e    T o    R A W    F i l e
 
@@ -2804,25 +2805,12 @@ sub record
   # in recovery mode and if writing the common header fails, we have no 
   # alternative other than to abort.
 
-  # when logging raw data to a file $data is the data to write - either an
+  # when logging raw data to a file $data, the data to write is either an
   # interval marker or raw data.  Note that when doing plot format to a file
   # as well as any terminal based I/O, that all gets handled by dataAnalyze().
-  if ($logToFileFlag && ($rawFlag || !$plotFlag))
+  if ($logToFileFlag && $rawFlag)
   {
-    if ($noHardDriveFlag)
-    {
-      if ($flush eq '')
-      {
-        system("$noHardCmd '$data'");
-      }
-      else
-      {
-	# As we have a flush interval, we only call the $noHardCmd once per
-        # interval, so collect data in $noHardData in the mean time.
-        $noHardData.=$data;
-      }
-    }
-    elsif ($zlibFlag)
+    if ($zlibFlag)
     {
       # When flags set, we write 'process' data (identified by '$recFlag1') to a 'rawp' 
       # file; otherwise just 'raw'
@@ -2870,9 +2858,6 @@ sub newLog
   my ($dirname, $basename, $command, $fullname, $mode);
   my (@disks, $dev, $numDisks, $i, $oldHeader, $oldSubsys, $timesecs, $timezone);
 
-  print "newlog() -- File: $filename SubSys: $subsys Playback: $playback\n"
-      if $debug & 4;
-
   if ($recDate eq '')
   {
     # We need EXACT seconds associated with the timestamp of the filename.
@@ -2896,18 +2881,6 @@ sub newLog
   $temp="# Date:       $datetime  Secs: $timesecs TZ: $timezone\n";
   $commonHeader= buildCommonHeader(0, $temp);
   $commonHeader1=buildCommonHeader(1, $temp)    if $recFlag1;
-
-  # if no hard drive to write to, just write the common header using
-  # whatever mechanism the user had specified with -H.
-  if ($noHardDriveFlag)
-  {
-    # We have to make sure any data in the buffers gets written to the file
-    # we're about to close or else it will end up in the new one preceeding the
-    # headers.
-    flushBuffers();
-    record(1, $commonHeader);
-    return;
-  }
 
   # If generating plot data on terminal, just open everything on STDOUT
   # but be SURE set the buffers to flush in case anyone runs to run as part
@@ -3003,12 +2976,12 @@ sub newLog
 
   #    C r e a t e    R A W    F i l e
 
-  if (!$plotFlag || $rawFlag)
+  if ($rawFlag)
   {
     # When using --rawtoo, the default filename only has a datestamp (unless -ou also
     # specified and so we need to change it back!)
-      my $rawFilename=$filename;
-    $rawFilename=~s/$dateonly/$datetime/    if $rawFlag && $options!~/u/;
+    my $rawFilename=$filename;
+    $rawFilename=~s/$dateonly/$datetime/    if $rawtooFlag && $options!~/u/;
     print "Create raw rile:   $rawFilename\n"    if $debug & 8192;
 
     # Unlike plot files, we ALWAYS compress when compression lib exists
@@ -3119,7 +3092,7 @@ sub newLog
 
     # These next  guys are special because they're not really detail files per se, 
     # Furthermore, if --rawtoo we don't create proc/slab files
-    if (!$rawFlag)
+    if (!$rawtooFlag)
     {
       open PRC, "$mode$filename.prc" or 
 	  logmsg("F", "Couldn't open '$filename.prc'")  if !$zFlag && $ZFlag;
@@ -3234,7 +3207,7 @@ sub writeInterFileMarker
 {
   # for now, only need one for process data
   my $marker="# >>> NEW LOG <<<\n";
-  if ($subsys=~/Z/ && !$rawFlag)
+  if ($subsys=~/Z/ && !$rawtooFlag)
   {
     $ZPRC->gzwrite($marker) or 
         writeError('prc', $ZPRC)    if  $zFlag;
@@ -3295,14 +3268,6 @@ sub setOutputFormat
   {
     $miniDateFlag=$miniTimeFlag=0;
     $miniDateTime=$miniFiller='';
-  }
-
-  # Even though '$noHardCmd' is only a debugging thing, when set we need to turn off
-  # brief and -oh
-  if ($noHardCmd)
-  {
-    $tempVerbose=1;
-    $options=~s/h//;
   }
 
   # These 2 are always complementary
@@ -3367,12 +3332,13 @@ sub sigPipe
 
 sub flushBuffers
 {
-  print "Flush Buffers\n"    if $debug & 1;
+  # Remember, when $rawFlag set we flush everything including process/slab data.  But if
+  # just $rawtooFlag set we those 2 other files aren't open and so we don't flush them.
   $flushTime=time+$flush     if $flushTime;
 
   if ($zFlag)
   {
-    if (!$plotFlag || $rawFlag)
+    if ($rawFlag)
     {
       # if in raw mode, may be up to 2 buffers to flush
       $ZRAW-> gzflush(2)<0 and flushError('raw', $ZRAW)     if $recFlag0;
@@ -3393,14 +3359,8 @@ sub flushBuffers
     $ZNET-> gzflush(2)<0 and flushError('net', $ZNET)     if $NFlag;
     $ZOST-> gzflush(2)<0 and flushError('ost', $ZOST)     if ($LFlag || $LLFlag) && $OstFlag;
     $ZTCP-> gzflush(2)<0 and flushError('tcp', $ZTCP)     if $TFlag;
-    $ZSLB-> gzflush(2)<0 and flushError('slb', $ZSLB)     if $YFlag && !$rawFlag;
-    $ZPRC-> gzflush(2)<0 and flushError('prc', $ZPRC)     if $ZFlag && !$rawFlag;
-  }
-  elsif ($noHardDriveFlag)
-  {
-    # Run $noHardCmd with $noHardData, then clear $noHardData
-    system("$noHardCmd '$noHardData'");
-    $noHardData = "";
+    $ZSLB-> gzflush(2)<0 and flushError('slb', $ZSLB)     if $YFlag && !$rawtooFlag;
+    $ZPRC-> gzflush(2)<0 and flushError('prc', $ZPRC)     if $ZFlag && !$rawtooFlag;
   }
   else
   {
@@ -3415,8 +3375,8 @@ sub flushBuffers
     if ($TFlag)   { select TCP;  $|=1; print TCP ""; $|=0; }
     if ($XFlag && $NumXRails)                 { select ELN;  $|=1; print ELN ""; $|=0; }
     if ($XFlag && $NumHCAs)                   { select IB;   $|=1; print IB  ""; $|=0; }
-    if ($YFlag && !$rawFlag)                  { select SLB;  $|=1; print SLB ""; $|=0; }
-    if ($ZFlag && !$rawFlag)                  { select PRC;  $|=1; print PRC ""; $|=0; }
+    if ($YFlag && !$rawtooFlag)               { select SLB;  $|=1; print SLB ""; $|=0; }
+    if ($ZFlag && !$rawtooFlag)               { select PRC;  $|=1; print PRC ""; $|=0; }
     if (($LFlag || $LLFlag) && $CltFlag)      { select CLT;  $|=1; print CLT ""; $|=0; }
     if (($LFlag || $LLFlag) && $OstFlag)      { select OST;  $|=1; print OST ""; $|=0; }
     if (($LFlag || $LLFlag) && $subOpts=~/D/) { select BLK;  $|=1; print BLK ""; $|=0; }
@@ -3596,11 +3556,11 @@ sub checkTime
 
 sub closeLogs
 {
-  return    if !$logToFileFlag || $noHardDriveFlag;
+  return    if !$logToFileFlag;
   print "Closing logs\n"    if $debug & 1;
   
   # closing raw files based on presence of zlib and NOT -oz
-  if ($zlibFlag && $logToFileFlag && (!$plotFlag || $rawFlag))
+  if ($zlibFlag && $logToFileFlag && $rawFlag)
   {
     $ZRAW->  gzclose()    if $recFlag0;
     $ZRAWP-> gzclose()    if $recFlag1;
@@ -3646,8 +3606,8 @@ sub closeLogs
     $ZNET-> gzclose()     if $NFlag && $plotFlag;
     $ZOST-> gzclose()     if ($LFlag || $LLFlag) && $plotFlag && $OstFlag;
     $ZTCP-> gzclose()     if $TFlag && $plotFlag;
-    $ZSLB-> gzclose()     if $YFlag && $plotFlag && !$rawFlag;
-    $ZPRC-> gzclose()     if $ZFlag && $plotFlag && !$rawFlag;
+    $ZSLB-> gzclose()     if $YFlag && $plotFlag && !$rawtooFlag;
+    $ZPRC-> gzclose()     if $ZFlag && $plotFlag && !$rawtooFlag;
   }
 }
 
@@ -4380,7 +4340,6 @@ These switches are for more advanced usage
   -e, --end        time         in playback mode, don't process after this date/time
   -F, --flush      seconds      number of seconds between output buffer flushes
   -h, --help                    print basic help
-  -H, --nohard     command      when no local hard drive, call this command to capture raw data
       --headerrepeat num        repeat headers every 'num' lines of output
   -i, --interval   int[:pi:ei]] collection interval in seconds [default=10]
                                   pi is process interval [default=60]
@@ -4474,7 +4433,7 @@ sub showSubsys
                                   n - network
                                   s - sockets
                                   t - tcp
-                                  x - interconnect (currently supported: elan4 V4.14)
+                                  x - interconnect (currently supported: Infiniband and Quadrics)
                                   y - slabs
                                 as an alternative format you can say '-s +[$SubsysExcore$SubsysDet]'
                                 where '+xxx' adds major subsystems to '$SubsysCore'
@@ -4486,7 +4445,7 @@ sub showSubsys
                                   LL - ost level lustre details (clients & OSTs)
                                   N -  individual Networks
                                   T -  tcp details (lots of data!)
-                                  X -  interconnect rails (only if more than 1)
+                                  X -  interconnect ports/rails (Infiniband/Quadrics)
                                   Y -  slabs
                                   Z -  processes (sorry, but P was already taken)
                                 you can also specify '-s -[$SubsysCore]', with/without

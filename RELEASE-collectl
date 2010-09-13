@@ -1,3 +1,4 @@
+
 RELEASE NOTES FOR COLLECTL
 
 INSTALLATION
@@ -35,6 +36,61 @@ KNOWN PROBLEMS/RESTRICTIONS
     cycle(s)
   - if a symlink is used to point to the executable, it MUST contain the full
     path or collectl will not be able to find 'formatit.ph'
+
+3.1.1-5 November 5, 2008
+  - two new fields added to slab data to show changes in total allocation between samples
+  - when mixing --procanalyze with other subsystems, the non-process data wasn't getting
+    written
+  - new switch: --slabanalyze
+  - in header for process data change 'faults are ...' to 'counters are ...' since
+    we're now including I/O counters as well
+  - wasn't printing process i/o headers with --procanalyze output.  thanks Sven
+  - when using -on, cpu % needs to divide by the real interval and not 1. thanks to Sven again!
+  - added percent CPU utilization for process I/O format as well as prc and prcs files
+  - also --procanalye now honors -om for msec level times
+  - new process option: c.  will include cpu times of any child processes (not threads)
+    that have since died
+
+3.1.1-4	October 29, 2008
+  - fixed a rounding problem with numbers between bewteen 1000M and 1024M
+    that were getting printed as 0G (thanks Marko)
+  - found error in conversions to K, M, etc where in some cases dividing by
+    1000 instead of 1024!  Specifically: i/o sizes for disk, networks lustre and infiniband.
+    Also lustre BRW states and some of the KBs fields processes for I/O and memory usage
+    in the default format - the detailed memory format had it right.
+    brief formats for: disk, network, quadrics, IB, lustre
+    But also note these only come into play when values being reported exceed the  default 
+    field widths and so ususally aren't tripped.
+  - changed -oF to --procopts f
+  - limit username in process display to 8 chars
+  - make sure terminal echo turned on when falling through error()
+  - if processes AccumTime>999 minutes in Process Summary, which is pretty rare, drop 
+    fractional seconds resulting in a different format
+  - included sort-type in top process display
+  - added ioall to --showtopopts menu
+  - allow a numeric width to be included with --procopt w
+  - removed restriction for considering -sl ambiguous and it will be assumed to mean lustre
+    subsystem rather than a typo for -slab
+  - misspelled RSys/WSys as RSYS/WSYS in procanalyze code
+
+3.1.1	October 8, 2008
+  - missing leading space before 'sd' when determining disk names during initialization
+    can result in wrong devices being listed with -sD and the header if they contain 
+    an embedded 'sd'
+  - fixed problem with --slabopts s and or S with -P or in playback
+  - fixed --top checking to verify ALL different I/O related types
+  - generate an error message for mixing lustre client option O with M or R
+  - allow printing detaild in --top mode, BUT user needs to control top part of
+    display with --hr
+  - playback of environmental data in plot format was printing values every interval rather
+    than just during interval3
+  - some impi values may be '' and so report them as 0 to make sure gnuplot can handle it
+  - make a few changes to INSTALL for debian-based installations
+  - added 'AccuTime' to top I/O display format
+  - new feature: top slabs!  same switch as top processes, --top, but include names of
+    slab column to sort by.  see --showtopopts
+  - filtering for old slabs now matches beginning of slab name just like slub
+  - lustre OST/B data wasn't shifting headers when -oT included
 
 3.1.0	September 3, 2008
   - fixed 2 problems in INSTALL (thanks sebastien)

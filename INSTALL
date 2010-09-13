@@ -7,6 +7,7 @@ mkdir -p $BINDIR/sbin
 mkdir -p $BINDIR/docs
 mkdir -p $BINDIR/initd
 mkdir -p $BINDIR/man1
+mkdir -p $BINDIR/etc
 
 cp GPL ARTISTIC COPYING  $BINDIR
 cp RELEASE-collectl      $BINDIR
@@ -22,13 +23,13 @@ cp man1/*                $BINDIR/man1
 gzip $BINDIR/man1/*
 
 chmod 755 $BINDIR/sbin/collectl
-chnod 755 $BINDIR/initd/collectl
+chmod 755 $BINDIR/initd/collectl
 
 # create symlinks
 ln -sf $BINDIR/man1/collectl.1.gz /usr/share/man/man1/collectl.1.gz
 ln -sf $BINDIR/sbin/collectl      /usr/bin/collectl
 ln -sf $BINDIR/sbin/collectl      /usr/sbin/collectl
-ln -sf $BINDIR/collectl.conf      /etc/collectl.conf
+ln -sf $BINDIR/etc/collectl.conf  /etc/collectl.conf
 ln -sf $BINDIR/initd/collectl     /etc/init.d/collectl
 
 # remove any stale versions in case the names numbers used have changed.
@@ -49,6 +50,7 @@ fi
 if [[ -f /usr/sbin/update-rc.d ]]; then
     distro=3
     ln -sf $BINDIR/initd/collectl-debian /etc/init.d/collectl
+    chmod +x /etc/init.d/collectl
     update-rc.d collectl defaults
 fi
 

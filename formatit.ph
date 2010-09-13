@@ -77,7 +77,7 @@ sub initRecord
   $procfile=($kernel2_4) ? '/proc/partitions' : '/proc/diskstats';
   $NumDisks=0;
   $DiskNames='';
-  $diskFilter="cciss\/c\\d+d\\d+ |hd[ab] |sd[a-z]+ |dm-\\d+";
+  $diskFilter="cciss\/c\\d+d\\d+ |hd[ab] | sd[a-z]+ |dm-\\d+";
   @temp=`cat $procfile`;
   foreach $line (@temp)
   {
@@ -614,7 +614,7 @@ sub initFormat
   my ($day, $mon, $year, $i, $recsys, $host);
   my ($version, $datestamp, $timestamp, $interval);
 
-  $headersPrinted=0;
+  $headersPrinted=$procAnalCounter=0;
 
   $temp=(defined($playfile)) ? $playfile : '';
   print "initFormat($temp)\n"    if $debug & 1;
@@ -671,7 +671,8 @@ sub initFormat
     $header=~/SubSys:\s+(\S+)/;
     $recSubsys=$subsys=$1;
     $recHdr1.=" Subsys: $subsys";
-    $recSubsys=$subsys='Z'    if $numTop;
+    $recSubsys=$subsys='Y'    if $topSlabFlag;
+    $recSubsys=$subsys='Z'    if $topProcFlag;
     if ($userSubsys ne '')
     {
       if ($userSubsys!~/[+-]/)
@@ -695,7 +696,8 @@ sub initFormat
         }
         $subsys=$temp;      
       }
-      $subsys.='Z'    if $numTop;    # if --top need to include Z
+      $subsys.='Y'    if $topSlabFlag;    # if --top need to include Y or Z
+      $subsys.='Z'    if $topProcFlag;
     }
  
     # I'm not sure the Mds/Ost/Clt names still need to be initialized
@@ -1576,11 +1578,13 @@ sub intervalEnd
   # time to clean out process stale pids from the %procIndexes hash.  
   # NOTE - if no processes during first interval (--procfilt used) our first
   # intervalSecs will be 0 and the flt/sec test will blow up so make it 1.
+  # NOTE2 - in some cases, currently when computing cpu%, we need to use
+  # the 'real' value of interval2 even if reset to 1 by -on.
   if ($interval2Print)
   {
     cleanStaleTasks()               if $ZFlag && !$pidOnly;
     $lastInt2Secs=$lastSecs         if $lastInt2Secs==0;
-    $interval2Secs=$seconds-$lastInt2Secs;
+    $interval2Secs=$interval2SecsReal=$seconds-$lastInt2Secs;
     $interval2Secs=1                if $options=~/n/ || !$interval2Secs;
     $lastInt2Secs=$seconds;
   }
@@ -3024,11 +3028,12 @@ sub dataAnalyze
       {
         ($slabObjActTot[$i], $slabObjAllTot[$i], $slabObjSize[$i],
          $slabSlabActTot[$i], $slabSlabAllTot[$i], $slabPagesPerSlab[$i])=(split(/\s+/, $data))[1..6];
+ 	 $slabObjPerSlab[$i]=($slabSlabAllTot[$i]) ? $slabObjAllTot[$i]/$slabSlabAllTot[$i] : 0;
       }
       elsif ($SlabVersion=~/^2/)
       {
         ($slabObjActTot[$i], $slabObjAllTot[$i], $slabObjSize[$i], 
-         $slanObjPerSlab[$i], $slabPagesPerSlab[$i],
+         $slabObjPerSlab[$i], $slabPagesPerSlab[$i],
          $slabSlabActTot[$i], $slabSlabAllTot[$i])=(split(/\s+/, $data))[1..5,13,14];
       }
 
@@ -3047,6 +3052,13 @@ sub dataAnalyze
       $slabObjAllLast[$i]= $slabObjAllTot[$i];
       $slabSlabActLast[$i]=$slabSlabActTot[$i];
       $slabSlabAllLast[$i]=$slabSlabAllTot[$i];
+
+      # Changes in total allocation since last one, noting on first pass it's always 0
+      my $slabTotMemNow=$slabSlabAllTotB[$i];
+      my $slabTotMemLast=(defined($slabTotalMemLast{$name})) ? $slabTotalMemLast{$name} : $slabTotMemNow;
+      $slabTotMemChg[$i]=$slabTotMemNow-$slabTotMemLast;
+      $slabTotMemPct[$i]=($slabTotMemLast!=0) ? 100*$slabTotMemChg[$i]/$slabTotMemLast : 0;
+      $slabTotalMemLast{$name}=$slabTotMemNow;
 
       # if --slabopt S, only count slabs whose objects or sizes have changed
       # since last interval.
@@ -3090,6 +3102,13 @@ sub dataAnalyze
         $slabNumObjTot+=  $slabdata{$slabname}->{objects};
         $slabUsedTot+=    $slabdata{$slabname}->{used}=$slabdata{$slabname}->{slabsize}*$slabdata{$slabname}->{objects};
         $slabTotalTot+=   $slabdata{$slabname}->{total}=$value*($PageSize<<$slabdata{$slabname}->{order});
+
+        # Changes in total allocation since last one, noting on first pass it's always 0
+        my $slabTotMemNow=$slabdata{$slabname}->{total};
+        my $slabTotMemLast=(defined($slabTotalMemLast{$slabname})) ? $slabTotalMemLast{$slabname} : $slabTotMemNow;
+        $slabdata{$slabname}->{memchg}=$slabTotMemNow-$slabTotMemLast;
+        $slabdata{$slabname}->{mempct}=($slabTotMemLast!=0) ? 100*$slabdata{$slabname}->{memchg}/$slabTotMemLast : 0;
+        $slabTotalMemLast{$slabname}=$slabTotMemNow;
       }
     }
   }
@@ -3137,6 +3156,12 @@ sub dataAnalyze
        $procCUTimeTot[$i], $procCSTimeTot[$i], $procPri[$i], $procNice[$i], $procCPU[$i])=
 		(split(/ /, $data))[2,3,4,10,12,14,15,16,17,18,19,39];
       return    if !defined($procSTimeTot[$i]);  # check for incomplete
+
+      if ($procOpts=~/c/)
+      {
+        $procUTimeTot[$i]+=$procCUTimeTot[$i];
+        $procSTimeTot[$i]+=$procCSTimeTot[$i];
+      }
 
       $procName[$i]=~s/[()]//g;  # proc names are wrapped in ()s
       $procPri[$i]="RT"    if $procPri[$i]<0;
@@ -3618,9 +3643,14 @@ sub intervalPrint
   $totalCounter++;
   derived();    # some variables are derived from others before printing
 
-  printPlot($seconds, $usecs)     if  $plotFlag && !$procAnalOnlyFlag;
+  my $tempSubsys=$subsys;
+  $tempSubsys=~s/Y//    if $slabAnalOnlyFlag;
+  $tempSubsys=~s/Z//    if $procAnalOnlyFlag;
+
+  printPlot($seconds, $usecs)     if  $plotFlag && $tempSubsys ne '';
   printTerm($seconds, $usecs)     if !$plotFlag && $expName eq '';
   procAnalyze($seconds, $usecs)   if  $procAnalFlag && $interval2Print;  # only if process data seen
+  slabAnalyze($seconds, $usecs)   if  $slabAnalFlag && $interval2Print;  # only if slab data seen
   &$expName($expOpts)             if  $expName ne '';
 }
 
@@ -3667,6 +3697,7 @@ sub printPlot
   # Furthermore, if we're doing -rawtoo, we DON'T generate these files since
   # the data is already being recorded in the raw file and we don't want to do
   # both
+
   if (!$rawtooFlag && $subsys=~/[YZ]/ && $interval2Print)
   {
     printPlotSlab($date, $time)    if $subsys=~/Y/;
@@ -3945,7 +3976,7 @@ sub printPlot
   #    E N V I R O N M E N T A L
   ###############################
 
-  if ($subsys=~/E/)
+  if ($subsys=~/E/ && $interval3Print)
   {
     $envPlot='';
     foreach $key (sort keys %$ipmiData)
@@ -3956,6 +3987,7 @@ sub printPlot
         my $inst=  $ipmiData->{$key}->[$i]->{inst};
         my $value= $ipmiData->{$key}->[$i]->{value};
         my $status=$ipmiData->{$key}->[$i]->{status};
+        $value=0    if $value eq '';
         $envPlot.="$SEP$value";
       }
     }
@@ -4284,7 +4316,7 @@ sub printTerm
   local $usecs=  shift;
   my ($ss, $mm, $hh, $mday, $mon, $year, $line, $i, $j);
 
-  # There are a couple of things we want to do in interactive --to mode regardless
+  # There are a couple of things we want to do in interactive --top mode regardless
   # of --brief or --verbose
   if ($numTop && $playback eq '')
   {
@@ -4296,14 +4328,15 @@ sub printTerm
       {
         my $lineNum=$totalCounter+2;
         $lineNum=$scrollEnd    if $lineNum>$scrollEnd;
-        $lineNum=0             if !$sameColsFlag;
+        $lineNum=0             if !$sameColsFlag || $detailFlag;
         printf "%c[%d;H", 27, $lineNum;
       }
 
       # We only want to clear the screen once and print the header once
-      # the first time through and then just overpaint starting with data
+      # the first time through and then just overpaint starting with data,
+      # unless of course we have details in which case we always print it.
       $clscr=$home;
-      $headerRepeat=0;
+      $headerRepeat=0    if !$detailFlag;
     }
     $printTermFirst=1;
   }
@@ -4331,7 +4364,8 @@ sub printTerm
     printBrief();
     if ($numTop)
     {
-      printTermProc();
+      printTermProc()    if $topProcFlag;
+      printTermSlab()    if $topSlabFlag;
       $headerRepeat=-1 && $playback eq '';    # only print header once interactively
     }
     return;
@@ -4484,9 +4518,9 @@ sub printTerm
       $line=sprintf("$datetime%-11s %6d %6d %4d %4s  %6d %6d %4d %4s   %5d %5d  %4d   %4d  %3d\n",
 		$dskName[$i],
 		$dskReadKB[$i]/$intSecs,  $dskReadMrg[$i]/$intSecs,  $dskRead[$i]/$intSecs,
-	        $dskRead[$i] ? cvt($dskReadKB[$i]/$dskRead[$i], 4) : 0,
+	        $dskRead[$i] ? cvt($dskReadKB[$i]/$dskRead[$i],4,0,1) : 0,
 		$dskWriteKB[$i]/$intSecs, $dskWriteMrg[$i]/$intSecs, $dskWrite[$i]/$intSecs,
-                $dskWrite[$i] ? cvt($dskWriteKB[$i]/$dskWrite[$i], 4) : 0,
+                $dskWrite[$i] ? cvt($dskWriteKB[$i]/$dskWrite[$i],4,0,1) : 0,
 		$dskRqst[$i], $dskQueLen[$i], $dskWait[$i], $dskSvcTime[$i], $dskUtil[$i]);
       printText($line);
     }
@@ -4676,39 +4710,39 @@ sub printTerm
  	printText("# LUSTRE OST SUMMARY ($rate)\n");
         if ($lustOpts!~/B/)
         {
-          printText("#  KBRead   Reads  SizeKB  KBWrite  Writes  SizeKB\n");
+          printText("#${miniFiller}  KBRead   Reads  SizeKB  KBWrite  Writes  SizeKB\n");
         }
         else
         {
-          printText("#<----------------------reads-------------------------|");
+          printText("#${miniFiller}<----------------------reads-------------------------|");
           printText("-----------------------writes------------------------->\n");
           $temp='';
           foreach my $i (@brwBuckets)
           { $temp.=sprintf(" %3dP", $i); }
-          printText("#RdK  Rds$temp WrtK Wrts$temp\n");
+          printText("#${miniFiller}RdK  Rds$temp WrtK Wrts$temp\n");
 	}
     }
 
     $line=$datetime;
     if ($lustOpts!~/B/)
     {
-      $line.=sprintf("  %7d  %6d  %6d  %7d  %6d  %6d",
+      $line.=sprintf("  %7d  %6d  %6s  %7d  %6d  %6s",
           $lustreReadKBytesTot/$intSecs,  $lustreReadOpsTot/$intSecs,
-	  $lustreReadOpsTot ? cvt( $lustreReadKBytesTot/$lustreReadOpsTot) : 0,
+	  $lustreReadOpsTot ? cvt($lustreReadKBytesTot/$lustreReadOpsTot,6,0,1) : 0,
           $lustreWriteKBytesTot/$intSecs, $lustreWriteOpsTot/$intSecs,
-	  $lustreWriteOpsTot ? cvt( $lustreWriteKBytesTot/$lustreWriteOpsTot) : 0);
+	  $lustreWriteOpsTot ? cvt($lustreWriteKBytesTot/$lustreWriteOpsTot,6,0,1) : 0);
     }
     else
     {
       $line.=sprintf("%4s %4s",
-	  cvt($lustreReadKBytesTot/$intSecs), cvt($lustreReadOpsTot/$intSecs));
+	  cvt($lustreReadKBytesTot/$intSecs,4,0,1), cvt($lustreReadOpsTot/$intSecs));
       for ($i=0; $i<$numBrwBuckets; $i++)
       {
         $line.=sprintf(" %4s", cvt($lustreBufReadTot[$i]/$intSecs));
       }
 
       $line.=sprintf(" %4s %4s",
-  	  cvt($lustreWriteKBytesTot/$intSecs), cvt($lustreWriteOpsTot/$intSecs));
+  	  cvt($lustreWriteKBytesTot/$intSecs,4,0,1), cvt($lustreWriteOpsTot/$intSecs));
       for ($i=0; $i<$numBrwBuckets; $i++)
       {
 	$line.=sprintf(" %4s", cvt($lustreBufWriteTot[$i]/$intSecs));
@@ -4807,7 +4841,7 @@ sub printTerm
       {
         $line.=sprintf("$datetime%-${OstWidth}s  %4s %4s",
 	       $lustreOsts[$i], 
-               cvt($lustreReadKBytes[$i]/$intSecs),
+               cvt($lustreReadKBytes[$i]/$intSecs,4,0,1),
 	       cvt($lustreReadOps[$i]/$intSecs));
         for ($j=0; $j<$numBrwBuckets; $j++)
         {
@@ -4815,7 +4849,7 @@ sub printTerm
         }
 
         $line.=sprintf(" %4s %4s",
-               cvt($lustreWriteKBytes[$i]/$intSecs),
+               cvt($lustreWriteKBytes[$i]/$intSecs,4,0,1),
   	       cvt($lustreWriteOps[$i]/$intSecs));
         for ($j=0; $j<$numBrwBuckets; $j++)
         {
@@ -4913,14 +4947,14 @@ sub printTerm
 
         $line="$datetime";
         $line.=sprintf("%4s %4s", 
-	    cvt($lustreCltReadKBTot/$intSecs), cvt($lustreCltReadTot/$intSecs));
+	    cvt($lustreCltReadKBTot/$intSecs,4,0,1), cvt($lustreCltReadTot/$intSecs));
         for ($i=0; $i<$numBrwBuckets; $i++)
         {
 	  $line.=sprintf(" %4s", cvt($lustreCltRpcReadTot[$i]/$intSecs));
         }
 
         $line.=sprintf(" %4s %4s",
-            cvt($lustreCltWriteKBTot/$intSecs), cvt($lustreCltWriteTot/$intSecs));
+            cvt($lustreCltWriteKBTot/$intSecs,4,0,1), cvt($lustreCltWriteTot/$intSecs));
         for ($i=0; $i<$numBrwBuckets; $i++)
         {
 	  $line.=sprintf(" %4s", cvt($lustreCltRpcWriteTot[$i]/$intSecs));
@@ -5027,7 +5061,7 @@ sub printTerm
         {
           $line=sprintf("$datetime%-${FSWidth}s %-${OstWidth}s", $lustreCltOstFS[$clt], $lustreCltOsts[$clt]);
           $line.=sprintf("%4s %4s", 
-                 cvt($lustreCltLunReadKB[$clt]/$intSecs), cvt($lustreCltLunRead[$clt]/$intSecs));
+                 cvt($lustreCltLunReadKB[$clt]/$intSecs,4,0,1), cvt($lustreCltLunRead[$clt]/$intSecs));
 
           for ($i=0; $i<$numBrwBuckets; $i++)
           {
@@ -5035,7 +5069,7 @@ sub printTerm
           }
 
           $line.=sprintf(" %4s %4s",
-    	         cvt($lustreCltLunWriteKB[$clt]/$intSecs), cvt($lustreCltLunWrite[$clt]/$intSecs));
+    	         cvt($lustreCltLunWriteKB[$clt]/$intSecs,4,0,1), cvt($lustreCltLunWrite[$clt]/$intSecs));
           for ($i=0; $i<$numBrwBuckets; $i++)
           {
 	    $line.=sprintf(" %4s", cvt($lustreCltRpcWrite[$clt][$i]/$intSecs));
@@ -5249,9 +5283,10 @@ sub printTerm
           $envHeader.=sprintf(" %7s", $name);
         }
 
+        # Not sure if I should be reporting 0 but that's why this is experimental!
         my $value= $ipmiData->{$key}->[$i]->{value};
         my $status=$ipmiData->{$key}->[$i]->{status};
-        $line.=sprintf(" %7s", $value);
+        $line.=sprintf(" %7s", ($value ne '') ? $value : 0);
       }
 
       # a multi-line print is done for each unique type (currently just fan & temp)
@@ -5299,8 +5334,8 @@ sub printTerm
       }
 
       $line=sprintf("$datetime%7d %7d %7d %7d %7d %7s %7s\n",
-          $ibRxKBTot/$intSecs, $ibRxTot/$intSecs, $ibRxTot ? cvt($ibRxKBTot*1024/$ibRxTot, 7) : 0,
-          $ibTxKBTot/$intSecs, $ibTxTot/$intSecs, $ibTxTot ? cvt($ibTxKBTot*1024/$ibTxTot, 7) : 0,
+          $ibRxKBTot/$intSecs, $ibRxTot/$intSecs, $ibRxTot ? cvt($ibRxKBTot*1024/$ibRxTot,7,0,1) : 0,
+          $ibTxKBTot/$intSecs, $ibTxTot/$intSecs, $ibTxTot ? cvt($ibTxKBTot*1024/$ibTxTot,7,0,1) : 0,
           $ibErrorsTotTot);
       printText($line);
     }
@@ -5391,71 +5426,7 @@ sub printTerm
 
   if ($subsys=~/Y/ && $interval2Print)
   {
-    if ($slabinfoFlag)
-    {
-      if (printHeader())
-      {
-        printText("\n")    if !$homeFlag;
-        printText("# SLAB DETAIL\n");
-        printText("#${miniFiller}                      <-----------Objects----------><---------Slab Allocation------>\n");
-        printText("#${miniFiller}Name                  InUse   Bytes   Alloc   Bytes   InUse   Bytes   Total   Bytes\n");
-      }
-
-      for ($i=0; $i<$slabIndexNext; $i++)
-      {
-        # the first test is for filtering out zero-size slabs and the
-        # second for slabs that didn't change this during this interval
-        next    if ($slabOpts=~/s/ && $slabSlabAllTot[$i]==0) ||
- 	           ($slabOpts=~/S/ && $slabSlabAct[$i]==0 && $slabSlabAll[$i]==0);
-
-        $line=sprintf("$datetime%-20s %7s %7s  %6s %7s  %6s %7s  %6s %7s\n",
-          $slabName[$i],
-	  cvt($slabObjActTot[$i],6),    cvt($slabObjActTotB[$i],7,0,1), 
-  	  cvt($slabObjAllTot[$i],6),    cvt($slabObjAllTotB[$i],7,0,1),
-	  cvt($slabSlabActTot[$i],6),   cvt($slabSlabActTotB[$i],7,0,1),
-	  cvt($slabSlabAllTot[$i],6),   cvt($slabSlabAllTotB[$i],7,0,1));
-
-        printText($line);
-      }
-    }
-    else
-    {
-      if (printHeader())
-      {
-        printText("\n")    if !$homeFlag;
-        printText("# SLAB DETAIL\n");
-        printText("#${miniFiller}                             <----------- objects -----------><--- slabs ---><----- memory ----->\n");
-        printText("#${miniFiller}Slab Name                    Size  /slab   In Use     Avail    SizeK  Number      UsedK    TotalK\n");
-      }
-
-      foreach my $first (sort keys %slabfirst)
-      {
-	my $slab=$slabfirst{$first};
-
-        # as for regular slabs, the first test is for filtering out zero-size
-        # slabs and the second for slabs that didn't change this during this interval
-	my $numObjects=$slabdata{$slab}->{objects};
-        my $numSlabs=  $slabdata{$slab}->{slabs};
-        next    if ($slabOpts=~/s/ && $slabdata{$slab}->{objects}==0) ||
- 	           ($slabOpts=~/S/ && $slabdata{$slab}->{lastobj}==$numObjects &&
-				     $slabdata{$slab}->{lastslabs}==$numSlabs);
-
-        printf "$datetime%-25s  %7d  %5d  %7d  %7d     %5d %7d   %8d  %8d\n",
-            $first,
-	    $slabdata{$slab}->{slabsize},
-	    $slabdata{$slab}->{objper},
-	    $numObjects,
-	    $slabdata{$slab}->{avail},
-            ($PageSize<<$slabdata{$slab}->{order})/1024,
-	    $numSlabs, 
-	    $slabdata{$slab}->{used}/1024, 
-	    $slabdata{$slab}->{total}/1024;
-
-        # So we can tell when something changes
-        $slabdata{$slab}->{lastobj}=  $numObjects;
-        $slabdata{$slab}->{lastslabs}=$numSlabs;
-      }
-    }
+    printTermSlab();
   }
 
   if ($subsys=~/Z/ && $interval2Print)
@@ -5468,6 +5439,181 @@ sub printTerm
   # we never clear the screen more than once but rather just overwrite what's there
   printText($clr)    if $numTop && $playback eq '';
   $clscr=$home;
+}
+
+sub printTermSlab
+{
+  # Much of the top-slab methodology stolen from printTermProc()
+  my %slabSort;
+  my $slabCount=0;
+  my $eol=sprintf("%c[K", 27);
+  printf "%c[%d;H", 27, $scrollEnd ? $scrollEnd+1 : 0    if $numTop && $playback eq '';
+
+  if (printHeader() || $numTop)
+  {
+    if ($numTop)
+    {
+      $temp2=(split(/\s+/,localtime($seconds)))[3];
+      $temp2.=sprintf(".%03d", $usecs)    if $options=~/m/;
+    }
+
+    printText("\n")    if !$homeFlag;
+    my $temp=(!$topSlabFlag) ? 'SLAB DETAIL' : "TOP SLABS $temp2";
+    printText("# $temp\n");
+    if ($topSlabFlag)
+    {
+      print "#NumObj  ActObj  ObjSize  NumSlab  Obj/Slab  TotSize  TotChg  TotPct  Name\n";
+    }
+    elsif ($slabinfoFlag)
+    {
+      printText("#${miniFiller}                      <-----------Objects----------><---------Slab Allocation------><----Change-->\n");
+      printText("#${miniFiller}Name                  InUse   Bytes   Alloc   Bytes   InUse   Bytes   Total   Bytes   Diff    Pct\n");
+    }
+    else
+    {
+      printText("#${miniFiller}                             <----------- objects --------><--- slabs ---><---------allocated memory-------->\n");
+      printText("#${miniFiller}Slab Name                    Size  /slab   In Use    Avail  SizeK  Number     UsedK    TotalK   Change    Pct\n");
+    }
+  }
+
+  if ($slabinfoFlag)
+  {
+    for ($i=0; $i<$slabIndexNext; $i++)
+    {
+      if (!$topSlabFlag || $topType eq 'name') {
+        $key=$slabName[$i];
+      } elsif ($topType eq 'numobj') {
+        $key=sprintf('%9d', 999999999-$slabObjAllTot[$i]);
+      } elsif ($topType eq 'actobj') {
+        $key=sprintf('%9d', 999999999-$slabObjActTot[$i]);
+      } elsif ($topType eq 'objsize') {
+        $key=sprintf('%9d', 999999999-$slabObjSize[$i]);
+      } elsif ($topType eq 'numslab') {
+        $key=sprintf('%9d', 999999999-$slabSlabActTot[$i]);
+      } elsif ($topType eq 'objslab') {
+        $key=sprintf('%9d', 999999999-$slabObjPerSlab[$i]);
+      } elsif ($topType eq 'totsize') {
+        $key=sprintf('%9d', 999999999-$slabSlabAllTotB[$i]);
+      } elsif ($topType eq 'totchg') {
+        $key=sprintf('%9d', 999999999-abs($slabTotMemChg[$i]));
+      } elsif ($topType eq 'totpct') {
+        $key=sprintf('%9d', 999999999-abs($slabTotMemPct[$i]));
+	      }
+      $slabSort{"$key-$i"}=$i;    # need to include '-$i' to allow duplicates
+    }
+
+    foreach $key (sort keys %slabSort)
+    {
+      $i=$slabSort{$key};
+
+      # the first test is for filtering out zero-size slabs and the
+      # second for slabs that didn't change this during this interval
+      next    if (($slabSlabAllTot[$i]==0 && ($topSlabFlag || $slabOpts=~/s/)) || 
+ 	          ($slabOpts=~/S/ && $slabSlabAct[$i]==0 && $slabSlabAll[$i]==0));
+
+      if ($topSlabFlag)
+      {
+        last    if ++$slabCount>$numTop;
+	$line=sprintf("%7s %7s  %7s  %7s   %7s  %7s %7s  %6.1f  %s",
+		cvt($slabObjAllTot[$i],6),  cvt($slabObjActTot[$i],6), 
+		cvt($slabObjSize[$i],6),    cvt($slabSlabActTot[$i],6),
+		cvt($slabObjPerSlab[$i],6), cvt($slabSlabAllTotB[$i],4,0,1), 
+		cvt($slabTotMemChg[$i],4,0,1),$slabTotMemPct[$i], $slabName[$i]);
+
+        $line.=$eol    if $playback eq '' && $numTop;
+        $line.="\n"    if $playback ne '' || !$numTop || $slabCount<$numTop;
+        printText($line);
+        next;
+      }
+
+      $line=sprintf("$datetime%-20s %7s %7s  %6s %7s  %6s %7s  %6s %7s %6s %6.1f\n",
+          $slabName[$i],
+	  cvt($slabObjActTot[$i],6),    cvt($slabObjActTotB[$i],7,0,1), 
+  	  cvt($slabObjAllTot[$i],6),    cvt($slabObjAllTotB[$i],7,0,1),
+	  cvt($slabSlabActTot[$i],6),   cvt($slabSlabActTotB[$i],7,0,1),
+	  cvt($slabSlabAllTot[$i],6),   cvt($slabSlabAllTotB[$i],7,0,1),
+	  cvt($slabTotMemChg[$i],7,0,1),$slabTotMemPct[$i]);
+
+      printText($line);
+    }
+  }
+  else
+  {
+    foreach my $first (sort keys %slabfirst)
+    {
+      my $slab=$slabfirst{$first};
+      if (!$topSlabFlag || $topType eq 'name') {
+        $key=lc($first);   # otherwise all upper-case names will come first
+      } elsif ($topType eq 'numobj') {
+        $key=sprintf('%9d', 999999999-$slabdata{$slab}->{slabsize}*$slabdata{$slab}->{avail});
+      } elsif ($topType eq 'actobj') {
+        $key=sprintf('%9d', 999999999-$slabdata{$slab}->{slabsize}*$slabdata{$slab}->{objects});
+      } elsif ($topType eq 'objsize') {
+        $key=sprintf('%9d', 999999999-$slabdata{$slab}->{slabsize});
+      } elsif ($topType eq 'numslab') {
+        $key=sprintf('%9d', 999999999-$slabdata{$slab}->{slabs});
+      } elsif ($topType eq 'objslab') {
+        $key=sprintf('%9d', 999999999-$slabdata{$slab}->{objper});
+      } elsif ($topType eq 'totsize') {
+        $key=sprintf('%9d', 999999999-$slabdata{$slab}->{total});
+      } elsif ($topType eq 'totchg') {
+        $key=sprintf('%9d', 999999999-abs($slabdata{$slab}->{memchg}));
+      } elsif ($topType eq 'totpct') {
+        $key=sprintf('%9d', 999999999-abs($slabdata{$slab}->{mempct}));
+      }	
+      $slabSort{"$key-$first"}=$first;    # need to include '-$first' to allow duplicates
+    }
+
+    foreach my $key (sort keys %slabSort)
+    {
+      my $first=$slabSort{$key};
+      my $slab=$slabfirst{$first};
+
+      # as for regular slabs, the first test is for filtering out zero-size
+      # slabs and the second for slabs that didn't change this during this interval
+      my $numObjects=$slabdata{$slab}->{objects};
+      my $numSlabs=  $slabdata{$slab}->{slabs};
+      next    if (($slabdata{$slab}->{objects}==0 && ($topSlabFlag || $slabOpts=~/s/)) || 
+ 	          ($slabOpts=~/S/ && $slabdata{$slab}->{lastobj}==$numObjects &&
+	   	                     $slabdata{$slab}->{lastslabs}==$numSlabs));
+
+      if ($topSlabFlag)
+      {
+        last    if ++$slabCount>$numTop;
+        $line=sprintf("%7s %7s  %7s  %7s   %7s  %7s %7s  %6.1f  %s",
+		cvt($slabdata{$slab}->{slabsize}*$slabdata{$slab}->{avail},6),
+		cvt($slabdata{$slab}->{slabsize}*$numObjects,6),
+		cvt($slabdata{$slab}->{slabsize},6),
+		cvt($numSlabs,6),
+		cvt($slabdata{$slab}->{objper},6),
+		cvt($slabdata{$slab}->{total},4,0,1),
+                cvt($slabdata{$slab}->{memchg},4,0,1),
+                $slabdata{$slab}->{mempct}, $first);
+
+        $line.=$eol    if $playback eq '' && $numTop;
+        $line.="\n"    if $playback ne '' || !$numTop || $slabCount<$numTop;
+        printText($line);
+        next;
+      }
+
+      printf "$datetime%-25s  %7d  %5d  %7d  %7d  %5d %7d  %8d  %8d  %7s %6.1f\n",
+            $first,
+	    $slabdata{$slab}->{slabsize},
+	    $slabdata{$slab}->{objper},
+	    $numObjects,
+	    $slabdata{$slab}->{avail},
+            ($PageSize<<$slabdata{$slab}->{order})/1024,
+	    $numSlabs, 
+	    $slabdata{$slab}->{used}/1024, 
+	    $slabdata{$slab}->{total}/1024,
+            cvt($slabdata{$slab}->{memchg},7,0,1),
+            $slabdata{$slab}->{mempct};
+
+      # So we can tell when something changes
+      $slabdata{$slab}->{lastobj}=  $numObjects;
+      $slabdata{$slab}->{lastslabs}=$numSlabs;
+    }
+  }
 }
 
 sub printTermProc
@@ -5490,15 +5636,20 @@ sub printTermProc
     # processes when in top mode since we ALWAYS want them
     if (printHeader() || $numTop)
     {
+      printText("\n")    if !$homeFlag;
+      $temp1=($procOpts=~/f/) ? "(counters are cumulative)" : "(counters are $rate)";
+
       $temp2='';
       if ($numTop)
       {
         $temp2= " ".(split(/\s+/,localtime($seconds)))[3];
         $temp2.=sprintf(".%03d", $usecs)    if $options=~/m/;
+        printText("# TOP PROCESSES sorted by $topType $temp1$temp2\n");
       }
-      printText("\n")    if !$homeFlag;
-      $temp1=($options=~/F/) ? "(faults are cumulative)" : "(faults are $rate)";
-      printText("# PROCESS SUMMARY $temp1$temp2\n");
+      else
+      {
+        printText("# PROCESS SUMMARY $temp1$temp2\n");
+      }
 
       if ($procOpts!~/[im]/)
       {
@@ -5508,7 +5659,7 @@ sub printTermProc
       }
       elsif ($procOpts=~/i/)
       {
-        $tempHdr= "#${tempFiller} PID  User      PPID S  SysT  UsrT   RKB   WKB  RKBC  WKBC  RSys  WSys  Cncl Command\n";
+        $tempHdr= "#${tempFiller} PID  User      PPID S  SysT  UsrT Pct AccuTime   RKB   WKB  RKBC  WKBC  RSys  WSys  Cncl Command\n";
       }
       elsif ($procOpts=~/m/)
       {
@@ -5600,7 +5751,7 @@ sub printTermProc
       last    if $numTop && ++$procCount>$numTop;
 
       # Handle -oF
-      if ($options=~/F/)
+      if ($procOpts=~/f/)
       {
 	$majFlt=$procMajFltTot[$i];
 	$minFlt=$procMinFltTot[$i];
@@ -5612,13 +5763,18 @@ sub printTermProc
       }
 
       # If wide mode we include the command arguments AND chop trailing spaces
-      # Since a program CAN modify its definition in /proc/pid/cmdline, it can
-      # end up without a trailing null and ultimately the split below results
-      # in an undefined $cmd1, which is why we need to test/init it if need be
       ($cmd0, $cmd1)=(defined($procCmd[$i])) ? split(/\s+/,$procCmd[$i],2) : ($procName[$i],'');
       $cmd0=basename($cmd0)    if $procOpts=~/r/ && $cmd0=~/^\//;
       $cmd1=''                 if $procOpts!~/w/ || !defined($cmd1);
-      $cmd1=~s/\s+$//          if $procOpts=~/w/;
+
+      # Since a program CAN modify its definition in /proc/pid/cmdline, it can
+      # end up without a trailing null and ultimately the split below results
+      # in an undefined $cmd1, which is why we need to test/init it if need be
+      if ($procOpts=~/w/)
+      {
+        $cmd1=~s/\s+$//;
+        $cmd1=substr($cmd1, 0, $procCmdWidth);
+      }
 
       # This is the standard format
       if ($procOpts!~/[im]/)
@@ -5626,44 +5782,46 @@ sub printTermProc
         # Note we only started fetching Tgid in V3.0.0
         $line=sprintf("$tempTStamp%5d%s %-8s %2s %5d %1s %5s %5s %2d %s %s %s %s ", 
 		$procPid[$i],  $procThread[$i] ? '+' : ' ',
-		$procUser[$i], $procPri[$i],
+		substr($procUser[$i],0,8), $procPri[$i],
                 defined($procTgid[$i]) && $procTgid[$i]!=$procPid[$i] ? $procTgid[$i] : $procPpid[$i],
                 $procState[$i], 
-		defined($procVmSize[$i]) ? cvt($procVmSize[$i],4,1) : 0, 
-		defined($procVmRSS[$i])  ? cvt($procVmRSS[$i],4,1)  : 0,
+		defined($procVmSize[$i]) ? cvt($procVmSize[$i],4,1,1) : 0, 
+		defined($procVmRSS[$i])  ? cvt($procVmRSS[$i],4,1,1)  : 0,
 		$procCPU[$i],
 		cvtT1($procSTime[$i]), cvtT1($procUTime[$i]), 
 		cvtP($procSTime[$i]+$procUTime[$i]),
 		cvtT2($procSTimeTot[$i]+$procUTimeTot[$i]));
         $line.=sprintf("%4s %4s ", 
-		cvt($procRKB[$i]/$interval2Secs),
-		cvt($procWKB[$i]/$interval2Secs))     if $processIOFlag;
+		cvt($procRKB[$i]/$interval2Secs,4,0,1),
+		cvt($procWKB[$i]/$interval2Secs,4,0,1))     if $processIOFlag;
         $line.=sprintf("%4s %4s %s %s", 
 		cvt($majFlt), cvt($minFlt), $cmd0, $cmd1);
       }
       elsif ($procOpts=~/i/)
       {
-        $line=sprintf("%s%5d%s %-8s %5d %1s %s %s ",
+        $line=sprintf("%s%5d%s %-8s %5d %1s %s %s %3d %s ",
                 $tempTStamp, $procPid[$i], $procThread[$i] ? '+' : ' ',
-                $procUser[$i],
+                substr($procUser[$i],0,8),
                 defined($procTgid[$i]) && $procTgid[$i]!=$procPid[$i] ? $procTgid[$i] : $procPpid[$i],
                 $procState[$i],
-                cvtT1($procSTime[$i]), cvtT1($procUTime[$i]));
+                cvtT1($procSTime[$i]), cvtT1($procUTime[$i]),
+		cvtP($procSTime[$i]+$procUTime[$i]),
+                cvtT2($procSTimeTot[$i]+$procUTimeTot[$i]));
         $line.=sprintf("%5s %5s %5s %5s %5s %5s %5s %s %s",
-                cvt($procRKB[$i]/$interval2Secs),
-                cvt($procWKB[$i]/$interval2Secs),
-                cvt($procRKBC[$i]/$interval2Secs),
-                cvt($procWKBC[$i]/$interval2Secs),
-                cvt($procRSys[$i]/$interval2Secs),
-                cvt($procWSys[$i]/$interval2Secs),
-                cvt($procCKB[$i]/$interval2Secs),
+                cvt($procRKB[$i]/$interval2Secs,5,0,1),
+                cvt($procWKB[$i]/$interval2Secs,5,0,1),
+                cvt($procRKBC[$i]/$interval2Secs,5,0,1),
+                cvt($procWKBC[$i]/$interval2Secs,5,0,1),
+                cvt($procRSys[$i]/$interval2Secs,5,0,1),
+                cvt($procWSys[$i]/$interval2Secs,5,0,1),
+                cvt($procCKB[$i]/$interval2Secs,5,0,1),
 		$cmd0, $cmd1);
       }
       elsif ($procOpts=~/m/)
       {
         $line=sprintf("%s%5d%s %-8s %1s %6s %6s %6s %6s %6s %6s %6s %4s %4s %s %s",
                 $tempTStamp, $procPid[$i], $procThread[$i] ? '+' : ' ',
-                $procUser[$i], $procState[$i],
+                substr($procUser[$i],0,8), $procState[$i],
                 defined($procVmSize[$i]) ? cvt($procVmSize[$i],6,1,1) : 0,
                 defined($procVmLck[$i])  ? cvt($procVmLck[$i],6,1,1)  : 0,
                 defined($procVmRSS[$i])  ? cvt($procVmRSS[$i],6,1,1)  : 0,
@@ -5722,16 +5880,20 @@ sub cvt
   my $divisorType=shift;
   my ($divisor, $units);
 
-  $width=4          if !defined($width);
-  $unitCounter=0    if !defined($unitCounter);
-  $divisorType=0    if !defined($divisorType);
-  $field=int($field+.5);    # round up in case <1
+  $width=4                 if !defined($width);
+  $unitCounter=0           if !defined($unitCounter);
+  $divisorType=0           if !defined($divisorType);
+  $field=int($field+.5)    if $field>0;    # round up in case <1
 
   # This is tricky, because if the value fits within the width, we
   # must also be sure the unit counter is 0 otherwise both may not
   # fit.  Naturally in 'wide' mode we aways report the complete value
   # and we never print units with values of 0.
   return($field)    if ($field==0) || ($unitCounter<1 && length($field)<=$width) || $wideFlag;
+
+  # At least with slabs you can get negative numbers since we're tracking changes
+  my $sign=($field<0) ? -1 : 1;
+  $field=abs($field);
 
   my $last=0;
   $divisor=($divisorType==0) ? 1000 : $OneKB;
@@ -5741,8 +5903,10 @@ sub cvt
     $field=int($field/$divisor);
     $unitCounter++;
   }
+  $field*=$sign;
+
   $units=substr(" KMGTP", $unitCounter, 1);
-  my $result="$field$units";
+  my $result=(abs($field)>0) ? "$field$units" : "1$units";
   
   # Messy, but I hope reasonable efficient.  We're only applying this to
   # fields >= 'G' and options g/G!  Furthermore, for -oG we only reformat 
@@ -5751,11 +5915,15 @@ sub cvt
   {
     if ($options=~/G/ && $len==1)
     {
-      $result="$field.".substr($last, $len, 2-$len).'G';
+      my $fraction=substr($last, $len, 2-$len);
+      $fraction='1'    if $fraction==0;
+      $result="$field.".$fraction.'G';
     }
     elsif ($options=~/g/)
     {
-      $result="${field}g".substr($last, $len, 3-$len);
+      my $fraction=substr($last, $len, 3-$len);
+      $fraction='01'    if $fraction==0;
+      $result="${field}g".$fraction;
     }
   }
   return($result);
@@ -5797,6 +5965,7 @@ sub cvtT2
   $secs=$secs-$mins*60;
   $time=sprintf("$MF:%02d", $mins, $secs);
   $time.=sprintf('.%02d', $hsec);
+  $time=sprintf("%9s", (split(/\./, $time))[0])    if length($time)>9;    # for time > 999 minutes
   return($time);
 }
 
@@ -5810,13 +5979,27 @@ sub cvtT3
   return(sprintf("%d:%02d:%02d", $hours, $mins, $secs-$hours*3600-$mins*60));
 }
 
+# convert time in seconds to date/time
+sub cvtT4
+{
+  my $seconds=shift;
+
+  my $msec=($options=~/m/) ? sprintf(".%s", (split(/\./, $seconds))[1]) : '';
+  my ($ss, $mm, $hh, $mday, $mon, $year)=localtime($seconds);
+  my $date=($options=~/d/) ?
+         sprintf("%02d/%02d", $mon+1, $mday) :
+         sprintf("%d%02d%02d", $year+1900, $mon+1, $mday);
+  my $time= sprintf("%02d:%02d:%02d%s", $hh, $mm, $ss, $msec);
+  return($date, $time);
+}
+
 sub cvtP
 {
   my $jiffies=shift;
   my ($secs, $percent);
 
   $secs=$jiffies/$HZ;
-  $percent=sprintf("%3d", 100*$secs/$interval2Secs);
+  $percent=sprintf("%3d", 100*$secs/$interval2SecsReal);
   return($percent);
 }
 
@@ -5895,7 +6078,7 @@ sub printSeparator
   # here's where we decide whether or not we really want the interval headers.  This is also
   # where all the special cases come in.
   return    if !$numTop && $sameColsFlag && $subsys!~/[YZ]/ && !$homeFlag;
-  return    if  $numTop && $playback eq '';
+  return    if  $numTop && $playback eq '' && !$detailFlag;
   return    if $subsys eq 'Y' && ($slabFilt ne '' || $slabOpts=~/S/);
   return    if $subsys eq 'Z' && $procFilt ne '';
 
@@ -6127,16 +6310,16 @@ sub printBrief
     if (!$ioSizeFlag)
     {
       $line.=sprintf("%6s %6s %6s %6s ",
-          cvt($dskReadKBTot/$intSecs,6),  cvt($dskReadTot/$intSecs,6),
-          cvt($dskWriteKBTot/$intSecs,6), cvt($dskWriteTot/$intSecs,6));
+          cvt($dskReadKBTot/$intSecs,6,0,1),  cvt($dskReadTot/$intSecs,6),
+          cvt($dskWriteKBTot/$intSecs,6,0,1), cvt($dskWriteTot/$intSecs,6));
     }
     else
     {
       $dskReadSizeTot= ($dskReadTot)  ? $dskReadKBTot/$dskReadTot : 0; 
       $dskWriteSizeTot=($dskWriteTot) ? $dskWriteKBTot/$dskWriteTot : 0; 
       $line.=sprintf("%6s %6s %4s %6s %6s %4s ",
-          cvt($dskReadKBTot/$intSecs,6),  cvt($dskReadTot/$intSecs,6),  cvt($dskReadSizeTot, 4),
-          cvt($dskWriteKBTot/$intSecs,6), cvt($dskWriteTot/$intSecs,6), cvt($dskWriteSizeTot, 4));
+          cvt($dskReadKBTot/$intSecs,6,0,1),  cvt($dskReadTot/$intSecs,6),  cvt($dskReadSizeTot, 4),
+          cvt($dskWriteKBTot/$intSecs,6,0,1), cvt($dskWriteTot/$intSecs,6), cvt($dskWriteSizeTot, 4));
     }
   }
 
@@ -6146,16 +6329,16 @@ sub printBrief
     if (!$ioSizeFlag)
     {
       $line.=sprintf("%6s %6s %6s  %6s ",
-          cvt($netEthRxKBTot/$intSecs,6), cvt($netEthRxPktTot/$intSecs,6),
-          cvt($netEthTxKBTot/$intSecs,6), cvt($netEthTxPktTot/$intSecs,6));
+          cvt($netEthRxKBTot/$intSecs,6,0,1), cvt($netEthRxPktTot/$intSecs,6),
+          cvt($netEthTxKBTot/$intSecs,6,0,1), cvt($netEthTxPktTot/$intSecs,6));
     }
     else
     {
       $netEthRxSizeTot=($netEthRxPktTot) ? $netEthRxKBTot*1024/$netEthRxPktTot : 0;
       $netEthTxSizeTot=($netEthTxPktTot) ? $netEthTxKBTot*1024/$netEthTxPktTot : 0;
       $line.=sprintf("%6s %6s %4s %6s  %6s %4s ",
-          cvt($netEthRxKBTot/$intSecs,6), cvt($netEthRxPktTot/$intSecs,6), cvt($netEthRxSizeTot,4),
-          cvt($netEthTxKBTot/$intSecs,6), cvt($netEthTxPktTot/$intSecs,6), cvt($netEthTxSizeTot,4));
+          cvt($netEthRxKBTot/$intSecs,6,0,1), cvt($netEthRxPktTot/$intSecs,6), cvt($netEthRxSizeTot,4,0,1),
+          cvt($netEthTxKBTot/$intSecs,6,0,1), cvt($netEthTxPktTot/$intSecs,6), cvt($netEthTxSizeTot,4,0,1));
     }
   }
 
@@ -6185,8 +6368,8 @@ sub printBrief
     {
       $elanErrors=$elanSendFailTot+$elanNeterrAtomicTot+$elanNeterrDmaTot;
       $line.=sprintf("%7s %6s %7s %6s %4s ",
-          cvt($elanRxKBTot/$intSecs,7), cvt($elanRxTot/$intSecs,6),
-          cvt($elanTxKBTot/$intSecs,7), cvt($elanTxTot/$intSecs,6),
+          cvt($elanRxKBTot/$intSecs,7,0,1), cvt($elanRxTot/$intSecs,6),
+          cvt($elanTxKBTot/$intSecs,7,0,1), cvt($elanTxTot/$intSecs,6),
 	  cvt($elanErrors/$intSecs,4));
     }
     if ($NumHCAs || $NumXRails+$NumHCAs==0)
@@ -6194,17 +6377,17 @@ sub printBrief
       if (!$ioSizeFlag)
       {
         $line.=sprintf("%7s %6s %7s %6s %4s ",
-            cvt($ibRxKBTot/$intSecs,7), cvt($ibRxTot/$intSecs,6),
-            cvt($ibTxKBTot/$intSecs,7), cvt($ibTxTot/$intSecs,6),
+            cvt($ibRxKBTot/$intSecs,7,0,1), cvt($ibRxTot/$intSecs,6),
+            cvt($ibTxKBTot/$intSecs,7,0,1), cvt($ibTxTot/$intSecs,6),
 	    cvt($ibErrorsTotTot,4));
       }
       else
       {
         $line.=sprintf("%7s %6s %4s %7s %6s %4s %4s ",
-            cvt($ibRxKBTot/$intSecs,7), cvt($ibRxTot/$intSecs,6),
-	    $ibRxTot ? cvt($ibRxKBTot*1024/$ibRxTot,4) : 0,
-            cvt($ibTxKBTot/$intSecs,7), cvt($ibTxTot/$intSecs,6),
-            $ibTxTot ? cvt($ibTxKBTot*1024/$ibTxTot,4) : 0,
+            cvt($ibRxKBTot/$intSecs,7,0,1), cvt($ibRxTot/$intSecs,6),
+	    $ibRxTot ? cvt($ibRxKBTot*1024/$ibRxTot,4,0,1) : 0,
+            cvt($ibTxKBTot/$intSecs,7,0,1), cvt($ibTxTot/$intSecs,6),
+            $ibTxTot ? cvt($ibTxKBTot*1024/$ibTxTot,4,0,1) : 0,
             cvt($ibErrorsTotTot,4));
       }
     }
@@ -6240,16 +6423,16 @@ sub printBrief
     if (!$ioSizeFlag)
     {
       $line.=sprintf("%7s %6s %7s %6s ",
-          cvt($lustreReadKBytesTot/$intSecs,7),  cvt($lustreReadOpsTot/$intSecs,6),
-          cvt($lustreWriteKBytesTot/$intSecs,7), cvt($lustreWriteOpsTot/$intSecs,6));
+          cvt($lustreReadKBytesTot/$intSecs,7,0,1),  cvt($lustreReadOpsTot/$intSecs,6),
+          cvt($lustreWriteKBytesTot/$intSecs,7,0,1), cvt($lustreWriteOpsTot/$intSecs,6));
     }
     else
     {
       $line.=sprintf("%7s %6s %4s %7s %6s %4s ",
-          cvt($lustreReadKBytesTot/$intSecs,7),  cvt($lustreReadOpsTot/$intSecs,6),
-          $lustreReadOpsTot ? cvt($lustreReadKBytesTot/$lustreReadOpsTot, 4) : 0,
-          cvt($lustreWriteKBytesTot/$intSecs,7), cvt($lustreWriteOpsTot/$intSecs,6),
-          $lustreWriteOpsTot ? cvt($lustreWriteKBytesTot/$lustreWriteOpsTot, 4) : 0);
+          cvt($lustreReadKBytesTot/$intSecs,7,0,1),  cvt($lustreReadOpsTot/$intSecs,6),
+          $lustreReadOpsTot ? cvt($lustreReadKBytesTot/$lustreReadOpsTot,4,0,1) : 0,
+          cvt($lustreWriteKBytesTot/$intSecs,7,0,1), cvt($lustreWriteOpsTot/$intSecs,6),
+          $lustreWriteOpsTot ? cvt($lustreWriteKBytesTot/$lustreWriteOpsTot,4,0,1) : 0);
     }
   }
 
@@ -6259,16 +6442,16 @@ sub printBrief
     if (!$ioSizeFlag)
     {
       $line.=sprintf("%7s %6s  %7s %6s", 
-	  cvt($lustreCltReadKBTot/$intSecs,7),  cvt($lustreCltReadTot/$intSecs),
-          cvt($lustreCltWriteKBTot/$intSecs,7), cvt($lustreCltWriteTot/$intSecs,6));
+	  cvt($lustreCltReadKBTot/$intSecs,7,0,1),  cvt($lustreCltReadTot/$intSecs),
+          cvt($lustreCltWriteKBTot/$intSecs,7,0,1), cvt($lustreCltWriteTot/$intSecs,6));
     }
     else
     {
       $line.=sprintf("%7s %6s %4s  %7s %6s %4s",
-          cvt($lustreCltReadKBTot/$intSecs,7),  cvt($lustreCltReadTot/$intSecs),
-	  $lustreCltReadTot ? cvt($lustreCltReadKBTot/$lustreCltReadTot,4) : 0,
-          cvt($lustreCltWriteKBTot/$intSecs,7), cvt($lustreCltWriteTot/$intSecs,6),
-          $lustreCltWriteTot ? cvt($lustreCltWriteKBTot/$lustreCltWriteTot,4) : 0);
+          cvt($lustreCltReadKBTot/$intSecs,7,0,1),  cvt($lustreCltReadTot/$intSecs),
+	  $lustreCltReadTot ? cvt($lustreCltReadKBTot/$lustreCltReadTot,4,0,1) : 0,
+          cvt($lustreCltWriteKBTot/$intSecs,7,0,1), cvt($lustreCltWriteTot/$intSecs,6),
+          $lustreCltWriteTot ? cvt($lustreCltWriteKBTot/$lustreCltWriteTot,4,0,1) : 0);
     }
 
     # Add in cache hits/misses if --lustopts R
@@ -6485,9 +6668,9 @@ sub printBriefCounters
     {
       printf "%6s %6s %4s %6s %6s %4s ",
         cvt($dskReadKBTOT/$aveSecs,6,0,1),  cvt($dskReadTOT/$aveSecs,6), 
-	$dskReadTOT ? cvt($dskReadKBTOT/$dskReadTOT,4) : 0,
+	$dskReadTOT ? cvt($dskReadKBTOT/$dskReadTOT,4,0,1) : 0,
         cvt($dskWriteKBTOT/$aveSecs,6,0,1), cvt($dskWriteTOT/$aveSecs,6), 
-        $dskWriteTOT ? cvt($dskWriteKBTOT/$dskWriteTOT,4) : 0;
+        $dskWriteTOT ? cvt($dskWriteKBTOT/$dskWriteTOT,4,0,1) : 0;
     }
    }
 
@@ -6503,9 +6686,9 @@ sub printBriefCounters
     {
       printf "%6s %6s %4s %6s  %6s %4s ", 
 	  cvt($netEthRxKBTOT/$aveSecs,6,0,1), cvt($netEthRxPktTOT/$aveSecs,6), 
-	  $netEthRxPktTOT ? cvt($netEthRxKBTOT*1024/$netEthRxPktTOT,4) : 0, 
+	  $netEthRxPktTOT ? cvt($netEthRxKBTOT*1024/$netEthRxPktTOT,4,0,1) : 0, 
 	  cvt($netEthTxKBTOT/$aveSecs,6,0,1), cvt($netEthTxPktTOT/$aveSecs,6),
-          $netEthTxPktTOT ? cvt($netEthTxKBTOT*1024/$netEthTxPktTOT,4) : 0;
+          $netEthTxPktTOT ? cvt($netEthTxKBTOT*1024/$netEthTxPktTOT,4,0,1) : 0;
     }
   }
 
@@ -6523,8 +6706,8 @@ sub printBriefCounters
 		  if $subsys=~/i/;
 
   printf "%7s %6s %7s %6s %6s ", 
-	cvt($elanRxKBTOT/$aveSecs,6), cvt($elanRxTOT/$aveSecs,6), 
-        cvt($elanTxKBTOT/$aveSecs,6), cvt($elanTxTOT/$aveSecs,6),
+	cvt($elanRxKBTOT/$aveSecs,6,0,1), cvt($elanRxTOT/$aveSecs,6), 
+        cvt($elanTxKBTOT/$aveSecs,6,0,1), cvt($elanTxTOT/$aveSecs,6),
         cvt($elanErrorsTOT/$aveSecs,6)
 		  if $subsys=~/x/ && $NumXRails;
 
@@ -6533,17 +6716,17 @@ sub printBriefCounters
     if (!$ioSizeFlag)
     {
       printf "%7s %6s %7s %6s %4s ", 
-	  cvt($ibRxKBTOT/$aveSecs,7), cvt($ibRxTOT/$aveSecs,6), 
-          cvt($ibTxKBTOT/$aveSecs,7), cvt($ibTxTOT/$aveSecs,6),
+	  cvt($ibRxKBTOT/$aveSecs,7,0,1), cvt($ibRxTOT/$aveSecs,6), 
+          cvt($ibTxKBTOT/$aveSecs,7,0,1), cvt($ibTxTOT/$aveSecs,6),
           cvt($ibErrorsTOT,4);
     }
     else
     {
       printf "%7s %6s %4s %7s %6s %4s %4s ",
-          cvt($ibRxKBTOT/$aveSecs,7), cvt($ibRxTOT/$aveSecs,6), 
-	  $ibRxTOT ? cvt($ibRxKBTOT*1024/ibRxTOT,4) : 0,
-          cvt($ibTxKBTOT/$aveSecs,7), cvt($ibTxTOT/$aveSecs,6),
-          $ibTxTOT ? cvt($ibTxKBTOT*1024/ibTxTOT,4) : 0,
+          cvt($ibRxKBTOT/$aveSecs,7,0,1), cvt($ibRxTOT/$aveSecs,6), 
+	  $ibRxTOT ? cvt($ibRxKBTOT*1024/ibRxTOT,4,0,1) : 0,
+          cvt($ibTxKBTOT/$aveSecs,7,0,1), cvt($ibTxTOT/$aveSecs,6),
+          $ibTxTOT ? cvt($ibTxKBTOT*1024/ibTxTOT,4,0,1) : 0,
           cvt($ibErrorsTOT,4);
     }
   }
@@ -6578,9 +6761,9 @@ sub printBriefCounters
     {
       printf "%7s %6s %4s %7s %6s %4s ",
          cvt($lustreReadKBytesTOT/$aveSecs,7,0,1),  cvt($lustreReadOpsTOT/$aveSecs,6),
-         $lustreReadOpsTOT ? cvt($lustreReadKBytesTOT/$lustreReadOpsTOT,4) : 0,
+         $lustreReadOpsTOT ? cvt($lustreReadKBytesTOT/$lustreReadOpsTOT,4,0,1) : 0,
          cvt($lustreWriteKBytesTOT/$aveSecs,7,0,1), cvt($lustreWriteOpsTOT/$aveSecs,6),
-         $lustreWriteOpsTOT ? cvt($lustreWriteKBytesTOT/$lustreWriteOpsTOT,4) : 0;
+         $lustreWriteOpsTOT ? cvt($lustreWriteKBytesTOT/$lustreWriteOpsTOT,4,0,1) : 0;
     }
   }
 
@@ -6596,9 +6779,9 @@ sub printBriefCounters
     {
       printf "%7s %6s %4s  %7s %6s %4s",
           cvt($lustreCltReadKBTOT/$aveSecs,7,0,1),  cvt($lustreCltReadTOT/$aveSecs,6),
-          $lustreCltReadTOT ?  cvt($lustreCltReadKBTOT/$lustreCltReadTOT,4) : 0,
+          $lustreCltReadTOT ?  cvt($lustreCltReadKBTOT/$lustreCltReadTOT,4,0,1) : 0,
           cvt($lustreCltWriteKBTOT/$aveSecs,7,0,1), cvt($lustreCltWriteTOT/$aveSecs,6),
-	  $lustreCltWriteTOT ?  cvt($lustreCltWriteKBTOT/$lustreCltWriteTOT,4) : 0;
+	  $lustreCltWriteTOT ?  cvt($lustreCltWriteKBTOT/$lustreCltWriteTOT,4,0,1) : 0;
     }
     printf " %6s %6s", 
 	cvt($lustreCltRAHitsTOT/$aveSecs,6),cvt($lustreCltRAMissesTOT/$aveSecs,6)
@@ -6689,7 +6872,7 @@ sub printPlotProc
     $procHeaders.=(!$utcFlag) ? "#Date${SEP}Time" : '#UTC';;
     $procHeaders.="${SEP}PID${SEP}User${SEP}PR${SEP}PPID${SEP}S${SEP}VmSize${SEP}";
     $procHeaders.="VmLck${SEP}VmRSS${SEP}VmData${SEP}VmStk${SEP}VmExe${SEP}VmLib${SEP}";
-    $procHeaders.="CPU${SEP}SysT${SEP}UsrT${SEP}AccumT${SEP}";
+    $procHeaders.="CPU${SEP}SysT${SEP}UsrT${SEP}PCT${SEP}AccumT${SEP}";
     $procHeaders.="RKB${SEP}WKB${SEP}RKBC${SEP}WKBC${SEP}RSYS${SEP}WSYS${SEP}CNCL${SEP}";
     $procHeaders.="MajF${SEP}MinF${SEP}Command\n";
     $headersPrintedProc=1;
@@ -6702,7 +6885,7 @@ sub printPlotProc
     next    if (!defined($procSTimeTot[$i]));
 
     # Handle -oF
-    if ($options=~/F/)
+    if ($procOpts=~/f/)
     {
       $majFlt=$procMajFltTot[$i];
       $minFlt=$procMinFltTot[$i];
@@ -6717,7 +6900,7 @@ sub printPlotProc
     $datetime.=".$usecs"    if $options=~/m/;
 
     # Username comes from translation hash OR we just print the UID
-    $procPlot.=sprintf("%s${SEP}%d${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%d${SEP}%d${SEP}%d${SEP}%d${SEP}%d${SEP}%d${SEP}%d${SEP}%s${SEP}%s${SEP}%s",
+    $procPlot.=sprintf("%s${SEP}%d${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%d${SEP}%s${SEP}%d${SEP}%d${SEP}%d${SEP}%d${SEP}%d${SEP}%d${SEP}%d${SEP}%s${SEP}%s${SEP}%s",
           $datetime, $procPid[$i], $procUser[$i],  $procPri[$i], 
 	  $procPpid[$i],  $procState[$i],  
 	  defined($procVmSize[$i]) ? $procVmSize[$i] : 0, 
@@ -6728,7 +6911,8 @@ sub printPlotProc
 	  defined($procVmExe[$i])  ? $procVmExe[$i]  : 0,
 	  defined($procVmLib[$i])  ? $procVmLib[$i]  : 0,
 	  $procCPU[$i],
-	  cvtT1($procSTime[$i],1), cvtT1($procUTime[$i],1), 
+	  cvtT1($procSTime[$i],1), cvtT1($procUTime[$i],1),
+          ($procSTime[$i]+$procUTime[$i])/$interval2SecsReal,
 	  cvtT2($procSTimeTot[$i]+$procUTimeTot[$i],1),
 	  defined($procRKB[$i])    ? $procRKB[$i]/$interval2Secs  : 0,
 	  defined($procWKB[$i])    ? $procWKB[$i]/$interval2Secs  : 0,
@@ -6764,11 +6948,9 @@ sub procAnalyze
   my ($vmSize, $vmLck, $vmRSS, $vmData, $vmStk, $vmLib, $vmExe);
   my ($rkb, $wkb, $rkbc, $wkbc, $rsys, $wsys, $cncl);
 
-  my ($ss, $mm, $hh, $mday, $mon, $year)=localtime($seconds);
-  my $date=($options=~/d/) ?
-         sprintf("%02d/%02d", $mon+1, $mday) :
-         sprintf("%d%02d%02d", $year+1900, $mon+1, $mday);
-  my $time= sprintf("%02d:%02d:%02d", $hh, $mm, $ss);
+  # Would have been nice to use $interval2Counter, but that only increments when
+  # during terminal output.
+  $procAnalCounter++;
 
   # loops through all processes for this interval and copy data to simpler variables
   foreach my $pid (keys %procIndexes)
@@ -6811,7 +6993,7 @@ sub procAnalyze
     if ($processIOFlag)
     {
       $rkb=$procRKB[$i];   $wkb=$procWKB[$i];   $rkbc=$procRKBC[$i]; $wkbc=$procWKBC[$i];
-      $rsys=$procRSYS[$i]; $wsys=$procWSYS[$i]; $cncl=$procCKB[$i];
+      $rsys=$procRSys[$i]; $wsys=$procWSys[$i]; $cncl=$procCKB[$i];
     }
 
     # Here's what's going on.  We're identifying a unique command by its pid and
@@ -6822,7 +7004,7 @@ sub procAnalyze
     if (!defined($summary[$pid]))
     {
       $summary[$pid]={
-            date=>$date,        timefrom=>$time,
+            date=>$date,        timefrom=>$seconds,
             pid=>$pid,          user=>$user,        ppid=>$ppid,        vmExe=>$vmExe,
             vmSizeMin=>$vmSize, vmSizeMax=>$vmSize, vmLckMin=>$vmLck,   vmLckMax=>$vmLck,
             vmRSSMin=>$vmRSS,   vmRSSMax=>$vmRSS,   vmDataMin=>$vmData, vmDataMax=>$vmData, 
@@ -6834,7 +7016,7 @@ sub procAnalyze
 
     #    U p d a t e    S u m m a r y
 
-    $summary[$pid]->{timethru}=$time;
+    $summary[$pid]->{timethru}=$seconds;
 
     $summary[$pid]->{vmSizeMin}=$vmSize    if $vmSize<$summary[$pid]->{vmSizeMin};
     $summary[$pid]->{vmSizeMax}=$vmSize    if $vmSize>$summary[$pid]->{vmSizeMax};
@@ -6868,8 +7050,8 @@ sub procAnalyze
   }
 }
 
-# This gets called when we're ready to process a NEW file and want to write
-# out the process summary data for the LAST log we processed
+# This gets called twice!  Once when we're ready to process a NEW file and
+# again to write out the process summary data for the LAST log we processed
 sub printProcAnalyze
 {
   print "Write process summary data to: $lastLogPrefix\n"    if $debug & 8192;
@@ -6887,20 +7069,23 @@ sub printProcAnalyze
   my $header;
   $header= "Date${SEP}From${SEP}Thru${SEP}Pid${SEP}User${SEP}PPid${SEP}ExeSize${SEP}SizeMin${SEP}";
   $header.="SizeMax${SEP}LckMin${SEP}LckMax${SEP}RSSMin${SEP}RSSMax${SEP}DataMin${SEP}DataMax${SEP}";
-  $header.="StkMin${SEP}StkMax${SEP}LibMin${SEP}LibMax${SEP}sysT${SEP}usrT${SEP}accumT${SEP}";
-  $header.="RKB${SEP}WKB${SEP}RKBC${SEP}WKBC${SEP}RSYS${SEP}WSYS${SEP}CNCL${SEP}"    if $flags=~/$processIOFlag/;
+  $header.="StkMin${SEP}StkMax${SEP}LibMin${SEP}LibMax${SEP}sysT${SEP}usrT${SEP}PCT${SEP}accumT${SEP}";
+  $header.="RKB${SEP}WKB${SEP}RKBC${SEP}WKBC${SEP}RSYS${SEP}WSYS${SEP}CNCL${SEP}"    if $processIOFlag;
   $header.="majF${SEP}minF${SEP}Command\n";
 
   print PRCS $header    if !$zFlag;
   $ZPRCS->gzwrite($header) or logmsg("E", "Error writing PCRS header")    if  $zFlag;
 
   my $line;
+  my ($date, $timefrom, $timethru);
   foreach my $pid (keys %analyzed)
   {
-    $line=sprintf("%s$SEP%s$SEP%s$SEP%d$SEP%s$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%s$SEP%s$SEP%s$SEP",
-      $summary[$pid]->{date},
-      $summary[$pid]->{timefrom},
-      $summary[$pid]->{timethru},
+     # Date always come from 'from' field
+     ($date,$timefrom)=cvtT4($summary[$pid]->{timefrom});
+
+    # NOTE - since sys/usr times in jiffies DON'T multiply by 100
+    $line=sprintf("%s$SEP%s$SEP%s$SEP%d$SEP%s$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%s$SEP%s$SEP%6.2f$SEP%s$SEP",
+      $date, $timefrom, (cvtT4($summary[$pid]->{timethru}))[1],
       $summary[$pid]->{pid},
       $summary[$pid]->{user},
       $summary[$pid]->{ppid},
@@ -6921,6 +7106,7 @@ sub printProcAnalyze
 
       cvtT3($summary[$pid]->{sysT}),
       cvtT3($summary[$pid]->{usrT}),
+      ($summary[$pid]->{sysT}+$summary[$pid]->{usrT})/($summary[$pid]->{timethru}-$summary[$pid]->{timefrom})/$procAnalCounter,
       $summary[$pid]->{accumT});
 
     $line.=sprintf("%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP",
@@ -6943,6 +7129,69 @@ sub printProcAnalyze
   $ZPRCS->gzclose()    if $zFlag;
 }
 
+sub slabAnalyze
+{
+  if ($slabinfoFlag)
+  {
+    for (my $i=0; $i<$slabIndexNext; $i++)
+    {
+      slabAnalyze2($slabName[$i], $slabSlabAllTotB[$i]); 
+    }
+  }
+  else
+  {
+    foreach my $first (sort keys %slabfirst)
+    {
+      slabAnalyze2($slabfirst{$first}, $slabdata{$slab}->{total}); 
+    }
+  }
+}
+
+sub slabAnalyze2
+{
+  my $name=shift;
+  my $size=shift;
+
+  if (!defined($slabMemTotMin{$name}))
+  {
+    $slabMemTotMin{$name}=1024*1024*1024*1024;    # 1TB
+    $slabMemTotMax{$name}=0;
+    $slabMemTotFirst{$name}=$size;
+  }
+  $slabMemTotMin{$name}=$size    if $size<$slabMemTotMin{$name};
+  $slabMemTotMax{$name}=$size    if $size>$slabMemTotMax{$name};
+  $slabMemTotLast{$name}=$size;
+}
+
+sub printSlabAnalyze
+{
+  print "Write slab summary data to: $lastLogPrefix\n"    if $debug & 8192;
+
+  open SLBS, ">$lastLogPrefix.slbs" or
+        logmsg("F", "Couldn't create '$lastLogPrefix.slbs'")  if !$zFlag;
+  $ZSLBS=Compress::Zlib::gzopen("$lastLogPrefix.slbs.gz", 'wb') or
+        logmsg("F", "Couldn't create '$lastLogPrefix.slbs.gz'")    if  $zFlag;
+
+  my $header=sprintf("%-20s  %10s  %10s  %10s  %10s  %8s  %8s\n",
+	'Slab Name', 'Start', 'End', 'Minimum', 'Maximum', 'Change', 'Pct');
+  print SLBS $header    if !$zFlag;
+  $ZSLBS->gzwrite($header) or logmsg("E", "Error writing SLBS header")    if  $zFlag;
+
+  foreach my $name (sort keys %slabMemTotMin)
+  {
+    next    if $slabMemTotMax{$name}==0;
+
+    my $diff=$slabMemTotMax{$name}-$slabMemTotMin{$name};
+    my $line=sprintf("%-20s  %10d  %10d  %10d  %10d  %8d  %8.2f\n", 
+                     $name, $slabMemTotFirst{$name}, $slabMemTotLast{$name}, 
+    		     $slabMemTotMin{$name}, $slabMemTotMax{$name}, $diff,
+		     $slabMemTotMin{$name} ? 100*$diff/$slabMemTotMin{$name} : 0);
+
+    print SLBS $line     if !$zFlag;
+    $ZSLBS->gzwrite($line) or logmsg('E', "Error writing to slbs")     if  $zFlag;
+  }
+}
+
 # like printPlotProc(), this only goes to .slb and we don't care about --logtoo
 sub printPlotSlab
 {
@@ -6959,12 +7208,12 @@ sub printPlotSlab
     if ($slabinfoFlag)
     {
       $slabHeaders.="${SEP}SlabName${SEP}ObjInUse${SEP}ObjInUseB${SEP}ObjAll${SEP}ObjAllB${SEP}";
-      $slabHeaders.="SlabInUse${SEP}SlabInUseB${SEP}SlabAll${SEP}SlabAllB\n";
+      $slabHeaders.="SlabInUse${SEP}SlabInUseB${SEP}SlabAll${SEP}SlabAllB${SEP}SlabChg${SEP}SlabPct\n";
     }
     else
     {
       $slabHeaders.="${SEP}SlabName${SEP}ObjSize${SEP}ObjPerSlab${SEP}ObjInUse${SEP}ObjAvail${SEP}";
-      $slabHeaders.="SlabSize${SEP}SlabNumber${SEP}MemUsed${SEP}MemTotal\n";
+      $slabHeaders.="SlabSize${SEP}SlabNumber${SEP}MemUsed${SEP}MemTotal${SEP}SlabChg${SEP}SlabPct\n";
     }
     $headersPrintedSlab=1;
   }
@@ -6977,16 +7226,17 @@ sub printPlotSlab
 
   if ($slabinfoFlag)
   {
-    for (my $i=0; $i<$NumSlabs; $i++)
+    for (my $i=0; $i<scalar(@slabSlabAllTot); $i++)
     {
       # Skip filtered data
       next    if ($slabOpts=~/s/ && $slabSlabAllTot[$i]==0) ||
                  ($slabOpts=~/S/ && $slabSlabAct[$i]==0 && $slabSlabAll[$i]==0);
 
-      $slabPlot.=sprintf("%s$SEP%s$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d\n",
+      $slabPlot.=sprintf("%s$SEP%s$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d\n",
      	   $datetime, $slabName[$i],
 	   $slabObjActTot[$i],  $slabObjActTotB[$i], $slabObjAllTot[$i],  $slabObjAllTotB[$i],
-           $slabSlabActTot[$i], $slabSlabActTotB[$i],$slabSlabAllTot[$i], $slabSlabAllTotB[$i]);
+           $slabSlabActTot[$i], $slabSlabActTotB[$i],$slabSlabAllTot[$i], $slabSlabAllTotB[$i],
+	   $slabTotMemChg[$i],  $slabTotMemPct[$i]);
     }
   }
 
@@ -7005,10 +7255,11 @@ sub printPlotSlab
                  ($slabOpts=~/S/ && $slabdata{$slab}->{lastobj}==$numObjects &&
                                    $slabdata{$slab}->{lastslabs}==$numSlabs);
 
-      $slabPlot.=sprintf("$datetime$SEP%s$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d\n",
+      $slabPlot.=sprintf("$datetime$SEP%s$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d\n",
             $first,      $slabdata{$slab}->{slabsize},  $slabdata{$slab}->{objper},
             $numObjects, $slabdata{$slab}->{avail},     ($PageSize<<$slabdata{$slab}->{order})/1024,
-            $numSlabs,   $slabdata{$slab}->{used}/1024, $slabdata{$slab}->{total}/1024);
+            $numSlabs,   $slabdata{$slab}->{used}/1024, $slabdata{$slab}->{total}/1024,
+                         $slabdata{$slab}->{memchg},    $slabdata{$slab}->{mempct});
 
       # So we can tell when something changes
       $slabdata{$slab}->{lastobj}=  $numObjects;

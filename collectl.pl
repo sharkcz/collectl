@@ -73,9 +73,10 @@ $Ethtool=      '/sbin/ethtool';
 $Lspci=        '/sbin/lspci';
 $Lctl=         '/usr/sbin/lctl';
 
-%TopTypes=qw(vsz '' rss '' syst '' usrt '' time '' rkb '' wkb '' iokb ''
-             rkbc '' wkbc '' iokbc '' ioall '' rsys '' wsys '' iosys  ''
-             iocncl '' majf '' minf '' flt '');
+%TopProcTypes=qw(vsz '' rss '' syst '' usrt '' time '' rkb '' wkb '' iokb ''
+                 rkbc '' wkbc '' iokbc '' ioall '' rsys '' wsys '' iosys  ''
+                 iocncl '' majf '' minf '' flt '');
+%TopSlabTypes=qw(numobj '' name '' actobj '' objsize '' numslab '' objslab '' totsize '' totchg '' totpct '');
 
 # Constants and removing -w warnings
 $miniDateFlag=0;
@@ -103,7 +104,7 @@ if ($PerlVers lt '5.08.00')
   print "See /opt/hp/collectl/docs/FAQ-collectl.html for details.\n";
 }
 
-$Version=  '3.1.0-8';
+$Version=  '3.1.1-5';
 $Copyright='Copyright 2003-2008 Hewlett-Packard Development Company, L.P.';
 $License=  "collectl may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
@@ -179,6 +180,10 @@ undef @lustreCltDirs;
 undef @lustreCltOstDirs;
 undef @lustreOstSubdirs;
 undef %playbackSettings;
+undef %slabTotalMemLast;
+undef %slabMemTotMin;
+undef %slabMemTotMax;
+undef %slabMemTotLast;
 $recHdr1=$miniDateTime=$miniFiller=$DaemonOptions='';
 $OstNames=$MdsNames=$LusDiskNames=$LusDiskDir='';
 $NumLustreCltOsts=$NumLusDisks=$MdsFlag=0;
@@ -189,7 +194,7 @@ $NumCpus=$NumDisks=$NumNets=$DiskNames=$NetNames=$HZ='';
 $NumOst=0;
 $OFMax=$SBMax=$DQMax=$FS=$ScsiInfo=$HCAPortStates='';
 $SlabVersion=$XType=$XVersion='';
-$dentryFlag=$inodeFlag=$filenrFlag=$allThreadFlag=0;
+$dentryFlag=$inodeFlag=$filenrFlag=$allThreadFlag=$procCmdWidth=0;
 $clr=$clscr=$cleol=$home='';
 
 # This tells us we have not yet made our first pass through the data
@@ -300,7 +305,7 @@ $export=$expName=$expDir=$expOpts=$topOpts=$topType='';
 $homeFlag=$rawtooFlag=$autoFlush=$allFlag=0;
 $procOpts=$slabOpts='';
 $procFilt=$slabFilt='';
-$procAnalFlag=$procAnalyzed=$lastInt2Secs=0;
+$procAnalFlag=$procAnalyzed=$slabAnalFlag=$slabAnalyzed=$lastInt2Secs=0;
 $lastLogPrefix=$passwdFile='';
 $nfsOpts=$lustOpts=$userEnvOpts='';
 $grepPattern='';
@@ -414,6 +419,7 @@ GetOptions('align!'     => \$alignFlag,
            'showplotheader!'  =>\$showPHeaderFlag,
 	   'showslabaliases!' =>\$showSlabAliasesFlag,
 	   'showrootslabs!'   =>\$showRootSlabsFlag,
+           'slabanalyze!'  => \$slabAnalFlag,
 	   'slabopts=s'    => \$slabOpts,
            'verbose!'      => \$verboseFlag,
            'vmstat!'       => \$vmstatFlag,
@@ -599,7 +605,7 @@ if ($subsys=~/[+-]/)
   $subsys=$temp;
 }
 
-# note that --procanalyze and --top can change $subsys
+# note that --procanalyze, --slabanalyze and --top can change $subsys
 setOutputFormat();
 
 # This is tricky as the main logic for checking intervals lives further
@@ -627,41 +633,44 @@ if ($briefFlag)
 
 #    S p e c i a l    F o r m a t s
 
-if ($procAnalFlag)
+if ($procAnalFlag || $slabAnalFlag)
 {
-  error("--procanalyze requires -p")              if $playback eq '';
-  error("--procanalyze requires -f")              if $filename eq '';
-  error("--procanalyze doesn't support --utc")    if $utcFlag;
+  error("--procanalyze/--slabanalyze require -p")              if $playback eq '';
+  error("--procanalyze/--slabanaluze require -f")              if $filename eq '';
+  error("--procanalyze/--slabanalyze do not support --utc")    if $utcFlag;
 
   # No default from playback file in this mode, so go by whatever user 
-  # specificed with -s and if no 'Z, stick one in there and then make
+  # specificed with -s and if no Y/Z, stick one in there and then make
   # user $userSubsys and $subsys agree so initFormat() won't diddle
   # the values.
-  $procAnalOnlyFlag=($userSubsys!~/Z/) ? 1 : 0;
+  $slabAnalOnlyFlag=($slabAnalFlag && $userSubsys!~/Y/) ? 1 : 0;
+  $procAnalOnlyFlag=($procAnalFlag && $userSubsys!~/Z/) ? 1 : 0;
+  $userSubsys.='Y'    if $slabAnalOnlyFlag;
   $userSubsys.='Z'    if $procAnalOnlyFlag;
   $subsys=$userSubsys;
   $plotFlag=1;
 }
 
 # We have to wait for '$subsys' to be defined before handling top and it
-# felt right to keep the code together with --procanalyze.
+# felt right to keep the code together with --procanalyze/--slabanalyze.
 
 # --top forces $homeFlag if not in playback mode.  if no process interval
 # specified set it to the monitoring one.
+$temp=$SubsysDet;
+$temp=~s/YZ//;
+$detailFlag=($subsys=~/[$temp]/) ? 1 : 0;
 if ($topOpts ne '')
 {
   # --top does NOT support detail data other than Z
   $temp=$SubsysDet;
   $temp=~s/Z//;
-  error("--top does not support detail data, how about a second window?")
-      if $subsys=~/[$temp]/;
 
   # Don't diddle original setting in '$userSubsys', use a copy!
-  # Subtle - the verbose flag wouldn't have been set if ONLY processes and it should be
-  # Similarly, Z should not be considered when looking to see is same columns
-  # in verbose mode.
+  # Subtle - the verbose flag wouldn't have been set if ONLY processes or slabs and 
+  # it should be.  Similarly, Y/Z should not be considered when looking to see is 
+  # same columns in verbose mode.
   my $tempSubsys=$userSubsys;
-  $tempSubsys=~s/Z//;
+  $tempSubsys=~s/[YZ]//g;
   $verboseFlag=1     if $tempSubsys eq '';
   $sameColsFlag=1    if $verboseFlag && length($tempSubsys)==1;
   $briefFlag=($verboseFlag) ? 0 : 1;
@@ -676,8 +685,10 @@ if ($topOpts ne '')
     }
     else
     {
-      # ...but multi-subsys verbose mode it's driven by the number of subsystems
+      # multi-subsys verbose mode is driven by the number of subsystems and if 
+      # there are any details, it's up to the users choice of --hr
       $subsysSize=length($tempSubsys)*3;
+      $subsysSize=$headerRepeat    if $detailFlag;
     }
     $scrollEnd=$subsysSize+1;
   }
@@ -685,24 +696,32 @@ if ($topOpts ne '')
   ($topType, $numTop)=split(/,/, $topOpts);
   $topType='time'          if $topType eq '';
 
+  # enough of these to warrant setting a flag
+  $topIOFlag=($topType=~/kb|sys$|cncl/) ? 1 : 0;
+
   $termHeight=12    if $playback ne '';
   $numTop=$termHeight-$scrollEnd-2    if !defined($numTop) || $numTop==-1;
   #print "HEIGHT: $termHeight  SUBSIZE: $subsysSize  HR: $headerRepeat NUMTOP: $numTop\n";
 
+  $topProcFlag=(defined($TopProcTypes{$topType})) ? 1 : 0;
+  $topSlabFlag=(defined($TopSlabTypes{$topType})) ? 1 : 0;
   error("not enough lines in window for display")
       if $numTop<1;
   error("invalid --top type.  see --showtopopts for list")
-      if !defined($TopTypes{$topType});
+      if $topProcFlag==0 && $topSlabFlag==0;
+  error("you cannot select process and slab subsystems in --top mode")
+      if ($subsys=~/Y/ && $subsys=~/Z/) || 
+         ($subsys=~/Y/ && $topProcFlag) || ($subsys=~/Z/ && $topSlabFlag);
 
   if ($playback eq '')
   {
     $homeFlag=1;
-    $subsys="${tempSubsys}Z";
+    $subsys=(defined($TopProcTypes{$topType})) ? "${tempSubsys}Z" : "${tempSubsys}Y";
     $interval.=":$interval"    if $interval!~/:/;
   }
 
-  error("--top only reports timestamps for interactive, non-process data")
-      if $options=~/[dDT]/ && ($playback ne '' || $subsys eq 'Z');
+  error("--top only reports timestamps for interactive, non-process/non-slab data")
+      if $options=~/[dDT]/ && ($playback ne '' || $subsys eq 'Z' || $subsys eq 'Y');
 }
 
 # These checks can only be done after setOutputFormat()
@@ -763,6 +782,7 @@ $utcFlag=1    if $options=~/U/;
 # should I migrate a lot of other simple tests here?
 error("you cannot specify -f with --top")                  if $topOpts ne '' && $filename ne '';
 error("--home does not apply to -p")                       if $homeFlag && $playback ne '';
+error("--home and -sY doesn't make sense.  use --top")     if $homeFlag && $subsys=~/Y/ && $topOpts eq '';
 error("--home and -sZ doesn't make sense.  use --top")     if $homeFlag && $subsys=~/Z/ && $topOpts eq '';
 error('--procopts only makes sense with --top or -sZ')     if $procOpts ne '' && $subsys!~/Z/ && !$topType;
 error("--envopts does not apply to -P")                    if $userEnvOpts ne '' && $plotFlag;
@@ -906,6 +926,8 @@ if ($playback ne "")
 
   error("sorry, but --procfilt not allowed in -p mode.  consider grep")
       if $procFilt ne '';
+  error("sorry, but --slabfilt not allowed in -p mode.  consider grep")
+      if $slabFilt ne '';
 }
 
 # linux box?
@@ -974,7 +996,7 @@ if ($limits ne '')
 }
 
 # options
-error("invalid option")    if $options ne "" && $options!~/^[\^12aAcdDFGgimnPTuUxXz]+$/g;
+error("invalid option")    if $options ne "" && $options!~/^[\^12aAcdDGgimnPTuUxXz]+$/g;
 error("-oi only supported interactively with -P to terminal")    
     if $options=~/i/ && ($playback ne '' || !$plotFlag || $filename ne '');
 $miniDateFlag=($options=~/d/i) ? 1 : 0;
@@ -1280,8 +1302,9 @@ if ($playback ne '')
     error("-sj or -sJ with -P also requires CPU details so add C or remove J.")
 	if $subsys=~/j/i && $subsys!~/C/ && $plotFlag;
 
-    error("data file does not contain 'io' data")       if $topType eq 'io' && !$processIOFlag;
+    error("data file does not contain io data")         if $topIOFlag && !$processIOFlag;
     error("data file does not contain process data")    if $procAnalFlag && $recSubsys!~/Z/;
+    error("data file does not contain slab data")       if $slabAnalFlag && $recSubsys!~/Y/;
 
     # Need to reset the globals for the intervals that gets recorded in the header.
     # Note the conditional on the assignments for i2 and i3.  This is because they SHOULD be
@@ -1374,6 +1397,17 @@ if ($playback ne '')
     {
       print "ignoring $file whose header says recorded for $Host but whose name says otherwise!\n";
       next;
+    }
+
+    # When playing back multiple hosts, some structures need to be reinitialized
+    # every time we change hosts
+    $lastHost=$Host    if !defined($lastHost);
+    if ($Host ne $lastHost)
+    {
+      undef %slabTotalMemLast;
+      undef %slabMemTotMin;
+      undef %slabMemTotMax;
+      undef %slabMemTotLast;
     }
 
     # we get a new output file (if writing to a file) for each prefix-date
@@ -1591,6 +1625,7 @@ if ($playback ne '')
 
   # Always print last set of summary data...
   printProcAnalyze()    if $procAnalFlag;
+  printSlabAnalyze()    if $slabAnalFlag;
 
   # if printing to terminal, be sure to print averages & totals for last file
   # processed
@@ -1628,7 +1663,7 @@ checkHiRes()    if $daemonFlag;    # check for possible HiRes/glibc incompatibil
 # on this platform, initRecord() will have deselected them!
 initRecord();
 error("no subsystems selected")    if $subsys eq '';
-error("you cannot use '--top io' with this kernel")            if $topType eq 'io' && !$processIOFlag;
+error("you cannot use --top and IO options with this kernel")  if $topIOFlag && !$processIOFlag;
 error("process I/O features not enabled in this kernel")       if $procOpts=~/i/   && !$processIOFlag;
 error("process I/O statistics not available in this kernel")   if $procOpts=~/[s]/ && !$processIOFlag;
 
@@ -2453,7 +2488,7 @@ sub preprocSwitches
       error("invalid switch '$switch'.  did you mean -$switch?  if not use '$use'")
 	  if $switch=~/^-al|^-ad|^-be|^-co|-^de|^-de|^-en|^-fl|^-he|^-no|^-in|^-ra/;
       error("invalid switch '$switch'.  did you mean -$switch?  if not use '$use'")
-	  if $switch=~/^-li|^-lu|^-me|-^ni|^-op|^-su|^-ro|^-ru|^-ti|^-wi|^-sl|^-pr/;
+	  if $switch=~/^-li|^-lu|^-me|-^ni|^-op|^-su|^-ro|^-ru|^-ti|^-wi|^-pr/;
     }
     $switches.="$switch ";
   }
@@ -2751,6 +2786,7 @@ sub checkSubSys
 
 sub checkSubsysOpts
 {
+  error("you cannot mix --slabopts with --top")  if $slabOpts ne '' && $topSlabFlag;
   error("invalid slab option in '$slabOpts'")    if $slabOpts ne '' && $slabOpts!~/^[sS]+$/;
   error("invalid env option in '$envOpts")       if $envOpts ne ''  && $envOpts!~/^[ftM]+$/;
 
@@ -2764,7 +2800,8 @@ sub checkSubsysOpts
 
   if ($procOpts ne '')
   {
-    error("invalid process option '$procOpts'")                if $procOpts!~/^[imprtwz]+$/;
+    $procCmdWidth=($procOpts=~s/w(\d+)/w/) ? $1 : 1000;
+    error("invalid process option '$procOpts'")                if $procOpts!~/^[cfimprtwz]+$/;
     error("process options i and m are mutually exclusive")    if $procOpts=~/i/ && $procOpts=~/m/;
     error("--procopts z can only be used with --top")          if !$numTop && $procOpts=~/z/;
   }
@@ -2785,6 +2822,7 @@ sub checkSubsysOpts
   error("--lustopts M only applies to Lustre Clients")       if $lustOpts=~/M/ && !$cltFlag;
   error("--lustopts R only applies to Lustre Clients")       if $lustOpts=~/R/ && !$cltFlag;
   error("--lustopts O only applies to client detail data")   if $lustOpts=~/O/ && (!$cltFlag || $subsys!~/L/);
+  error("you cannot mix --lustopts 'O' with 'M' or 'R'")     if $lustOpts=~/O/ && $lustOpts=~/[MR]/;
   error("you cannot mix --lustopts 'B' with 'M'")            if $lustOpts=~/B/ && $lustOpts=~/M/;
   error("you cannot mix --lustopts 'B' with 'R'")            if $lustOpts=~/B/ && $lustOpts=~/R/;
   error("--lustopts c only applies to client data")          if $lustOpts=~/c/ && !$cltFlag;
@@ -3467,6 +3505,7 @@ sub newLog
 
     # Indicates something needs to be printed (is there an easier way to tell)?
     printProcAnalyze($filename)    if $procAnalyzed;
+    printSlabAnalyze($filename)    if $slabAnalyzed;
 
     print "Writing file(s): $mode$filename\n"    if $msgFlag && !$daemonFlag;
     print "Subsys: $subsys\n"    if $debug & 1;
@@ -3551,21 +3590,23 @@ sub newLog
     $ZOST=Compress::Zlib::gzopen("$filename.ost.gz", $zmode) or
           logmsg("F", "Couldn't open OST gzip file")     if  $zFlag && $LFlag && $reportOstFlag;
 
-    # These next  guys are special because they're not really detail files per se, 
-    # Furthermore, if --rawtoo OR --procanal and not -sZ not specified by user, 
-    # we don't create proc/slab files
-    if (!$rawtooFlag && !$procAnalOnlyFlag)
+    # These next two guys are 'special' because they're not really detail files per se, 
+    if (!$procAnalOnlyFlag && $ZFlag)
     {
-      print "Creating PRC and/or SLB\n"    if $debug & 8192;
+      print "Creating PRC file\n"    if $debug & 8192;
       open PRC, "$mode$filename.prc" or 
-	  logmsg("F", "Couldn't open '$filename.prc'")  if !$zFlag && $ZFlag;
+            logmsg("F", "Couldn't open '$filename.prc'")  if !$zFlag && $ZFlag;
       $ZPRC=Compress::Zlib::gzopen("$filename.prc.gz", $zmode) or
-          logmsg("F", "Couldn't open PRC gzip file")    if  $zFlag && $ZFlag;
+            logmsg("F", "Couldn't open PRC gzip file")    if  $zFlag && $ZFlag;
+    }
 
+    if (!$slabAnalOnlyFlag && $YFlag)
+    {
+      print "Creating SLB file\n"    if $debug & 8192;
       open SLB, "$mode$filename.slb" or 
-	  logmsg("F", "Couldn't open '$filename.slb'")  if !$zFlag && $YFlag;
+	    logmsg("F", "Couldn't open '$filename.slb'")  if !$zFlag && $YFlag;
       $ZSLB=Compress::Zlib::gzopen("$filename.slb.gz", $zmode) or
-          logmsg("F", "Couldn't open SLB gzip file")    if  $zFlag && $YFlag;
+            logmsg("F", "Couldn't open SLB gzip file")    if  $zFlag && $YFlag;
     }
 
     open TCP, "$mode$filename.tcp" or 
@@ -3710,8 +3751,8 @@ sub buildCommonHeader
 
 sub writeInterFileMarker
 {
-  # I was torn between putting this test one the one place this routine 
-  # is called or keeping it cleaner back there and so put it here.
+  # I was torn between putting this test in the one place this routine 
+  # is called or keeping it cleaner and so put it here.
   return    if $procAnalOnlyFlag;
 
   # for now, only need one for process data
@@ -4304,6 +4345,14 @@ sub loadConfig
   logmsg('I', "Couldn't find 'resize' so assuming terminal height of 24")
       if $Resize eq '';
 
+  # Just in case using an older collectl.conf file.  Only a problem is
+  # someone wants to collect IPMI data.
+  if (!defined($ipmitoolPath))
+  {
+    logmsg('E', "Can't find 'Ipmitool' in 'collectl.conf'.  Is it old?");
+    $ipmitoolPath='';
+  }
+
   # Even though currently one entry, let's make this a path like above
   $Ipmitool='';
   foreach my $bin (split/:/, $ipmitoolPath)
@@ -4315,7 +4364,6 @@ sub loadConfig
 sub loadSlabs
 {
   my $slabFilt= shift;
-  my ($line, $name, $slab, %slabsKnown);
 
   if ($slabinfoFlag)
   {
@@ -4327,46 +4375,19 @@ sub loadSlabs
       return;
     }
 
-    while ($line=<PROC>)
+    while (my $line=<PROC>)
     {
-      $slab=(split(/\s+/, $line))[0];
-      $slabsKnown{$slab}=1;
+      my $slab=(split(/\s+/, $line))[0];
+      foreach my $filter (split(/,/, $slabFilt))
+      {
+        if ($slab=~/^$filter/)
+        {
+	  $slabProc{$slab}=1;
+	  last;
+	}
+      }
     }
 
-    # only if user specified filters
-    if ($slabFilt ne '')
-    {
-      foreach $name (split(/,/, $slabFilt))
-      {
-	if (-e $name)
-        {
-	  open SLABS,"<$name" or error("Couldn't open slablist file '$name'");
-	  while ($slab=<SLABS>)
-          {
-	    # This allows one to cut/past /proc/slabinfo into the slab file and we just
-	    # ignore data portions
-	    $slab=(split(/\s+/, $slab))[0];
-	    chomp $slab;
-	    if (!defined($slabsKnown{$slab}))
-	    {
-	      logmsg("W", "Skipping unknown slab name: $slab in slab name file");
-	      next;
-	    }
-	    $slabProc{$slab}=1;
-          }
-	  close SLABS;
-        }
-        else
-        {
-	  if (!defined($slabsKnown{$name}))
-	  {
-            logmsg("W", "Skipping unknown slab name: $name");
-	    next;
-          }
-	  $slabProc{$name}=1;
-        }
-      }
-    }  
     if ($debug & 1024)
     {
       print "*** SLABS ***\n";
@@ -4936,6 +4957,7 @@ sub error
     # printText() will try to send error over socket and we want it local.
     $sockFlag=0    if $serverFlag;
 
+    `stty echo`;
     printText("Error: $text\n");
     printText("type '$Program -h' for help\n");
     logmsg("F", "Error: $text")    if $daemonFlag;
@@ -5016,7 +5038,6 @@ This is the complete list of switches, more details in man page
   -N, --nice                    give yourself a 'nicer' priority
       --offsettime secs         seconds by which to offset times during playback
   -o, --options                 misc formatting options, --showoptions for all
-      --procanalyze             analyze process data, generating prcs file
   -p, --playback   file         playback results from 'file'
   -P, --plot                    generate output in 'plot' format
       --procanalyze             analyze process data, generating prcs file
@@ -5026,6 +5047,7 @@ This is the complete list of switches, more details in man page
   -R, --runtime    duration     time to run in <number><units> format
                                   where unit is w,d,h,m,s
       --sep        separator    specify an alternate plot format separator
+      --slabanalyze             analyze slab data, generating slbs file
       --ssh                     started by ssh so disconnect if caller exits
   -s, --subsys     subsys       record/playback data from one or more subsystems
                                   --showsubsys for details
@@ -5140,7 +5162,6 @@ Exception Reporting
   X - record all values + exceptions in plot format (see manpage)
  
 Modify results before display (do NOT effect collection)
-  F - use cumulative totals for maj/min faults in proc data instead of rates
   n - do NOT normalize rates to units/second
 
 Plot File Naming/Creation
@@ -5201,13 +5222,16 @@ NFS
 
 Processes
    --procopts
+      c - include cpu time of children who have exited (same as ps S switch)
+      f - use cumulative totals for page faults in proc data instead of rates
       i - show io counters in display
       m - show memory breakdown and faults in display
       p - never look for new pids or threads to match processing criteria
             This also improves performance!
       r - show root command name for a narrower display, can be combined with w
       t - include ALL threads (can be a lot of overhead if many active threads)
-      w - make format wider by including process arguments
+      w - make format wider by including entire process argument string
+          you can also set a max number of chars, eg w32
       z - exclude any processes with 0 in sort field
 
    --procfilt: restricts which procs are listed, where 'procs' is of the
@@ -5235,8 +5259,8 @@ Slab Options and Filters
       S - only show slabs that have changed since last interval
 
    --slabfilt: restricts which slabs are listed, where 'slab's is of the form: 
-               'slab[,slab...].  if 'slab' is a filename (you CAN mix them), 
-               it must contain a list of slabnames, one per line
+               'slab[,slab...].  only slabs whose names start with this name
+               will be included
 
 EOF5
 
@@ -5247,9 +5271,11 @@ exit    if !defined($_[0]);
 sub showTopopts
 {
   my $subopts=<<EOF5;
-The following is a list of --top's sort types which themselves apply to
-different categories of data.  In some cases you may be allowed to sort
+The following is a list of --top's sort types which apply to either
+process or slab data.  In some cases you may be allowed to sort
 by a field that is not part of the display if you so desire
+
+TOP PROCESS SORT FIELDS
 
 Memory
   vsz    virtual memory
@@ -5268,6 +5294,7 @@ I/O
   rkbc   KB read from pagecache
   wkbc   KB written to pagecache
   iokbc  total pagecacge I/O
+  ioall  total I/O KB (iokb+iokbc)
 
   rsys   read system calls
   wsys   write system calls
@@ -5279,6 +5306,18 @@ Page Faults
   majf   major page faults
   minf   minor page faults
   flt    total page faults
+
+TOP SLAB SORT FIELDS
+
+  numobj    total number of slab objects
+  actobj    active slab objects
+  objsize   sizes of slab objects
+  numslab   number of slabs
+  objslab   number of objects in a slab
+  totsize   total memory sizes taken by slabs
+  totchg    change in memory sizes
+  totpct    percent change in memory sizes
+  name      slab names
 
 EOF5
 

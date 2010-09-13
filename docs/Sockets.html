@@ -1,0 +1,58 @@
+<html>
+<head>
+<link rel=stylesheet href="style.css" type="text/css">
+<title>Socket Interface</title>
+</head>
+
+<body>
+<center><h1>Socket Interface</h1></center>
+<p>
+<h3>Introduction</h3>
+Collectl actually provides 2 different mechanisms for socket communications and depending 
+on which style you intend to use, you should pick the appropriate one.  Regardless of
+which style you choose, collectl will send all data that might normally go to a terminal
+to that interface, prepended with the hostname for easy recognition at the other end.
+One should also note that you can simultaneously record the data locally in a <i>raw</i> 
+file, a file in <i>plot format</i> or even <i>both</i> depending on your needs.
+<p>
+<h3>Short-lived communications</h3>
+The model for this type of communications is one in which some other tool starts
+collectl on one or more remotes system, instructing it to send its output back
+until the initiator terminates the connection at which time collectl will 
+permanently exist.  Using this style the initiator of the communications opens
+the socket and then typically starts collectl using ssh and includes its 
+address/port in the command string using collectl's -A switch.  The key things 
+to note when using this style are:
+
+<ul>
+<li>This mechanism will never survive a reboot without extra work on the initiator's
+part which must include restarting collectl</li>
+<li>Collectl will open a socket to the specified address and immediately start sending 
+its output back to it</li>
+<li>If the other end of the socket goes away, collectl will exit</li>
+<li>If collectl is unexpectedly terminated (such as sigint or reboot), it will
+close the socket without warning the other end and therefore the program at the
+other end of the communication path must be prepared to deal with it</li>
+</ul>
+<p>
+<h3>Long-lived communications</h3>
+This mechanism has collectl create the initial socket and listen for a remote connection.
+In this mode, collectl continues to collect data and at the beginning of each monitoring
+interval looks for a new socket connection request.  If it receives a request, it creates a
+connection back and immediately starts sending data to it.  If that connection terminates
+collectl closes down its side and then goes back to listening for a new connection.
+
+The key points about this style are:
+<ul>
+<li>This style of communications will survice a reboot if configured in <i>collectl.conf</i></li>
+<li>The switch to put collectl into this mode is also -A but rather than supplying as address
+as the argument use the text <i>server</i>
+<li>The other end of the connection needs to periodically try to connect and if it fails
+must try again.  If that connection exists, it must clean up its end and go back to
+trying to reconnect again.
+<li>If you want collectl to terminate you much manually do so, noting after a reboot it
+will restart.
+</ul>
+
+</body>
+</html>

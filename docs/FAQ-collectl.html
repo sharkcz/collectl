@@ -156,12 +156,12 @@ Visually inspecting the plotted data can often show times of unusually heavy res
 loads.  Often times there is a strong time delineation between good and bad.
 <br>
 It you want to see the actual numbers in the data as opposed to plots,
-play back the data using the -b switch to 
+play back the data using the --from switch to 
 select a begin time, usually a few samples prior to the time when things started to
-go bad.  To reduce the amount of output you can also use -e to set the end time for
+go bad.  To reduce the amount of output you can also use --thru to set the end time for
 the collection.  You can also start selecting specific subsystems to look at as well
 as individual devices.  For example, if you've discovered that at 11:03 there was 
-an unusal network load, try 'collectl -p filename -b 11:02 -e 11:05 -sN' to see
+an unusal network load, try 'collectl -p filename --from 11:02 --thru 11:05 -sN' to see
 the activity at each NIC.
 <br>
 And don't forget process and/or slab activity if either has been collected.  You can

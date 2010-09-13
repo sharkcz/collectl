@@ -54,8 +54,9 @@ of objects/slab and the physical sizes of both objects and slabs.
 <center><h3>Examples</h3></center>
 <p>
 The following examples show several different output formats and the commands
-used to produce them.  It should be noted that an interval of 1 second
-had been chosen in each case and one should always consult the help
+used to produce them.  One should note there is similar output for the old style
+slab data but.  It should also be noted that an interval of 1 second
+has been chosen in each case and one should always consult the help
 and/or man pages for more detail as there are many other formatting options.
 Perhaps the easiest way to get started it to just type the command 
 <i>collectl -i:1 -sY</i> and later add some additional switches to see their impact.
@@ -88,14 +89,14 @@ timestamps
 <pre>
 collectl -i:1 -sY --slabfilt blk,ext -oTm
 waiting for 1 second sample...# SLAB DETAIL
-#                                          <----------- objects -----------><--- slabs ---><----- memory ----->
-#             Slab Name                    Size  /slab   In Use     Avail    SizeK  Number      UsedK    TotalK
-13:22:31.002 blkdev_ioc                      64     64     1158     1408         4      22         72        88
-13:22:31.002 blkdev_queue                  1608      5       34       35         8       7         53        56
-13:22:31.002 blkdev_requests                288     14       33       84         4       6          9        24
-13:22:31.002 ext2_inode_cache               928      4        0        0         4       0          0         0
-13:22:31.002 ext3_inode_cache               976      4   119349   122660         4   30665     113754    122660
-13:22:31.002 ext3_xattr                      88     46       46       46         4       1          3         4
+#                                          <----------- objects --------><--- slabs ---><---------allocated memory-------->
+#             Slab Name                    Size  /slab   In Use    Avail  SizeK  Number     UsedK    TotalK   Change    Pct
+09:30:56.004 blkdev_ioc                      64     64     1183     1472      4      23        73        92        0    0.0
+09:30:56.004 blkdev_queue                  1608      5       29       30      8       6        45        48        0    0.0
+09:30:56.004 blkdev_requests                288     14       32       56      4       4         9        16        0    0.0
+09:30:56.004 ext2_inode_cache               928      4        0        0      4       0         0         0        0    0.0
+09:30:56.004 ext3_inode_cache               976      4    36916    36916      4    9229     35185     36916        0    0.0
+09:30:56.004 ext3_xattr                      88     46        0        0      4       0         0         0        0    0.0
 </pre>
 </div>
 
@@ -107,36 +108,80 @@ more interesting we've added filtering on 'dentry' as well:
 
 <div class=terminal-wide13>
 <pre>
-collectl -i:1 -sY --slabfilt blk,ext,dentry -oTS
+collectl -i:1 -sY --slabfilt blk,ext,dentry --slabopts S -oT
 # SLAB DETAIL
-#                                      <----------- objects -----------><--- slabs ---><----- memory ----->
-#         Slab Name                    Size  /slab   In Use     Avail    SizeK  Number      UsedK    TotalK
-13:37:29 blkdev_ioc                      64     64     1210     1408         4      22         75        88
-13:37:29 blkdev_queue                  1608      5       34       35         8       7         53        56
-13:37:29 blkdev_requests                288     14      176      196         4      14         49        56
-13:37:29 dentry                         224     18   132486   136656         4    7592      28981     30368
-13:37:29 ext3_inode_cache               976      4   119351   122660         4   30665     113756    122660
-13:37:29 ext3_xattr                      88     46       46       46         4       1          3         4
-13:37:30 blkdev_ioc                      64     64     1208     1408         4      22         75        88
-13:37:30 blkdev_requests                288     14      194      210         4      15         54        60
-13:37:30 ext3_inode_cache               976      4   119248   122580         4   30645     113658    122580
-13:37:31 blkdev_requests                288     14      189      224         4      16         53        64
-13:37:32 blkdev_requests                288     14       95      168         4      12         26        48
-13:37:33 blkdev_requests                288     14      159      196         4      14         44        56
-13:37:34 blkdev_ioc                      64     64     1165     1408         4      22         72        88
-13:37:34 blkdev_requests                288     14      162      196         4      14         45        56
-13:37:34 dentry                         224     18   126002   132210         4    7345      27562     29380
-13:37:34 ext3_inode_cache               976      4   119120   122432         4   30608     113536    122432
-13:37:35 blkdev_ioc                      64     64     1157     1408         4      22         72        88
-13:37:35 blkdev_requests                288     14      176      224         4      16         49        64
-13:37:35 dentry                         224     18   122640   129402         4    7189      26827     28756
-13:37:35 ext3_inode_cache               976      4   118992   122292         4   30573     113414    122292
-13:37:36 blkdev_ioc                      64     64      993     1344         4      21         62        84
-13:37:36 blkdev_requests                288     14      194      224         4      16         54        64
-13:37:36 dentry                         224     18   109983   116712         4    6484      24058     25936
-13:37:36 ext3_inode_cache               976      4   117405   120532         4   30133     111901    120532
+# SLAB DETAIL
+#                                      <----------- objects --------><--- slabs ---><---------allocated memory-------->
+#         Slab Name                    Size  /slab   In Use    Avail  SizeK  Number     UsedK    TotalK   Change    Pct
+09:33:49 blkdev_ioc                      64     64     1193     1472      4      23        74        92        0    0.0
+09:33:49 blkdev_queue                  1608      5       29       30      8       6        45        48        0    0.0
+09:33:49 blkdev_requests                288     14       51       70      4       5        14        20        0    0.0
+09:33:49 dentry                         224     18    42000    42048      4    2336      9187      9344        0    0.0
+09:33:49 ext3_inode_cache               976      4    36916    36916      4    9229     35185     36916        0    0.0
+09:33:51 blkdev_requests                288     14       40       70      4       5        11        20        0    0.0
+09:33:51 dentry                         224     18    42006    42048      4    2336      9188      9344        0    0.0
+09:34:00 dentry                         224     18    42000    42030      4    2335      9187      9340    -4096   -0.0
+09:34:01 blkdev_ioc                      64     64     1191     1472      4      23        74        92        0    0.0
+09:34:01 blkdev_requests                288     14       37       70      4       5        10        20        0    0.0
+09:34:01 dentry                         224     18    42008    42030      4    2335      9189      9340        0    0.0
 </pre>
 </div>
+
+<h3>--top format</h3>
+Version 3.1.1 of collectl introduces a new format for slab data as specified by <i>--top</i> and produces
+output in a format similar to the <i>slabtop</i> command, but adds two new fields <i>TotChg</i> and
+<i>TotPct</i>, which allow one to see and sort on the change to the actual physical memory allocation.
+These two new fields allow one to see which slabs are changing the most and/or having the most impact on 
+physical memory because sometimes a small percentage change to a very large slab can make a big difference
+in memory while a large percentage change to a small slab may not and hence to 2 additional sorting alternatives.
+<p>
+As with process data, the argument of the switch
+describes how to sort the data and an optional line count.  In the case of slabs the sort name matches the
+column headers making them easy to identify and if you forget how to get started, just run collectl with
+<i>--showtopopts</i>.  Naturally filtering can be applied as well and the following shows the output when 
+used with a couple of filters.
+
+<div class=terminal-wide13>
+<pre>
+collectl --top numobj --slabfilt nfs,tcp
+
+# TOP SLABS 15:56:41
+#NumObj  ActObj  ObjSize  NumSlab  Obj/Slab  TotSize  TotChg  TotPct  Name
+    336     336       32        3       112      12K       0     0.0  tcp_bind_bucket
+    330     330      128       11        30      44K       0     0.0  nfs_page
+    270     144      128        6        30      36K       0     0.0  tcp_open_request
+    130     130      384       13        10      52K       0     0.0  nfs_write_data
+    130      68      384        8        10      52K       0     0.0  nfs_read_data
+     60      60      128        2        30     8192       0     0.0  tcp_tw_bucket
+</pre></div>
+
+<h3>Slab Analysis</h3>
+Similar to process data analysis, the <i>--slabanalyze</i> switch will cause the slab data to be analyzed and 
+summaried in its own file with the <i>.slbs</i>, written into the directory pointed to by -f.  The focus of
+that analysis is currently on how much memory is actually consumed by each slab, the contents of that file
+making it possible to determine which slabs may have had the greatest impact on memory utilization.  Slabs which
+do not allocate any memory will not be included.  The following is an example report:
+
+<div class=terminal-wide13>
+<pre>
+anon_vma                  548864      548864      548864      548864         0      0.00
+arp_cache                   4096        4096        4096        8192      4096    100.00
+avc_node                    4096        4096        4096        4096         0      0.00
+bdev_cache                 45056       45056       45056       45056         0      0.00
+bio                        65536      114688       53248     1662976   1609728   3023.08
+biovec-1                   24576       28672       12288      348160    335872   2733.33
+biovec-128                  4096       12288        4096       24576     20480    500.00
+biovec-16                  12288       24576        4096      102400     98304   2400.00
+</pre></div>
+
+This report shows the starting/ending values of memory utilization for each slab as well as the minimum
+and maximum values over the course of the day.  The final two, and perhaps the most interesting
+columns, show the difference in memory usage over the course of the day as well as the percentage
+change over the low value.
+<p>
+As with the process analysis report, you can control the timeframe of the report using <i>--from/--thru</i>
+and unless you explicitly specify one or more subsystems no other data will be reported.  On the other hand if you
+do specify -s, you will get the additional data reported in the standard way in plot-formatted files.
 
 </body>
 </html>

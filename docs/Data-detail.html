@@ -575,14 +575,14 @@ Otherwise the UID will be reported instead.</td></tr>
 <p>
 <h3>Slab Data, <i>collectl -sY</i></h3>
 <p>
-There are actualy 2 different formats for slab data.  This one applies to all kernels prior to 2.6.22
+There are actualy 3 different formats for slab data.  The first applies to all kernels prior to 2.6.22
 and contains the same fields as the Summary report for each named slab and loses the <i>caches</i>
 fields.
 <p>
 <div class=terminal-wide14><pre>
 # SLAB DETAIL
-#               <-----------Objects----------><---------Slab Allocation------>
-#Name           InUse   Bytes   Alloc   Bytes   InUse   Bytes   Total   Bytes
+#          <-----------Objects----------><---------Slab Allocation------><----Change-->
+#Name      InUse   Bytes   Alloc   Bytes   InUse   Bytes   Total   Bytes   Diff    Pct
 </pre></div>
 
 <table>
@@ -611,6 +611,12 @@ fields.
 
 <tr valign=top><td><b>Bytes</b></td>
 <td>Total size of all the slabs that have been allocted whether in use or not.</td></tr>
+
+<tr valign=top><td><b>Diff</b></td>
+<td>Change in size of this slab since last sample in bytes</td></tr>
+
+<tr valign=top><td><b>Pct</b></td>
+<td>Percentage change in size of this slab</td></tr>
 </table>
 <p>
 This second format applies to the new <i>SLUB</i> allocator starting with the 2.6.22 kernel.  As with the old
@@ -618,8 +624,8 @@ format slab detail report, the same fields as are found in the Slab Summary Repo
 
 <div class=terminal-wide14><pre>
 # SLAB DETAIL
-#               <----------- objects -----------><--- slabs ---><----- memory ----->
-#Slab Name       Size  /slab   In Use     Avail    SizeK  Number      UsedK    TotalK
+#                             <----------- objects --------><--- slabs ---><---------allocated memory-------->
+#Slab Name                    Size  /slab   In Use    Avail  SizeK  Number     UsedK    TotalK   Change    Pct
 </pre></div>
 
 <table>
@@ -652,6 +658,36 @@ taking physical memory.</td></tr>
 <tr valign=top><td><b>TotalK</b></td>
 <td>Total physical memory allocated to processes.  When there is no filtering
 in effect, this number will be equal to the Slabs field reported by -sm.</td></tr>
+
+<tr valign=top><td><b>Change</b></td>
+<td>Change in size of this slab since last sample in bytes</td></tr>
+
+<tr valign=top><td><b>Pct</b></td>
+<td>Percentage change in size of this slab</td></tr>
+</table>
+<p>
+The third format uses a common format based on the <i>slabtop</i> utility for displaying
+top slab data sorted by any of the listed column headers.  All on need to do is use one of
+these names as the argument to the <i>--top</i> switch in lower case (<i>use --showtopopts
+for full list of options to the --top switch</i>).  All the same rules apply for
+controlling the number of lines in the data section, mixing in subsystem data and even using
+with playback mode.
+
+<div class=terminal-wide14><pre>
+# TOP SLABS 15:38:08
+#NumObj  ActObj  ObjSize  NumSlab  Obj/Slab  TotSize  TotChg  TotPct  Name
+</pre></div>
+
+<table>
+<tr><td><b>NumObj</b></td><td>Total number of objects that are available, which includes those in use</td></tr>
+<tr><td><b>ActObj</b></td><td>Number of objects that are in use</td></tr>
+<tr><td><b>ObjSize</b></td><td>Size of an individual slab object</td></tr>
+<tr><td><b>NumSlab</b></td><td>Total number of slabs that have been allocated</td></tr>
+<tr><td><b>Obj/Slab</b></td><td>This is the constant number of objects that fit into one slab</td></tr>
+<tr><td><b>TotSize</b></td><td>Amount of memory consumed by this slab even if not all objects are actualy allocated</td></tr>
+<tr><td><b>TotChg</b></td><td>Change in size of this slab since last sample in bytes</td></tr>
+<tr><td><b>TotPct</b></td><td>Percentage change in size of this slab</td></tr>
+<tr><td><b>Name</b></td><td>Slab Name</td></tr>
 </table>
 
 </body>

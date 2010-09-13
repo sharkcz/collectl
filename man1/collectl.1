@@ -308,6 +308,19 @@ filename string by the appropriate date.
 .RE
 .RE
 
+.B --procanalyze
+.RS
+When specified and there is process data in the raw file, a summary file will be generated
+with one entry unique process containing such things as the total cpu consumed for both user
+and system, min/max utilization of various memory types, total page faults and several others.
+.RE
+
+.B --slabanalyze
+.RS
+When specified and there is slab data in the raw file, a summary file will be generated
+with one entry unique slab containing data on physical memory usage by that slab.
+.RE
+
 .B "--thru time"
 .RS
 Time thru which to play back a raw file.  See --from for more
@@ -429,7 +442,7 @@ file.
 
 .B A
 .RS
-When playing back one or more files to the terminal in -M1 mode, append the
+When playing back one or more files to the terminal in brief mode, append the
 Average and Totals.
 .RE
 
@@ -605,13 +618,6 @@ and replaces -Z which is now deprecated.  See
 collectl -x for more details.
 .RE
 
-.B --procanalyze
-.RS
-When specified and there is process data in the raw file, a summary file will be generated
-with one entry unique process containing such things as the total cpu consumed for both user
-and system, min/max utilization of various memory types, total page faults and several others.
-.RE
-
 .B --procopts options
 .RS
 These options control the way data is displayed and also replaces -OP, --procio
@@ -759,9 +765,8 @@ Yet another way to summare a portion of the help text, this command only shows v
 .B --slabfilt filters
 .RS
 This replaces -Y which is now deprecated.  One can specify a list of slab names separated
-by commas and only those slabs that match the strings will be listed or summaried.  If using
-the old slab data structures the names must exactly match but for the new slub allocator
-the filters are considered patterns and therefore only a portion of the slab name must match.
+by commas and only those slabs whose names start with those strings will be listed or 
+summaried.
 .RE
 
 .B --slabopt options

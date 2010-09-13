@@ -1,0 +1,1342 @@
+.TH COLLECTL 1 "APRIL 2003" LOCAL "Collectl" -*- nroff -*-
+.SH NAME
+
+.B collectl
+- Collects data that describes the current system status.
+
+.SH SYNOPSIS
+Record Mode - read data from live system and write to file or display on terminal
+
+.B collectl [-f file] [options]
+
+Playback Mode - read data from one or more raw data files and display
+on terminal
+
+.B collectl -p file1 [file2 ...] [options]
+
+.SH OPTIONS
+
+Record Mode
+
+In this mode data is taken from a 
+.BR live
+system and either displayed on the
+terminal or written to one or more files or a socket.
+
+.B "--align"
+.RS
+If the HiRes modules is present, 
+.BR collectl
+sample monitoring will be aligned such that a sample will always be taken at the 
+top of a minute (this does NOT mean the first sample will occur then) so that all
+instances of collectl running on any systems which have their clocks synchronized 
+will all take samples at the same time.  Furthermore, if one is doing process 
+monitoring, those samples will also be taken at the top of the minute and so can 
+delay the start of sampling up to 2 full process monitoring intervals.
+.RE
+
+.B "-A, --address address[:port]"
+.RS
+Write all output to a socket at the named address and port.  The default port 
+is set at 1234 but can be changed - see collectl.conf.  
+All output is prefaced by the name of the host writing to the socket.
+
+One can additionally request local data logging by specifying a combination of 
+-P and -f.  See
+.B "man collectl-logging"
+for more detail.
+
+.RE
+
+.B "-c, --count Samples"
+.RS
+The number of samples to record. This is one way of 3 ways of describing
+how long collectl should run (see
+.BR -r
+and
+.BR -R
+).  Note that these 3 switches are mutually exclusive.
+.RE
+
+.B "-C, --config filename"
+.RS
+Name/location of the collectl configuration file.
+If not specified, 
+.BR collectl
+searches for
+.BR collectl.conf
+first in /etc (the default), then in the same directory the
+.BR collectl
+executable is in, and finally the current working directory.
+.RE
+
+.B "-D, --daemon"
+.RS
+Run
+.BR collectl
+as a daemon, primarily used when starting as a service.  One
+caveat about this mode is you can only run one copy.
+.RE
+
+.B "-f, --filename Filename"
+.RS
+This is the name of a file to write the output to.  See the
+description of
+.BR File 
+.BR Naming
+for further details.
+.RE
+
+.B -F, --flush seconds
+.RS
+Flush output buffers after this number of seconds.  This is equivalent to 
+issuing 
+.B kill -s USR1
+at the same frequency (but a lot easier!).  If 0, a flush will occur every
+data collection interval.
+.RE
+
+.B -G, --group
+Treat process data as an entirely separate group of data, writing it into its own raw file, named
+'rawp'.  These separate process files can be played back and processed just like any other 
+collectl raw files and in fact one can even play back both at the same time if that is what is
+desired.  The only real purpose of this switch is that on some systems with many processes, it is
+possible to generate huge raw files (some have been observerd to be >250MB!) and while collectl
+will happily play back/process these files it can take a long time.  By using the -G switch one
+still gets a hugh rawp file, but the raw file is a much more manageable size and as a result much
+faster to process.
+
+.B -H, --nohard command
+.RS
+Do not record data to hard drive, but rather execute
+.BR command, 
+passing the data to it as an argument.  In other words, -H "echo -n" will echo
+each line of text that would have been written to the 'raw' file.
+This is intended for developers with  the need to record data 
+in a non-standard way.  If 
+.BR command
+contains embedded spaces, but sure to enclose it in quotes.
+.RE
+
+.B "-i, --interval interval[:interval2[:interval3]]"
+.RS
+This is the sampling interval in seconds.  The default is 10 seconds when run
+as a daemon and 1 second otherwise.  The process subsystem and slabs (-sY and -sZ)
+are sampled at the lower rate of
+.BR interval2.
+Environmentals (-sE), which only apply to a subset of hardware, are sampled at
+.BR interval3.
+Both
+.BR interval2
+and
+.BR interval3,
+if specified, must be an even multiple of 
+.BR interval1.
+The daemon default is -i10:60:300 and all other modes are -i1:60:300.  
+To sample only processes once every 10 seconds 
+use -i:10.
+.RE
+
+.B "-r, --rolllogs time[[,days][,minutes]]"
+.RS
+When selected, 
+.BR collectl
+runs indefinately (or at least until the system reboots).
+The maximum number of files that will be retained (older ones are automatically
+deleted) is controlled by the
+.BR days
+field, the default is 7 days.  The
+.BR increment
+field which is also optional (but is position dependent) specifies the duration of
+an individual collection file in minutes the default of which is 1440 minutes
+or 1 day.
+.RE
+
+.B "--rawtoo"
+.RS
+Only available in conjunction with -P, this switch causes the creation/logging
+of raw data in addition to plottable data.  While this may seem excessive,
+keep in mind that unlike plottable data, raw data can be played back with different
+switches potentially providing more details.  The overhead to write out this 
+additional data is minimal, the only real cost being that of extra disk space.
+.RE
+
+.B "-R, --runtime duration"
+.RS
+Specify the duration of data collection where the duration is a number followed
+by one of 
+.BR wdhms,
+indicating how many weeks, days, hours, minutes or seconds
+the collection is to be taken for.
+.RE
+
+.B --sexpr {raw|rate}[,dir]
+.RS
+This switch is only available when requesting collectl to write data to a file,
+whether a raw or plottable one, by including -f in the command string.  
+If 'raw' is specified in the switch, it will cause a snapshot of the latest
+counters to be
+written as an s-expression to the files named # and S in the logging directory.
+If 'rates' is chosen the current rates will be written to S.  One can override
+the logging directory for the # and S files to 'dir'.  Specifying this switch
+also sets -F0.
+.RE
+
+.B -S, --ssh
+.RS
+This is typically used when starting collectl on another system via ssh or
+rsh.  It causes collectl to 'watch' for its parent (who started it locally) to
+exit at which point it will exit as well.  The reason for this switch is that
+when the remote command that started collectl exists, collectl's parent will exit
+as well but NOT collectl, unless -S is specified.
+.RE
+
+Playback Mode
+
+In this mode, data is read from one or more data files that were
+generated in Record Mode
+
+.RE
+.B "-b, --begin BeginTime"
+.RS
+Display data from this time forward.  The format of this
+field is [yyyymmdd-]hh:mm:ss.  If the 8 digit date is omitted, the date is
+taken from the data file.
+
+.RE
+.B "-e, --end EndTime"
+.RS
+Display data thru this time period.  The format of this
+field is [yyyymmdd-]hh:mm:ss.  If the 8 digit date is omitted, the date is
+taken from the data file.
+.RE
+
+.B "-f, --filename Filename"
+.RS
+If specified, this is the name of a file or directory 
+to write the output to (rather than
+the terminal).  See the description for details on the format of this field.
+This requires the -P flag as well.
+.RE
+
+.B "-p, --playback Filename"
+.RS
+Read data from the specified 
+.BR playback
+file(s), noting that one can use wildcards in the filename if
+quoted (if playing back multiple files to the terminal you probably
+want to include -m to see the filenames as they are processed).
+The filename must either end 
+in 
+.BR raw
+or
+.BR raw.gz.
+As an added feature, since people sometimes automate
+the running of this option and don't want to hard code a date, you can 
+specify the string YESTERDAY or TODAY and they will be replaced in the
+filename string by the appropriate date.
+
+.RE
+
+.B "-T, --timezone hours"
+.RS
+During playback, sample times are reported in the local time at which they
+were recorded.  Since this determination is made at the time the playback
+file is opened and not for each record, there may be times when a clock had
+changed in the middle of a sample and will not be converted correctly.  When
+this happens one may have to play back the samples in pieces and manually set
+the time offset with -T.
+.RE
+
+Common Switches - both record and playback modes
+.RE
+
+.B "-d, --debug debug"
+.RS
+Control the level of debugging information, not typically used.  For details
+see the source code.
+.RE
+
+.B -h, --help, -x, --helpext
+.RS
+Display a standard or extended help message.
+.RE
+
+.B -l, --limits limit
+.RS
+Override one or more default exception limits.  If more than one limit they
+must be separated by hyphens.  Current values are:
+
+.B SVC:value
+.RS 
+Report partition activity with Service times >= 30 msec
+.RE
+
+.B IOS:value
+.RS 
+Report device activity with 10 or more reads or writes per second
+.RE
+
+.B LusKBS:value
+.RS 
+Report client or OSS activity greater than limit.  Only applies to
+Client Summary or OSS Detail reporting.  [default=100000]
+.RE
+
+.B LusReints:value
+.RS 
+Report MDS activity with Reint greater than limit.  Only applies
+to MDS Summary reporting.  [default=1000]
+.RE
+
+.B AND
+.RS 
+Both the IOS and SCV limits must be reached before a device is reported.  This
+is the default value and is only included for completeness.
+.RE
+
+.B OR
+.RS
+Report device activity if either IOS or SVC thresholds are reached.
+.RE
+
+.B -L, --lustresvc [c|m|o][:seconds]
+.RS
+This switch limits which servics lustre checks for and the frequency of those checks.
+For more information see the man page collectl-lustre.
+.RE
+
+.RE
+.B -m, --messages
+.RS
+Write status to a monthly log file in the same directory as the output file 
+(requires -f to be specified as well).  The name of the file will be 
+.BR collectl-yyyymm.log
+and will track various messages that may get generated during every run of 
+.BR collectl.
+.RE
+
+.B -N, --nice
+.RS
+Set priority to a 
+.BR nicer
+one of 10.
+
+.RE
+.B "-o, --options Options"
+.RS
+These apply to the way output is displayed OR written to a plot file.  They
+do not effect the way data is selected for recording.  Most of these switches
+work in both record as well as playback mode.  If you're not sure, just
+try it.
+
+.B 1
+.RS
+Data in plotting format should use 1 decimal point of precision as appropriate.
+.RE
+
+.B 2
+.RS
+Data in plotting format should use 2 decimal points of precision as appropriate.
+.RE
+
+.B a
+.RS
+Always append data to an existing plot file.  By default if a plot
+file exists, the playback file will be skipped as a way of assuring it is 
+associated with a single recorded file.  This switch overrides that mechanism
+allowing muliple recorded files to be processed and written to a single plot
+file.
+.RE
+
+.B A
+.RS
+When playing back one or more files to the terminal in -M1 mode, append the
+Average and Totals.
+.RE
+
+.B c
+.RS
+Always open newly named plot fies in 
+.BR create
+mode, overwriting any old ones
+that may already exists.  If one processes multiple files for the same day in
+.BR append
+mode multiple times, the same data will be appended to the same file mulitple
+times.  This assures a new file is created at the start of the processing.
+.RE
+
+.B d
+.RS
+For use with terminal output and  brief mode.  Preceed each line with a date/time stamp,
+the date being in mm/dd format.  This option can also be applied to plot formatit
+which will cause the date portion to also be displayed in this format as
+opposed to D format.
+.RE
+
+.B D
+.RS
+For use with terminal output and brief mode.  Preceed each line with a date/time 
+stamp, the date being in yyyymmdd format.
+.RE
+
+.B g
+.RS
+For use with terminal output and brief mode.   When displaying values of 1G or greater
+there is limited precision for 1 digit values.  This options provides a way to display
+additional digits for more granularity by substituting a 'g' for the decimal point
+rather than the trailing 'G'.
+.RE
+
+.B G
+.RS
+For use with terminal output and brief mode.  This is similar to 'g' but preserves
+the trailing 'G' by sacrificing a digit of granularity.
+.RE
+
+.B h
+.RS
+The actual operation of this options depends on the format of the data being
+displayed, but the thing to keep in mind is it reduces the number of headers
+being printed.
+
+If the default (non-plot) display format is in effect a separate header is
+printed for every line of output, which can be very verbose.  Chosing this 
+option will cause the headers to only be displayed every 20 lines.
+
+When displaying data on the terminal in
+.BR plot
+format, a new header
+line is already generated every 20 lines of data.  Selecting this output will
+cause the header line to only be displayed once.
+
+There are occasions where collectl will automatically set this mode.  To disable
+it specify it as -o-h.
+.RE
+
+.B H
+.RS
+Eliminate ALL headers from the display
+.RE
+
+.B m
+.RS
+Whenever times are reported in plot format, in the normal 
+terminal reporting format at the bginning of each interval or when when one 
+of the time reporting options (d, D or T is selected), append the milliseconds
+to the time.
+.RE
+
+.B n
+.RS
+Do NOT normalize rate oriented data.  By default, all rates are expressed in
+units/sec.
+.RE
+
+.B s
+.RS
+When reporting detailed slab data, leave out slabs with no allocations.
+.RE
+
+.B S
+.RS
+When reporting any slab data, leave out slabs with no activity during the 
+current interval.  In other words, only show slabs that change.  Note that
+changes in active objects or allocations are not included in this condition
+as they change too frequently and do not effect memory allocated for the slabs.
+.RE
+
+.B t
+.RS
+Always start the display for the current interval at the top of the screen
+(non-plot format only).  This generates the illusion of a real-time display
+when the data fits on a single screen.
+.RE
+
+.B T
+.RS
+For use with terminal output and brief mode, preceeds each line with a time stamp.
+.RE
+
+.B u
+.RS
+Create plot files with unique names by include the starting time of a colletion
+in the name.  This forces
+multiple collections taken the same day to be written to multiple files.
+.RE
+
+.B x
+.RS
+Report only exception records for selected subsystems.  Exception reporting also requires
+--verbose.  Currently this only 
+applies to disk detail and Lustre server information so one must select at least 
+-s D, l or L for
+this to apply.  If writing to a detail file, this data will go into a separate
+file with the extension 
+.BR X
+appended to the regular detail file name.
+.RE
+
+.B X
+.RS
+Report both exceptions as well as all details for selected subsystems, for
+-s D, l or L only.
+.RE
+
+.B z
+.RS
+Do not compress any output files.  If the compress library hasn't been 
+installed, this switch will get rid of the warning when -f is specified.
+.RE
+.RE
+
+.RE
+.B "-O, --subopts Sub-system Options"
+.RS
+These options apply to specific subsystems as opposed to 
+.BR -o
+which apply to all subsystems.  Some control which data is to be collected and
+others may control which data is displayed.
+
+.B 2
+.RS
+Collect nfs V2 data
+.RE
+
+.B 3
+.RS
+Collect nfs V3 data
+.RE
+
+.B B
+.RS
+Display Lustre OST I/O distribution by buffersize, where the buffers range in size from 1 to 
+128 pages and the size of a page is installation dependent.  All IA32 systems have a page size of 4K.
+.RE
+
+.B C
+.RS
+Collect nfs statistics for the CLIENT rather than the SERVER.
+.RE
+
+.B D
+.RS
+For lustre MDSs and OSTs, collectl disk block iostats.
+.RE
+
+.B M
+.RS
+For lustre clients, collect metadata.
+.RE
+
+.B R
+.RS
+For lustre client, collect readahead stats
+.RE
+.RE
+
+.RE
+.B -P, --plot
+.RS
+Generate output in plot format.  This format is space separated data which 
+consists of a header (prefaced with a # for easy identification by an analysis
+program as well as identifying it as a comment for programs, such as gnuplot,
+which honor that convention).  When written to disk, which is the typical way
+this option is used, 
+.BR summary
+data elements
+are written to the 
+.BR tab
+file and the 
+.BR detail
+elements written to one or
+more files, one per detail subsystem.  
+If -f is not specified, all output is sent to the terminal.  
+Output is always one line per sampling interval.
+.RE
+
+.B "-s, --subsys subsystem"
+.RS
+This field controls which subsystem data is to be collected or played back
+for. The rules for displaying results vary depending on the type of data to be
+displayed.  If you write data for CPUs and DISKs to a raw file and play it back
+with -sc, you will only see CPU data.  If you play it back with -scm you will
+still only see CPU data since memory data was not collected.  However, when 
+used with -P, collectl will always honor the subsystems specified with 
+this switch so in the previous example you will see CPU
+data plus memory data of all 0s.  To see the current set of default subsystems,
+which are a subset of this full list,
+use -h.
+
+You can also use + or - to add or subtract subsystems to/from the default values. 
+For example, '-s-cdn+N'< will remove cpu, disk and network monitoring from the
+defaults while adding network detail.
+
+The default is 'cdn', which stands for CPU, Disk and Network data.
+
+SUMMARY SUBSYSTEMS
+
+.B "c - CPU"
+
+.B "d - Disk"
+
+.B "f - NFS V3 Data"
+
+.B "i - Inode and File System"
+
+.B "l - Lustre"
+
+.B "m - Memory"
+
+.B "n - Networks"
+
+.B "s - Sockets"
+
+.B "t - TCP"
+
+.B "x - Interconnect"
+
+.B "y - Slabs (system object caches)"
+
+DETAIL SUBSYSTEMS
+
+This is the set of 
+.BR detail
+data from which in most cases the corresponding summary data is
+derived.  There are currently 2 types that do not have corresponding summary
+data and those are 'Environmental' and 'Process' (in fact, 'Process' has its own
+manpage named 'collectl-process').  So, if one has 3 disks
+and chooses 
+.B -sd,
+one will only see a single total taken
+across all 3 disks.  If one
+chooses 
+.B -sD,
+individual disk totals will be reported but no totals.  Choosing 
+.B -sdD
+will get you both.
+
+.B "C - CPU"
+
+.B "D - Disk"
+
+.B "E - Environmental data (fan, power, temp)"
+
+.B "F - NFS V3 Data"
+
+.B "L - Lustre OST detail OR client Filesystem detail"
+
+.B "LL - Lustre client OST detail.  LL overrides L"
+
+.B "N - Networks"
+
+.B "T - 65 TCP counters only available in plot format"
+
+.B "X - Interconnect"
+
+.B "Y - Slabs (system object caches)"
+
+.B "Z - Processes"
+.RE
+
+.B --showheader
+.RS
+In collectl mode this command will cause the header that is normally written to a data file to
+be displayed on the terminal and collectl then exists.  This can be a handy way to get a brief
+overview of the system configuration.
+.RE
+
+.B --showoptions
+.RS
+This command shows only the portion of the help text that desribes the -o and --options switches
+to save the time of wading through the entire help screen.
+.RE
+
+.B --showsubopts
+.RS
+Similar to --showoptions, this command summaries just the paramaters associated with -O and
+--subopts.
+.RE
+
+.B --showsubsys
+.RS
+Yet another way to summare a portion of the help text, this command only shows valid subsystems.
+.RE
+
+.B "--top [num]"
+.RS
+Include the top consumers of total cpu for this interval.  In interactive mode and if not specified, the process
+monitoring interval will be set to that for other subsystems.  The screen will be cleared for each interval
+resulting in a display similar to the 'top' utility.  In playback more the screen will NOT be cleared.  You
+cannot use this switch in 'record' mode.
+.RE
+
+.B -v
+.RS
+Show version and whether or not Compression and/or HiResTime modules have
+been installed and exit.
+.RE
+
+.B -V
+.RS
+Show default parmeter and control settings, all of which can be changed in
+/etc/collectl.conf
+.RE
+
+.B --verbose
+.RS
+Display output in verbose mode.  This often displays more data than in the default mode.  When 
+displaying detail data, verbose mode is forced.  Furthermore, if summary data for a single 
+subsystem is to be displayed in verbose mode, the headers are only repeated occasionally whereas
+if multiple subsystems are involved each needs their own header.
+.RE
+
+.B -w
+.RS
+Disply data in
+.BR wide
+mode.  When displaying data on the terminal, some data is formatted followed 
+by a K, M or G as appropriate.  Selecting this switch will cause the 
+full field to be displayed.  Note that there is no attempt 
+to align data with the column headings in this mode.
+.RE
+
+.SH DESCRIPTION
+
+The
+.BR collectl
+utility is a system monitoring tool that records or displays
+specific operating system data for one or more sets of subsystems. Any set
+of the subsystems, such as CPU, Disks, Memory or Sockets can
+be included in or excluded from data collection.  Data can either be
+displayed back to the terminal, or stored in either a compressed or
+uncompressed data file. The data files themselves can either be in 
+.BR raw
+format
+(essentially a direct copy from the associated /proc structures) or in a space
+separated 
+.BR plottable
+format such that it can be easily plotted using tools 
+such as gnuplot or excel.  Data files can be read and manipulated from the
+command line, or through use of command scripts.
+
+Upon startup,
+.BR collectl.conf
+is read, which sets a number of default parameters and switch values.  Collectl
+searches for this file first in /etc, then in the directory the collectl
+execuable lives in (typically /usr/sbin) and finally the current directory.
+These locations can be overriden with the 
+.BR -C 
+switch.  Unless
+you're doing something really special, this file need never be touched, the
+only exception perhaps being when choosing to run collectl as a service and you
+wish to change it's default behavior which is set by the DaemonCommand entry.
+
+.SS Operational Messages
+
+When something that may be of interest occurs, collectl calls an internal message reporting
+routine and assigns that message a status of Informational, Warning, Error or Fatal.  The
+way collectl deals with these messages is controlled by several factors:
+
+.RS
+If collectl is started as a daemon and the -m switch is specified, all messages will be
+written the the message log in the collectl logging directory, the default being /var/log/collectl.
+If this switch is not specified no messages are ever recorded and so it is recommened that
+this switch, which is already in the collectl startup script, not be removed.
+.RE
+
+.RS
+When run interactively, all messages except those of type Informational are displayed on the 
+terminal.
+.RE
+
+.RS
+When run interactively and -m is specified, ALL messages are displayed on the terminal.  
+When collectl is not providing the desired results and it is not obvious why, adding this 
+switch can be helpful.
+.RE
+
+.RS
+If a message of type Fatal is encountered, collectl will terminate.  In all other cases it continues
+executing, often skipping what it was trying to do.
+.RE
+
+.SS Running collectl as a service
+
+Assuming
+.BR collectl
+has been installed from the rpm kit, it has been installed as a service, but
+disabled.  To enable it, either use the
+.BR services
+control from the desktop gui or via
+.BR chkconfig.
+By default, it is set up to collect most summary data
+To see what the specific subsystems are, do
+.BR "collectl -V"
+and look at the daemon default values for -s.  As a service, it is configured to 
+write all data it to a compressed text file in
+.BR /var/log/collectl,
+which was created when the kit was installed.  To verify
+.BR collectl
+will properly run as a service, simply do a
+.BR "service collectl start"
+and/or examine /var/log/collectl for collectl*.log for the startup (and hopefully
+no termination) message and the appearance of either a
+.BR ".raw or .raw.gz"
+data file in the same directory.  Note that since the output is buffered, the 
+data file will have a length of 0 until the flush interval, which is currently
+set to 60 seconds, passed.
+
+In order to write its output as a compressed file,
+it will have been necessary to first install the perl
+.BR Compress
+module.  If it has not been installed, you will need to turn off compression (via the
+-oz parameter) to get rid of the warning message that is displayed.
+
+To change this or any other behaviors of the daemon, such as the flush interval, output file
+location, etc., simply change the
+.BR DaemonCommand
+parameter in
+.BR collectl.conf
+which is the actual command string collectl processes at startup.  Use care in
+setting this string as incorrect setting may cause collectl to abnormally exit.
+
+.SS A few words about operating modes and formats
+
+Depending on which combination of switches are selected, collectl will run in
+one of 3 main modes with various options for added flexibility.
+The most basic mode, which you get if you don't select one of the other 2,
+is display.  In this mode the output is displayed on the terminal
+in real-time as it is collected.  
+In 
+.BR record
+mode, specified by the -f switch, data is written in real-time to a
+file of the user's choosing.  In 
+.BR playback
+mode, selected with -p,
+data is read from a file that was generated in 
+.BR record
+mode at an earlier
+time.
+
+The format of the results can also be selected as either ASCII or Plot.  ASCII 
+data is always displayed on the terminal while plot data, selected by including
+-P with any of the 3 modes, can be either written to a file or displayed on 
+the terminal.  Since plot data is not intended for human consumption, the 
+reason one would typically send it to a terminal would be with the intent of 
+redirecting the output to a file or piping it into another script.
+
+Using the -f, -p and -P  switches in different combinations result in the 
+following behaviors:
+
+.B "No switches"
+.RS
+Data is displayed on the terminal in ASCII
+
+.RE
+.B -P
+.RS
+Data is displayed on the terminal in Plot Format.
+
+.RE
+.B "-f file"
+.RS
+Raw data is written to the file (whose name is constructed by collectl) in ASCII, 
+with the extension 
+.BR raw.  
+For more details on file naming see the section
+.B "File Naming"
+below.
+.RE
+.B "-f file and -P"
+.RS
+Data is written to the specified file in plot format, with one or more of a
+number of extensions depending on what detail data may have been requested.
+
+.RE
+.B "-p file"
+.RS
+Data is played back from the 
+.BR raw
+file specified by -p and displayed on the terminal in ASCII.  If one wishes to
+view a subset of the data recorded, -s can be included to provide that discrimination.
+Note that if one specifies subsystems for which data has not been recorded, they will
+be displayed as zeros.  One can also change the format that the data is display though
+various switches such as --verbose and -o.
+
+.RE
+.B "-p file -P"
+.RS
+Data is played back from the 
+.BR raw
+file and displayed on the terminal in Plot Format.  Note that since one often uses 
+this mode to produce output usable by other tools/programs, the user can force the
+output format by including -s and only those subsystems specified will be displayed.  
+Furthermore, subsystems for which data has not been collected will also be displayed
+as zeros to ensure consistent formatting across multiple data files.
+
+.RE
+.B "-p file1 -f file2"
+.RS
+This is NOT supported as you can only write data that is played back to another
+file in plot format.  Someone wanting to do this should rethink what it is they
+are trying to do.
+
+.RE
+.B "-p file1 -f file2 -P"
+.RS
+Data is played back from the 
+.BR raw
+file and written to the specified file in Plot Format.  Note that here too -s will
+force specific subsystems to be displayed.
+.RE
+
+.SS Exception Reporting
+
+By default, collectl always reports all data for all devices.  However, in the
+cases where there are dozens or possibly hundreds of devices such as with large
+disk farms, it may be desirable to only look at those devices that are actually
+doing something of interest.  These are referred to as exceptions, because 
+their activity has crossed a level of minimal activity.  The defaults for these levels
+can be displayed with the -V switch or
+changed to different values with the -l switch.  To change one or more values
+simply specify them as a string.  There are currently 4 levels one can set:
+
+SVC - Service time
+IOS - Number of I/O Operations
+LusKBS - Lustre KBytes/Sec
+LusReints - Lustre MDS Reint operations
+
+Note that one can also specify the SVC and IOS conditions must be met or 
+simply 1 must be
+met by adding a selection of AND (the default) or OR, respectively.
+
+For example, to set the minimal SVC level to 50 and require both SVC and IOS
+limits be reached,  simply add the switch
+"-l SVC:50".  To change both values and require only 1 be met, separate them 
+with a 
+.BR - 
+and be sure to include OR as one of the parameters such as
+"-l SVC:50-NIO:10-OR", noting that order is not important.
+
+.SS Raw, Summary, Detail and Exception Data files
+All raw data is recorded in a single file with the 
+extension 
+.BR raw
+or
+.BR raw.gz
+(if compressed which is the default).  The only exception to this rule is the process raw
+file which can be useful on systems with a large number of processes (see the description
+of -G).
+
+Summary plot data for those
+subsystems selected with lower case letters, is always stored in a single file,
+one line per time period,
+with the extension 
+.BR tab
+. The primary reason for this is that the data for 
+each subsystem is of a fixed length and there is really no benefit in 
+separating it into mulitple files.  
+
+Detail plot data, which is typically for
+devices of which there can be multiple instances (the exception being nfs), 
+is recorded in one file per detail type.  
+Each line contains instance data of a fixed number of
+fields for that particular device.  Although NFS is not instance data, 
+it too has a detail portion and is written to its own file.  Process
+data is also considered as details because it requires multiple lines per monitoring
+period and that is why one has to specify -sZ and there is no -sz.
+
+Exception data is written to a file in the same format as detail data with an
+.BR X
+appended to its name.  Since exception data is not of a known format 
+across the entire device as is detail data, it cannot be written as a single
+line, but rather is written as one line per device.  Each line is prefaced with
+a date/time stamp and the number of the device (0 based).
+
+.SS File Naming
+
+All files generated by collectl via the -f switch, both raw and plot,  will 
+always contain the name of the host from which they have been generated
+according to the following rules:
+
+.RS
+If the specified file is actually a directory, the resultant file(s) will be
+created in that directory and begin with the hostname.  If the file begins with
+anything else, it will simply be prepended to the
+.BR -hostname
+
+The name is then followed with "-yyyymmdd".  
+
+If this is a raw data file or one generated using -P and
+.BR "-ou"
+has been specified, it will also have have "-hhmmss" appended as well to 
+indicate the starting time of the sample.  The colons have been left off the
+time field to make it easy to move the file to a PC for further analysis if 
+so desired.
+
+The appropriate extension is added and if a compressed file, 
+.BR .gz
+is then appened.
+.RE
+
+.SS Playing Back Multiple Data Files
+
+The
+.BR collectl
+utility can accept names of multiple raw data files (which themselves
+can contain wild cards) as a quoted string separated by white space, using
+the
+.BR -p
+option and play them back as one ASCII stream, with monotonically
+increasing sample numbers for each unique source system.  It should be noted
+that if these files contain samples of different subsystems the resultant 
+stream will contain data elements for all, zero filling as appropriate.  When
+this occurs, a message will be displayed if -m has been speficied.
+It can also record them in plot format to multiple output files as appropriate.
+Filtering options such as
+.BR -b
+and
+.BR -e
+can also be used with this function.
+
+If you use a begin time switch keep several things in mind.  
+.BR collectl
+processes the files in the order specified, skipping records until it finds the
+first interval >= the begin time and reports all remaining records until it 
+reaches the end time.  If files are listed out of time sequence you may end
+up reporting on data prior to the begin time.
+
+.BR collectl
+always needs data from a base interval from which to begin 
+calculating changes in counters and that interval is never displayed.  
+Therefore when you specify a starting time, 
+.BR collectl
+attempts to read a 
+sample from a previous interval.  When mulitple files are 
+processed this must be repeated for each, so keep this in mind - if 2 files 
+contain 4 samples each, you will only see 6 intervals.
+
+.SS Creation of plot files from raw files
+
+Keep in mind that these rules apply whether playing back one or multiple files.
+The first thing
+.BR collectl
+does is examine the raw file header to get the
+source host name and creation date.  There will always be a new set of data
+generated for
+each unique combination of host and creation date - note that depending on the
+subsystems chosen there may be multiple output files generated.
+This also means a single raw file that spans multiple  
+dates will result in a single set of data.  
+
+By default, the name of the plot file contains only the date and a test is made
+to see if a file with that name already exists.  If not, it is created in 
+append mode.  This means that multiple raw data files for the same
+host on the same date will result in a single set of data.  However, if that
+file already exists, collectl will NOT process any data, and request you 
+specify 
+.BR "-oc"
+, to tell it to perform the first open in
+.BR create
+mode so that subsequent files can be appended.  If you specify
+.BR "-oa"
+all files will be appended to the original one which may not be what you want.
+Collectl cannot read your mind so to be safe, be explicit.
+If you want to generate a unique set of data files for each 
+.BR raw
+file, include
+.BR "-ou"
+which causes the time to be 
+included in file names, resulting in a unique output file name for each raw
+file.
+
+.SS Normalization of Data
+
+Where appropriate, data is presented in units per second. For example, disk
+data such as KiloBytes transferred, or the number of transfers, is always
+normalized for 1 second. This happens no matter what time interval is
+chosen. Normalization can be disabled via the
+.B n
+option.
+
+.SS Tell me again why I care about time alignment (the -a switch)?
+
+It has been observed when running
+.BR collectl
+on many nodes of a compute farm that are also running fine grained MPI jobs,
+that the
+.BR collectl
+sampling will cause some degree of background noise that in turn
+can cause all other nodes to stall.  This will add to the overall execution
+time of the job.  If one can force all instances of
+.BR collectl
+to align on nearly the same clock boundary, the background noise will still be
+there, but the effect of multiple instances stalling at the same time will at
+least reduce some of the effects.
+
+.SS Data Compression
+
+The
+.BR collectl
+utility reads and writes gnuzip format compressed
+data files. Compressed output is enabled by default but can be
+disabled using the
+.BR -oz
+option.  As the gnuzip compression format
+is used, the output files can be decompressed by a number of tools
+such as gunzip and winzip. The extension .gz is appended to the output
+filename.
+
+Compression during collection has not been observed to generate any additional CPU load.
+Because compression uses buffers and therefore does not write to disk after
+every sample, it makes fewer system calls and its overall impact is negligible. 
+However, because the output is buffered there is one possible draw-back. 
+If collectl terminates abnormally (perhaps due to a system crash) more
+data samples will be lost than if compression is not used. This should not
+be an important consideration for most users.
+
+.SS Flushing I/O Buffers
+
+By default,
+.BR collectl
+does not take any special measures to flush its I/O buffers and simply allows
+Linux to flush them when they fill.  Depending on the interval and selected
+sub-systems, this can take anywhere from several minutes to an hour or more.
+The use of the
+.BR -F
+switch allows one to set a specific interval at which time the buffers will
+be flushed.  If 
+.BR collectl
+had been started via
+.BR /etc/rc.d/init.d/collectl
+they will be flushed once a minute by default.
+
+If there is a great desire to immediately examine current data, say if one had
+started
+.BR collectl
+manually without
+.BR -F
+, one can either manually send a
+.BR USR1
+signal to the running process via
+.BR "kill -s USR1 pid"
+or if lazy, like most of us are, simply execute
+.BR "/etc/rc.d/init.d/collectl flush"
+
+.SS Output formats
+
+By design, collecl gathers more data than is possible to display in an efficient, easy to read,
+compact form.  However, most user want their data displayed in such a form for easy 
+interpretation.  Therefore, collectl will attempt to display all data in a single line, often
+choosing a subset of the complete record for each subsystem.  If the user has selected too
+many systems, each line may exceed the display width and wrap.  When this happens either make the
+terminal window wider (maybe even using a smaller font) or choose less subsystems.
+This is referred to as 'brief' format and is collectl's display format of choice.
+
+Collectl tries its best to select a format consistent with the user's selection
+criteria, using 'brief' mode wheneven possible.  However there are several instances
+when this mode doesn't make sense.  For example, detail data can only be display in
+verbose mode since it takes multiple lines for each sample.  When this occurs, collectl
+will automatically use 'verbose' mode which can also be manually forced (when you want
+more data) using --verbose.
+
+One should note that these formats are not just for interactive use are also applied
+to playback mode as well.
+
+An additional feature of 'brief' mode is 'subtotal' mode.  If one enters a <CR> at
+any time, the next line of ouput will be the subtotals of all columns since
+the start of collectl OR the last time the counters were zeroed.  To zero the
+counters enter 'Z<cr>'.  Furthermore, if you type 'A<cr>', the averages since the
+last zeroing will be reported.  The averages/totals can also be displayed with
+playing back a file in brief mode by specifying -oA.
+
+Finally, if one wants to write their own display format - for perl programmers only -
+use  "--custom name:subsys" in which you specify the name of the file to be 
+.BR required 
+(the extension 
+.BR ph
+is assumed if not specified) and a list of subsystems that contain the data
+desired.  Note that the entry point for the routine must match the name of the
+file.  
+
+To actually write this routine one needs to know a little bit about how 
+collectl works, but only a little.  Based on the subsystems specified, data is
+read from /proc, so be sure to specify the correct subsystems from which you 
+want to report data.  At the beginning of the next cycle, the values are 
+calculated and assigned to a whole slew of global variables.  At this point the
+.BR print
+routines are called and if --custom was specified the appropriate 
+.BR formatting
+routine is called instead.  Therefore, to determine what to do in a custom
+.BR display, 
+one need only read through the print commands in 
+.BR formatit.ph
+and select the variables of your choice.  To get a rate/sec instead of an 
+absolute count, be sure to divide by $intSecs, noting that you can still force
+an absolute value via -n since that always forces $intSecs to 1.
+
+Here is an example of a very simply custom formatting routine that simply reports
+the system cpu time and the disk read/writes in KB.
+
+sub mjs {
+.br
+	printf("%6d  %6d  %6d\\n", 
+.br
+	$sysP[$NumCpus], $dskReadKBTot/$intSecs, $dskWriteKBTot/$intSecs);
+.br
+}
+.br
+1;
+
+To run this routine once a second, simply execute the command:
+
+collectl --custom mjs:cd
+.RE
+
+.SH EXAMPLES
+
+Display cpu, disk and network summary data on the terminal once every second 
+until a ^C entered.  Try adding -od or -oD or -oT to see different date/time formats.
+
+.B collectl
+
+Force collectl to display the same data in verbose mode.
+
+.B collectl --verbose
+
+Display data for a single subsystem, first in brief mode, then verbose mode.
+
+.B collectl -sc
+
+.B collectl -sc --verbose
+
+Collect/display cpu and memory 5 times, once every 2 seconds.  Instead of 
+reporting rates in units/sec, just report the number of units in each 
+reporting interval.
+
+.B collectl -scm -c5 -i2 -on
+
+Collect/display all data as above except for network and plus memory and sockets 
+every 5 seconds for 1 hour.  Instead of showing data in K/M/G format, show exact 
+values.  Try adding --verbose -ot to put it in verbose mode and to see a real time 
+display as one might see with the 'top' command.
+
+.B collectl -s-n+ms -i5 -R1h -w
+
+Record (rather than display), data to a file in /logs.  The
+file being written to will begin with 
+.BR test-hostname
+.  Every morning at 00:01
+a new file will be created and any files older than 5 days with the same name
+prefix will be deleted.
+
+.B collectl -f logs/test -r 00:01,5
+
+Play back the file named 
+.BR cag-pc2-20030509-133726.raw.gz, 
+but only display data collected from 14:00-15:00 and just show disk detail data.
+
+.B collectl -p cag-pc2-20030509-133726.raw.gz -b14:00 -e15:00 -sD
+
+Play back lustre OST data that was collected using -OBD but only display the basic
+OST data normally collected without using -O.  As described in 'man collectl-lustre'
+this is a special case rarely needed, but still worth noting.  Try using -OoD and see
+how collectl switches from 'brief' to 'verbose' mode since there are now 2 sets of
+data to display.
+
+.B ~mjs/collectl/collectl.pl -p hpsfs3-20060301-095053.raw -sl -Oo
+
+Record detailed disk data in plot format in the 
+.BR logs
+directory in one file for 3 days.
+
+.B collectl -sD -f logs -R3d
+
+Convert data from 
+.BR raw
+to
+.BR plot
+format in a file in the /plots.
+If any plot files with the same prefix already exist for May 9, the script 
+will print a message and skip the processing that file.  Use the options
+.B -o a
+or
+.B -o c
+to either append to an existing plot file or simply create a new one, 
+overwriting the existing one.  The former switch can be quite useful if you've
+created multiple logs over different time periods for the same day and want to
+process each, one at a time but still store all the plot data in the same file.
+
+.B collectl -p cag-pc2-20030509-133726.raw.gz -f plots -P
+
+The following command processes many 
+.BR raw
+files at once.  All files /logs are 
+converted to 
+.BR plot
+format in /plots.
+Note that the quotes around the wildcard string are required.  If the output
+file already exists, one must use the 
+.B a
+or
+.B c
+options as described above.  The only caveat is that when multiple 
+.BR raw 
+files
+exist for the same day, once a decision is made what to do with the first
+instance (based on any options selected), subquent instances will be appended 
+to the same file as the first.
+
+.B collectl -p "logs/*raw.gz" -f plots
+
+.SH RESTRICTIONS/PROBLEMS
+
+Thread reporting currently only works with 2.6 kernels.
+
+The pagesize has been hardcoded for perl 5.6 systems to 4096 for IA32
+and 16384 for all others.  If you are running 5.6 on a system with a
+different pagesize you will see incorrect SLAB allocation sizes and will
+need to scale the numbers you're seeing accordingly.
+
+I have recently discovered there is a bug in /proc in that an extra line
+is occasionally read with the end of the previous buffer!  When this
+occurs a message is written (if -m enabled) and always written to the
+terminal.  Since this happens with a higher frequency with process data
+I silently ignore those as the output can get pretty noisey.  
+If for any reason this is a problem, be sure to let me know.
+
+Since collectl has no control over the frequency at which data gets written
+to /proc, one can get anomolous statistics as collectl is only 
+reporting a snapshot of what is being recorded.  This is particularly true for
+network traffic on 2.4 kernels, 
+which is only updated approximately once a second.  This means
+the number of samples per interval will vary and collectl will reports spikes
+or valleys.  This is especially noticeable at intervals close to the counter
+update frequency.  Since most counters do update at a fairly high frequency
+this is not normally a problem, but to get a better feel for just how 
+frequently a counter is being updated, try running collectl with an interval
+of 0.1 or even 0.01 seconds for a few seconds.  See man collectl-themath for more
+details.
+
+.SH FILES
+
+see collectl-files man page
+
+.SH SEE ALSO
+collectl-data, collectl-files, collectl-logging, collectl-lustre,
+collectl-process and collectl-themath
+
+.SH ACKNOWLEDGEMENTS
+I would like to thank Rob Urban for his creation of the Tru64 Unix
+collect tool, which collectl is based on.
+
+.SH AUTHOR
+This program was written by Mark Seger (Mark.Seger@hp.com).
+.br
+Copyright 2003-2007 Hewlett-Packard Development Company, LP
+.br
+collectl may be copied only under the terms of either the Artistic License
+or the GNU General Public License, which may be found in the source kit
+
+.SH SEE ALSO

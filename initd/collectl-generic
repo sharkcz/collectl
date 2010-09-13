@@ -1,0 +1,79 @@
+#!/bin/sh
+# generic Startup script for collectl, in case nothing else seems to work!
+#
+# description: Run data collection for a number of subsystems
+#    see /etc/collectl.conf for startup options
+
+COLLECTL=/usr/sbin/collectl
+COMMAND="$COLLECTL -D"
+PIDFILE="/var/run/collectl.pid"
+
+if [ ! -f $COLLECTL ]; then
+    echo -n "Cannot find $COLLECTL"
+    exit 0
+fi
+
+pid="`ps ax opid,cmd | grep \"$COMMAND\" | grep -v grep | cut -f1 -d' '`"
+
+case "$1" in
+   start)
+      if [ "$pid" != "" ]; then
+        echo "[already running]"
+      else
+	`$COMMAND`
+	echo "."
+      fi
+      ;;
+
+  stop)
+      if [ "$pid" = "" ]; then
+          echo "[not running]"
+      else
+	  count=1
+	  while [ $count -le 5 ]; do
+	    if [ -f $PIDFILE ]; then
+	      kill $pid
+	    else
+	      count=5;
+	      break
+            fi
+	    sleep 1
+	    count=$(( $count + 1 ))
+	  done
+
+          if [ -f $PIDFILE ]; then
+	    echo -n "  pid $pid not responding to TERM signal.  sending sigkill"
+	    kill -9 $pid
+	  fi
+          echo "."
+      fi
+      ;;
+
+  flush)
+      if [ "$pid" != "" ]; then
+	  echo "Flushing buffers for collectl"
+	  kill -s USR1 $pid
+      else
+	  echo "collectl is not running)"
+      fi
+      ;;
+
+  status)
+      if [ "$pid" != "" ]; then
+          echo "collectl is running..."
+      else
+          echo "collectl is not running"
+      fi
+      ;;
+
+  restart|force-reload)
+   	$0 stop
+   	$0 start
+	;;
+  *)
+	echo "Usage: $0 {start|stop|flush|restart|force-reload|status}"
+	exit 1
+esac
+
+exit 0
+

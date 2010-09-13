@@ -1,0 +1,86 @@
+#!/bin/sh
+# Startup script for collectl on SuSE based distributions
+#
+# description: Run data collection for a number of subsystems
+#    see /etc/collectl.conf for startup options
+#
+### BEGIN INIT INFO
+# Provides: collectl
+# Required-Start: $network
+# Required-Stop:
+# Default-Start:  3 5
+# Default-Stop:   0 1 2 6
+# Description:    Start collectl service
+### END INIT INFO
+
+COLLECTL=/usr/sbin/collectl
+COMMAND="$COLLECTL -D"
+PATH=/bin:/usr/bin:/sbin:/usr/sbin
+export PATH
+
+[ -r /etc/rc.status ] && . /etc/rc.status
+rc_reset
+
+if [ ! -f $COLLECTL ]; then
+    echo -n "Cannot find $COLLECTL"
+    rc_status -s
+    rc_exit
+fi
+
+# see if collectl is running
+pid="`ps ax opid,cmd | grep \"$COMMAND\" | grep -v grep | cut -f1 -d' '`"
+ 
+case "$1" in
+   start)
+      if [ "$pid" != "" ]; then
+	  echo collectl already running
+	  exit
+      fi
+
+      echo -n "Starting collectl:"
+      startproc -s $COMMAND
+      rc_status -v
+	;;
+
+  stop)
+      if [ -f /var/run/collectl.pid ]; then
+          echo -n "Shutting down collectl: "
+          killproc collectl
+	  RETVAL=$?
+	  rc_status -v
+          echo
+          [ $RETVAL -eq 0 ] && rm -f /var/lock/subsys/collectl
+      else
+          echo "collectl not running"
+      fi
+	;;
+
+  flush)
+      if [ -f /var/run/collectl.pid ]; then
+	  pid=`cat /var/run/collectl.pid`
+	  echo Flushing buffers for collectl
+	  kill -s USR1 $pid
+      else
+          echo "collectl not running"
+      fi
+      rc_status
+      ;;
+
+  restart|reload)
+   	$0 stop
+   	$0 start
+   	rc_status
+	;;
+  status)
+   	if [ "$pid" = "" ]; then
+	    echo "collectl not running"
+	else
+	    echo "collectl is running"
+	fi
+	;;
+  *)
+	echo "Usage: $0 {start|stop|flush|restart|status}"
+	exit 1
+esac
+
+rc_exit

@@ -1,0 +1,129 @@
+.TH COLLECTL-THEMATH 1 "JANUARY 2005" LOCAL "Collectl" -*- nroff -*-
+
+.SH The Math Behind the Numbers
+
+At first glance, the way collectl calculates its numbers is pretty straight forward.  It
+looks at successive intervals of counters, calculates their differences and divides by
+the interval, unless -on is specified in which case it does not calculate a rate.
+However, one occasionally may see numbers that don\`t make sense, such as a 1G network
+reporting rates almost double what it is capable of or other anomolous numbers.  If these 
+sorts of things bother you - and they should - this man page is for you.
+
+.SH The Interval Time Stamps
+
+By design, collectl takes one time stamp at the start of each monitoring interval and 
+associates that time with all the samples taken during that interval.  
+This has been done for one major reason - when reporting data in plot
+format, there needs to be a single time associated with all data points.
+The overhead in collecting the data is fairly consistent, even if the true sample time
+for a particular set of counters is offset from the interval time.  
+Therefore the interval for that sample is fairly consistent.
+
+However, there can be a problem that is important to understand and has been seen in
+the past.  A device had the wrong firmware 
+level and under some conditions caused a delay in the middle of the collection interval.
+Some samples were collected close the the starting time of that 
+interval while all that followed the delay were actually collected at a time much later 
+than was being reported.
+
+Consider the following in which we\`re looking at raw data collected for 2 subsystems, 
+call them XXX and YYY.  Let\`s also assume that the counters we\`re monitoring are 
+increasing at a steady rate of 100 units/sec.  In this example, during the 10:00:01 interval
+there was a 10 second hang in collecting the YYY sample.  The XXX sample was correctly
+recorded, but by the time the YYY sample was collected, 1000 units were recorded.  As we
+move to the next interval which was delayed by 10 seconds, the sample for XXX has 
+accumulated 1000 units and the sample for YYY is 100.
+
+.br
+TYPE		XXX	YYY
+.br
+10:00:00	100	100
+.br
+10:00:01	200	1100
+.br
+10:00:11	1200	1200
+.br
+10:00:12	1300	1300
+
+The problem here is when reporting the 2 rates at 10:00:01, we\`ll see a rate of 1000 
+units/sec for YYY because based on the timestamp that interval only appears to be 1 
+second long.  Conversely, the rate reported for that same subsystem at 10:00:11 will be
+10 units/sec because this interval is reported as 10 seconds long.  Also note that for
+this interval the counter for XXX has been incremented correctly and the resultant rates
+are reported correctly.
+This is because the sampling occured before the delays.  If
+one were to move the timestamp to the end of the interval, it would fix the problem with
+YYY, but then move it to XXX.
+
+It IS important to understand that this is only a problem if the delay is during the data
+collection itself.  If there is a system delay that causes all data collection to be 
+delayed but once started runs as expected - and this has been seen to be the typical
+case - the intervals may be longer but the counters wil 
+have increased proportionaly and the results consistent.
+
+The only real answer to this problem would be to timestamp individual samples.  However it
+would then not be possible to report all samples with a consistent time and would only be
+of value when reporting on single devices only.
+
+.SH The Counter Update Rate
+
+This is a problem that is very real and worth understanding even it if it doesn\`t
+currently apply.  If the rate at which a counter is updated is too
+coarse, especially if it is close to the monitoring interval, the reported numbers will
+be off.  For most of the data collectl reports on, this is not a problem because these
+counters ARE updated frequently.  However, it turns out that the network data for 2.4
+kernels is only updated by the system about once a second and as a result the numbers
+should be looked at with caution as demonstrated with the following example:
+
+For the sake of this example let\`s call the rate at which the network counters are
+updated 0.9 sec, 
+so if the network is generating data at the rate of 100MB every .9 seconds, we\`ll see
+the following values at the specified times.  
+Remember, collectl is only going to actually look at
+the counter once a second and so won\`t even see the value at 10:00:01.09
+
+.br
+10:00:00.19	100
+.br
+10:00:01.09	200
+.br
+10:00:01.99	300
+.br
+10:00:02.89	400
+.br
+10:00:03.79	500
+.br
+10:00:04.69	600
+
+Now lets see what collectl will see at each monitoring interval and the associated rates
+it will report:
+
+.br
+10:00:01	100	100/sec
+.br
+10:00:02	300	200/sec
+.br
+10:00:03	400	100/sec
+.br
+10:00:04	600	100/sec
+
+There are 2 main problems here, the most obvious being that the rate reported for 
+10:00:02 is 200/sec which is obviously wrong.  However, all the other rates are wrong too,
+because the true rate for this case is actually closer to 1100MB/sec.  Those missing 
+extra 100MB/sec haven\`t been lost, they\`ve just shown up in the sample reported at 
+10:00:02.
+
+Also note that if the rate at which the counters were incremented was 1.1 seconds, some
+intervals will show up as zero!  You can see this effect by running collectl with a 
+monitoring interval of less than a second and look at network traffic.  
+Finally realize in reality the counter update rates won\`t be constant
+and some intervals may contain multiple updates while others may contain no updates.
+
+The good news is 
+network data on 2.6 kernels is updated at a much higher rate and so this seems to no
+longer be a problem.
+
+.SH AUTHOR
+Copyright 2003-2007 Hewlett-Packard Development Company, LP
+collectl may be copied only under the terms of either the Artistic License
+or the GNU General Public License, which may be found in the source kit

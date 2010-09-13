@@ -1,0 +1,740 @@
+RELEASE NOTES FOR COLLECTL
+
+INSTALLATION
+
+For RedHat and SuSE environemnts:
+
+    use rpm -i
+    
+    In both cases, collectl will not be configured to start on boot
+    but can easily be set to do so with the chkconfig command.
+
+For Debian
+
+    Convert the rpm package into a deb package using the experimental
+    tool "alien".  However, the process is not automatic and you will 
+    need to know a handful of Debian-specific concepts.  The key is to 
+    manually change the generated debian/rules file from DH_COMPAT=3 to 
+    DH_COMPAT=2	and then build the package with dpkg-buildpackage.  
+
+    For example:
+
+	alien -g -k -c collectl-1.3.0-1.noarch.rpm
+	sed 's/DH_COMPAT=3/DH_COMPAT=2/' collectl-1.3.0/debian/rules rules.new
+	cp rules.new collectl-1.3.0/debian/rules
+	chmod +x collectl-1.3.0/debian/rules
+	cd collectl-1.3.0/
+	dpkg-buildpackage
+	cd ..
+
+	You can then install with dpk -i collectl_1.3.0-1_all.deb
+
+    After installation the environment will be configured such that
+    collectl will start on system boot as is done with other Debian
+    kits.  If this is not what you want you can disable the behavior 
+    with 'update-rc.d'.
+
+KNOWN PROBLEMS/RESTRICTIONS
+
+  - see man page for more details
+  - problems recording and therefore subsequent playback, of some 
+    older lustre client data with -sLL with older, pre-1.5.0, versions
+  - playback mode on PCs gives incorrect warnings about uninitialized variables
+    when -b/-e used.  these can safely be ignored.
+  - some older system running earlier versions of ethtools will either require
+    privileges to run collectl OR need to install a newer version
+  - iowait was always set to zero on 2.4 kernels, causing incorrect 
+    calculations.  now it's only set to zero when not defined in /proc/stat
+  - in playback mode, make sure to deselect -O if recorded subsys not specified
+    or else will trip error checks in checkSubOpts()
+  - this version may generate errors "Ignoring '!' modifier for short option P" with
+    older versions of perl OR at least older version of the 'getopts' module.
+
+2.3.1   Aug 09, 2007
+  - cleaned up the way client handles ost to filesystem name mapping for
+    rpc-stats as it was not working correctly
+  - added '(pages)' to client-side rpc stats to clarify units
+
+2.3.0   Jul 25, 2007
+  - cleaned up version number in THIS file.  somehow jumped to 2.6.*
+  - changed infiniband perfquery command to NOT clear error counters
+  - changed location of perfquery in collectl.conf to a list and then look
+    in multiple locations on initialization since in different locations in
+    ofed 1.1 and 1.2
+  - restructured and cleaned up collectl-data man page
+  - fixed a couple of typos in output headers
+
+2.2.9  	Jul 17, 2007
+  - cleaned up error handling (and message) for --procmem and -s
+  - -L switch was not correctly forcing output of data for selected system types
+  - added 'BuildArch: noarch' to spec file
+
+2.2.8   Jun 25, 2007
+  - check for 'bogus' network data MUST be skipped for first record of every
+    file and not just first record of the day!
+  - not handling single port IB HCAs correctly
+  - if BOTH 'vib' and 'ofed' stacks present need to figure out which one is
+    actually running as currently collectl assumes first one it finds
+  - converted `ls` invocations in ibCheck() to ls() since more efficient
+
+2.2.7   Jun 13, 2007
+  - removed restriction on adding timestamps to most non-brief formats
+  - when reporting only slab/process info in verbose mode, force the primary
+    interval to equal the secondary or else you'll see 'RECORD' headers for
+    all primary intervals which is probably not what is wanted
+
+2.2.6   May 19, 2007
+  - only look for 'lspci' when doing -sx as it's not needed elsewhere
+  - add 1 extra column to brief display for context switches as they've been
+    seen to hit 100K
+  - fixed some --verbose print statements that got broken with 'tag' 
+    processing removed
+  - fixed SuSE based link to collectl in init.d file which was pointing to 
+    wrong location
+  - always look for /proc/nfs-stuff even if not there the first time
+  - when incomplete /proc records found (very rare) need to update index 
+    pointer for disks and networks
+  - special check for 'bogus' network data never seen before.  is this a kernel
+    bug and will it go away with newer releases?  too soon to tell, but watch
+    the message log or playback messages
+
+2.2.5   May 18, 2007  
+  - Open Source Release
+  - removed $tagFlag since it was disable a while ago and nobody complained
+  - needed to use '\' in file spec when playing back a file on a PC in
+    a directory other than the current one.  '/' was hardcoded!
+  - only allow -OD for SFS
+
+2.2.4   Apr 11, 2007
+  - need to look at ost_server_uuid for lustre for lustre filesystem name 
+    instead of uuid
+  - only looking for a single digit following 'scsi' in /proc/scsi/scsi
+    was causing 'unit vars' when there were more than one
+  - new switch, '--top [num]' will show top 'num' consumers of cpu time.  cannot be used with
+    any other subsystems.
+  - instead of displaying hours and mins for process times we're using 3 digits for minutes
+    to save real estate and because that's what 'top' does
+  - only display 'zlib not installed' message is zlib not there and we're trying to write plot
+    data without -oz
+  - redirect error messages to /dev/null when running lctl to get build number
+    because it generates bogus messages for non-privileged users
+  - you should not be allowed to mix -sY -P to a terminal with other subsystems.  corrected
+    a typo in the error checking
+  - if printed slab data in -P format was incorrectly setting $headersPrinted flag causing no
+    other headers to be printed.
+  - added additional link in /usr/bin so noprivileged users can find collectl by default too
+  - fixed a bug that was causing us to log 'alignment' messages in daemon logfile 
+    every interval
+
+2.2.3   Jan 30, 2007
+  - when changed sigalrm() mechanism, missed handling -i0 for time testing
+  - modified perfquery command because it wasn't clearing counters
+
+2.2.2   Jan 14, 2007
+  - support for OFED
+  - changed definition of --align to be more useful and dropped -a altogether
+  - changed interval time algorithm to calculate wakeup time for each 
+    interval rather than using ualarm's wakeup which drifted slightly
+  - when printing usec time, was not padding out to 3 full digits when last digit(s) 0
+
+2.2.1   Dec 22, 2006
+  - pull sfs version from hpls-lustre-client rpm name
+
+2.2.0   Dec 15, 2006
+  - added new formatting switches g and G
+  - fixed disk exception reporting false positives
+  - flush problem for -P files fixed
+  - if playing back file that had a prefix prepended to the hostname it
+    was not being preserved properly
+  - all display options and almost all error messages will now go
+    over sockets, the one exception being the inability to report 
+    problems that occurred before the socket was opened!
+  - oz now only applies to plotting data and NOT raw.  This means you
+    CANNOT generate uncompressed raw files if compression is installed
+  - new switch: --rawtoo will force generation of a 'raw' file when in
+  - new switch: --sexpr will write current counters as an s-expression
+  - added local logging capability in -A mode.  See newest man page
+    'collectl-logging' for details
+  - when collecting data with -sx and no interconnect found an 'x' was
+    still recorded in header but not honored during playback.  It IS
+    honored if found but will NOT be written into header if not interconnect
+    found.
+  - removed restriction against -- args in DaemonCommands in collectl.conf
+
+2.1.2   Nov 08, 2006
+  - the default frequency at which to check for lustre config changes has been lowered 
+    to every second since efficiencies were improved back when 'cat' was changed to 
+    'cat()' and never noticed until recently.  Also note interconnect changes still $$$
+  - changed log rolling code as it wasn't properly dealing with all cominations of
+    logging increments and time changes for Daylight Savings Time
+  - made changes to header names for IB/ELAN in tab and detail files in
+    support of colplot V4.0.0
+  - better mechanism for getting sfs/cfs versions
+  - in V2.1.0 added code to correctly set up interval in header but just discovered playing
+    back older files that had process/slab data recorded generates an uninitialized warning
+    because they don't have 'interval2' in their headers.  now, when processing older files
+    that don't have the default intervals set, they will be set to their defaults.  Since
+    intervals aren't currently even looked at during playback this shouldn't even matter!
+  - back in 1.7.5 I changed the logfile name to begin with the hostname, making it possible
+    to move the logs to other systems.  unfortunately, this caused the 'purge' mechanism to
+    purge old logs because it didn't include 'raw' in the namestring.  That has been fixed.
+
+2.1.1	Oct 10, 2006
+  - XC release!
+  - change some plot format column names for consistency as instance names
+
+2.1.0	Oct 06, 2006
+  - had to change the way the path to 'formatit.ph' is found depending on whether
+    XC or not.
+  - IB checks were causing new log to get created after every check!
+  - added lustre and sfs version numbers to common header
+  - sfs V2.2 introduces more buckets for BRW stats and collectl had to change
+    to accomodate them
+  - changes in logic to drive lustre disk stats off an array the same was as BR stats
+  - collection sub-intervals not being properly recorded in file headers: if default values
+    used they were left off and this is not right since someone could change that in the conf
+    file.  on playback to a file, the current values were written to the new header rather
+    than using those in the 'raw' file.
+  - during playback of raw file, collection interval was not being correctly written 
+    into header of plotfile
+  - added --showplotheader switch which will be useful to other tools that may run collectl
+    (such as colplot and colgui) that may want to know the column headers before starting
+    collectl for real
+
+2.0.1	Sep 01, 2006
+  - support for --showhead of playback files
+  - on Windows, would read file named 'c' in current directory instead of collectl.conf
+  - turn off pass_through option before 2nd call to Getopt so it'll catch errors
+  - new switch -headerrepeat will set number of lines displayed between repeats of
+    the headers.  can also be set as default in collectl.conf.
+
+2.0.0	Aug 11, 2006
+  - added check to make sure perl at least version 5.8 and updated FAQ with what to
+    do if not.  This is not expected to occur very often as 5.8 has been round since
+    RedHat V9.0.
+  - changed the way $BinDir determined to allow multi-levels links to executable
+  - added long versions of all switches and added a few new ones
+  - renamed $processes/$slabs to $procopts/$slabopts to be consistent with new switch names
+  - removed -M completely and replaced with --verbose, --vmstat, --procmem and --custom
+  - allow -om in verbose mode to update 'RECORD' header
+  - allow line based time formats (-od, -oD and -oT) to be used with --verbose for slab and proc detail
+  - this ones subtle.  colgui happens to do -d4096 -sxlLL -Lcmo -OD', forcing it to get all possible
+    lustre info.  the only problem is there is not -OD data on client nodes and it gets a fatal error
+    trying to open the stats file.  That error is now trapped and if -d4096, suppressed and ignored.
+
+1.7.5	Jun 28, 2006
+  - ALWAYS report slab/mapped memory even though 0 for 2.4 kernels, making
+    the size of the memory section of the 'tab' file constant
+  - -sD needs to handle disks with 2 digit disk numbers such as cciss/c1d10
+  - if IB hardware but can't find vstat, we can't do any monitoring so say there's
+    no software there and give up.
+  - extended -r to include interval, such that you can roll logs mulitple times/day but
+    aligned with main time
+  - ignore ethtool errors except during debugging.  an example of one of these
+    is if all interfaces are not active!  an entry will be found in /proc
+    but ethtool gives annoying errors
+  - modified the way -ou works to something that makes more sense, remembering there
+    is a 1:1 relationship between a raw file and the resultant plot file(s).  now,
+    if a plot file is found to exist and is older is will be overwritten since the
+    raw data is obviously older (this can happen when a snapshot of the raw file
+    is pulled while it's being written).  On the other hand if someone wants to force
+    creation of a new file because perhaps different subsystems have been chosen,
+    use -ocu.
+  - widen the scope of where we search for lustre modules in case the kernel has
+    be updated underneath and lustre is NOT installed in that kernel's library path
+  - in 'total' mode for default/brief formatted output (just type <CR>), 
+    changed context switches and interrupts to show averages rather than totals
+  - subtotals in brief format were including incorrect units (K,M,G) for some
+    fields including disk, network and lustre
+  - converted string to seach for 'vstat' from a single bin name to mulitple ones
+    and updated processing accordingly
+  - if specifying -l with o/m on lustre client was incorrectly checking for disk stats
+    file which it should only do if -OD specified
+
+1.7.4	Jun 05, 2006
+  - whether someone requests -sc or -sC, collect both types of stats.  this
+    makes it possible to play back either independent of what was specified
+    at collection time making CPU stats consistent which others which also
+    exhibit this property
+  - -V now shows interactive and daemon defaults separately
+  - include the name of the host running collectl in the logfile name
+    for uniqueness
+  - if corrupted file, include name in error message AND if multiple files being
+    processed, skip remainder of currupted one and go on to the next one
+  - changed sfs readhead in brief mode from hit precentage to show actualy hits/misses
+    as these are so typically close to 05 or 100% you can miss the changes
+
+1.7.3	May 23, 2006
+  - the plot format headers I thought got released in 1.7.2 didn't.  they do
+    in this release
+  - if user had specified lustre options and lustre wasn't active, the playback
+    fails because the header says there isn't any lustre data present but -s says
+    this is.  the fix is to recognize this condition during playback and simply 
+    ignore the options
+
+1.7.2	May 17, 2006
+  - added qualifiers to plot-format headers to clarify which subsystem
+    the data relates to
+  - changed headers for lustre -OB output from K to P since the data being
+    reported IS in pages, not KB
+  - commented out the check that limited the data being reported for disk stats
+    from 512KB to the full range of up to 2MB
+
+1.7.1	May 03, 2006
+  - make sure -M1 and -oh turned off in -H mode
+  - support for new /proc format with elan 5.20
+  - fixed a bug that prevented elan detail files from being written to
+  - wasn't building correct link in /etc/init.d for suse/debian
+  - changed rules for determining hyperthreading: true if siblings/cores==2
+  - added cpu vendor, speed, cores, sibings to common header
+  - added support for 'official' stats from Voltaire so if
+    /proc/voltaire/adaptor-mlx/stats exists, it looks in there.  otherwise
+    it tries to use /proc/voltaire/ib0/stats.  note - since voltaire only
+    supports a single HCA, if more than one is found only the first it
+    looked at and an appropriate  warning generated
+
+1.7.0	Apr 21, 2006
+  - fixed bug in thread process reporting.  although the treads numbers were
+    getting reported correctly, all lines were reporting the parents stats
+  - changes to -O to include lustre options broke some nfs options
+  - also updated process man page to more clearly articulate what gets reported
+  - need to make sure raw entries that start with 'Slab' are not coming from
+    /proc/memory by making sure no ending ':'
+  - there were problems running on SFS Admin node when -sl specified because of
+    logic error dealing with monitoring a service not yet up
+
+1.6.9	Apr 02, 2006
+  - when specifying -i:xxx in interactive mode, default monitoring
+    inteval was not changed to 1.  this effected displays for slabs
+  - verbose mode wasn't working correctly
+
+1.6.8	Mar 28, 2006
+  - fixed a few minor problems to ensure works with colplot/colgui
+  - reformat FAQ and include in kit
+
+1.6.7
+  - didn't quite get -s right for overriding that in file
+  - made size of disk block buckets bigger but limiting the size if 
+    displayed values based on collectl.conf entry
+  - OST detail detail data incorrectly written to CLT detail file (which 
+    usually isn't even opened!)
+  - remove default of -oT, it complicates things...
+
+1.6.6	Mar 07, 2006
+  - added Subsys to 'RECORDED' section of header (note spelling to preserve
+    pattern patches for second occurance) and also updated Subsys data to
+    correctly reflect values based on +/- in -s during playback
+  - removed erroneous check that prevented running -sL -OB on lustre OSSs
+  - forgot to write headers for OST detail data
+  - remove test for ignoring -sL for mds data since we now CAN have some,
+    but remember that it goes into the .blk file
+
+1.6.5	Feb 28, 2006
+  - verify system is an mds/ost before trying to open block iostats file
+  - when lustre subsystem disabled wasn't removing 'l' from $subsys
+  - incorrect check for valid -M1 subsystem in setOutputFormat().  was
+    invalidating any uppercase letters and show have only looked at 
+    $MiniSubsys
+  - changed why $BinDir gets built to work with more complicated links
+  - missing cvt() in print for lustre client summary
+  - was incorrecty setting reportOstFlag to zero when -oD and supressing output
+    on playback
+  - changed -o^h to -o-h
+  - removed support for -t as it's not really useful and anyone using it
+    (and I doubt there any) don't really understand -P
+
+1.6.4	Feb 25, 2006
+  - default settings for non-daemon mode are not '-i1 -scdn -M1 -oT'.  furthermore
+    if single subsystem -oh is also set.  you to remove -oT or -oh, preface that
+    switch with a ^ such as -o^T.
+  - added -S switch, which means collectl was started remotely by something
+    like 'ssh' or 'rsh'.  at the end of each collection interval see if
+    parent daemon when away and shut down...
+  - when missing HiRes time module and -om or fractional intervals specified,
+    ignore -om and round off interval
+  - wrong error message about requiring HiRes for -om as it reports
+    -P is required instead
+  - removed -OB processing code from ministat processing
+  - produced uninitialized errors if nothing selected during playback do to
+    incorrect settings of -b or -e.  now generates an error.
+  - only write inode info to header if -i
+
+1.6.2	Feb 01, 2006
+  - fixed bug in ELAN monitoring logic that was causing it to create new
+    logfile every 15 minutes
+  - fixed bug which generated unitialized variable in some cases when
+    slab and non-slab data with -M1
+  - replaced 'cat' command in routines that check lustre/interconnect state
+    to cat() which is more efficient
+  - fixed bug that prevented raw file with no core data from being played back
+  - added support for lustre client rpc and readahead stats.
+    see man collectl-lustre for details
+
+1.6.1	Jan 23, 2006
+  - changed using units for ELAN stats to KB to be consistent with IB stats
+  - added new option to -M1 mode such that is a user types A<cr>, the averages
+    will be displayed
+  - added new switch (groan) -oA, which when playing back a file in -M1 mode
+    will append Averages/Totals
+  - only use ethtool to determine network speed if root
+  - playback error reporting was not explict enough when wildcarded
+    specification didn't match anything
+  - moved around code that expands -s (based on +/-) so expanded value 
+    seen with -d4096
+  - infiniband support - requires special internal '/proc' module
+  - summary data changed for quadrics (including plot format) so that it
+    matches that of IB and any potential future interconnects to only show
+    total errors and not individuals counts which IS available as details.
+    This was necessary so that plotting tools can display interconnect data
+    independent of its type.
+  - incorrectrly determining kernel version if version containg 2.4 in interior
+    of id string
+
+1.5.8	Dec 14, 2005
+  - add additional copyrights to source and manpages
+
+1.5.7	Dec 08, 2005
+  - added more conditional execution if not pcs for things like `date` and 
+    existence of lspci and ethtool
+  - add setsid to deamon startup and reset terminal I/O channels to /dev/null
+    in child
+  - entire chunk of header line and data that followed not getting prepended
+    with hostname when -A and -M1
+  - only complain about missing lspci or ethtool when not in playback mode
+  - need to determine path to collectl using readlink() in case defined as
+    a link
+  - latest version expanded size of buffers to 8 so had to modify display
+  - added a warning if new network device found after started, which will cause
+    uninitialzed variable warning.  this may go away when started at S99
+  - renames release notes so they can co-exist with release notes from other
+    tools
+  - modifications to 'spec' file
+    - deamon will now start at S99 to give more devices a chance to initialize
+      and be seen
+    - install in /opt/hp/collect, link to it from /usr/sbin
+ 
+1.5.6	Sep 23, 2005
+  - modified data collection for 2.6 memory to include everything up to Vmalloc
+  - extended -sm reporting to include slab and mapped memory for all outputs
+  - was not printing header for first time for -M3
+  - check for non-existant /proc for inode processing
+  - remove debug check for open proc error messages
+  - fixed bug in collectl.conf.  setting Interval2 overwrote Interval.
+  - debug flag of 4096 prints header
+  - make sure under -i0 sampling that the number of intervals for processes and
+    environmentals are proportional to their default timings
+  - removed 'cciss/' from disk names in file headers
+  - moved socket handling code to the front so anyone who calls us and gets
+    an error or does a 'collectl -v' will see the socket open and then close
+    so it can then cleanly exit.
+  - added Swap size to header
+  - if ethtool present, record 'eth' speeds in header
+  - generate an error if lspci not on system.
+  - warn that no eth speeds in header it no ethtool on system
+  - inserted inter-file marker into PRC files so can differentiate between
+    processes with same pid/name from different logs
+  - printing wrong header for lustre client details in plot formatit
+  - allow printing process data with date/time stamps so when you grep the
+    output you can see them
+  - fixed erroneous message "Looks like 0 exited so not looking for new 
+    threads" which should not be reported when value is 0.
+
+1.5.5	Sep 01, 2005
+  - added exception processing for lustre client summary data
+
+1.5.4	Aug 31, 2005
+  - added exception reporting for lustre KB/sec read/write for OSS and 
+    Reints/sec on an MDS.  For now it's NOT writing to an exception file
+    as I'm thinking of removing that capability since I don't believe it 
+    is used very often AND there are too many files written already!
+
+1.5.3	Aug 29, 2005
+  - serious bug fixed.  when playing back any files and producing process or
+    slab files (.prc or .slb), ALL other data was being skipping for that
+    period.  The workaround is if you need both process/slab and other data 
+    you'll need to do it in 2 batches!
+  - very minor (but annoying).  if interval ends in exactly .000 seconds,
+    $seconds is treated as an integer and splitting on '.' provided an
+    undefined $usecs which in turn generates an uninit var at line 2456
+  - skip over IB support since net yet fully baked
+  - the line RECORD... was leaking through without a hostname prefix with -A
+  - flush mechanism which was incorrectly flushing every interval
+  - internal coding thing: cleaned up reporting to be driven off $subsys
+    and collection driven off the 'flags'.  this means that doing -sl -L in
+    record mode will not display lustre stats on a non-lustre system as is
+    already done in playback mode
+  - check for location of lustre modules expanded to support newer releases
+  - set ALL output files to autoflush on write when printing in plot format
+    on the terminal.  not doing so was causing collectl to lock up until the
+    output buffer filled when called from a script with -oh or -oH
+  - InfiniBand Support
+  - changed method for determining lustre driver installed.  now just looks for 
+    anything named 'lustre' in /lib/modules
+  - updated man page to note that some subsystems, specifically d, l, n, t, x, y
+    thought recorded in summary mode CAN be played back in detail mode and visa-versa
+  - added a restriction that you can't play back a file records with -sd using -sD
+    if it wasn't originally recorded using -sc as well (need times in jiffies for
+    some calculations)
+  - added additional parameter to collectl.conf to point to additional library paths
+    (primarily for development but may prove useful later on)
+  - made some changes to header
+    - added seconds associated with timestamp of filename timezone
+    - renamed 'Daemon Options' to 'DaemonOpts'
+    - moved some fields closer together
+    - added a preamble for plot format files that show original collectl version and
+      switches
+    - added HiRes flag state of original collection so playback knows
+  - Another switch -T to control time zone conversions on playback, which is 
+    required for dealing with files that don't have enough info in header to
+    to autmatic conversion of times
+
+1.5.2	May 23, 2005
+  - removed extra comma in printf statement at line 3752
+  - warning about -sL and MDS was missing 'if ...' modifier
+  - need to flush buffers before creating new logs
+  - not declaring $datetime as 'local' was generating unit vars with -M1
+  - the pattern match on sd disks wasn't set to pick up disks with 2 alpha 
+    chars after the initial 'sd'.  it does now.
+  - print error messages to terminal via STDERR
+  - moved location of slab/proc initialization to record mode as it was causing
+    problems on PCs.
+  - when no process data exists, print 0 instead of '-'
+
+1.5.1	May 03, 2005
+  - updated several man pages and created a new one: collectl-lustre
+  - added memory size to file headers
+  - strip any quotes from playback file name that may have leaked in
+  - if the destination directory doesn't exist, create it
+  - some Linux specific code was moved/modified to facilitate running on a pc.
+    - initialization of $MyHost and $OS.
+    - only call syslog on linux and so we have to do a 'require', not 'use'
+  - a number of changes to support dynamic identification of lustre 
+    configuration changes
+    - change lustre related information in file headers
+    - no longer an error to request -sl when no services present
+    - printing lustre client data in plot format was missing 2 fields
+    - replaced common '.lus' detail file with specific ones of '.ost' and '.clt'
+    - KNOWN PROBLEM identified with lustre client data collected using -sLL with
+      older versions
+    - KNOWN PROBLEM identified with lustre client size read/write I/O counts
+  - modified recognition of quadrics such that if /proc structures are present but
+    driver not loaded, a warning rather than an error followed by an abort occurs.
+  - new switch: -V to print operational defaults
+  - storing kernel version rather than whole o/s name in header
+  - only include SCSI info in header if non-blank
+  - do not print header when plot output directed to terminal
+  - added '[HYPER]' to cpu display header when cpu hyper-threading on
+  - expanded scope of -m to print playback processing messages on terminal
+  - problem writing to syslog on some systems and so that function currently
+    disabled
+  - made width of network name dynamic to account for IB names
+ 
+1.3.2	
+  - for M3 reporting, headers weren't printing
+  - /proc/slabinfo went to V2.1 with no format change, so had to extend
+    the check to include anything in 2.*
+
+1.3.1	Jan 18, 2005
+  - problem corrected with slabs/pagesize during playback
+  - when a new slab was created after collectl started, during playback 
+    an 'uninialized variable' message was being generated.
+  - fixed problem with -b/-e when date specified
+
+1.3.0	Jan 18, 2005
+  - write startup/shutdown messges to /var/log/messages when writing 
+    to files (too much of a nuisance to do for all invocations).  
+    Write ALL fatal errors to messages.  This is in addition to the 
+    normal logging that gets written to collectl's own message log 
+    in the logging directory, which is only written to when writing to a file. 
+  - installation no longer saves old startup script since user customizations
+    haven't been there since introduction of /etc/collectl.conf
+  - support for SuSE distro based installs
+  - support for Debian installs as long as one converts rpm to deb
+  - new man page for process monitoring and how the math works
+  - moved data definitions and examples to their own man pages
+  - make process sort order ascending numeric
+  - added '+' option to -Z switches which results in threads being displayed
+    - see man page for restrictions
+  - -Z enhanced to allow filename to be specified as an alternative.  see -h
+  - added startup switches to log header (don't know why I didn't think of earlier!)
+  - expected for lowercase hostname in playback file.  this was a bug!
+  - removed partition specific code and now share 2.6 /proc/diskstats
+    - removed -spP and collectl uses nows /proc/partitions if it contains data
+    - removed -oP as it was never fully debugged and buggy
+    - slight format change of disk stats output to make consistent across 2.4/2.6
+  - fixed bug when specifying a playback file wildcarded spec that didn't 
+    start with full hostname
+  - fixed bug when playing back multiple files from multiple dates with 
+    -b/-e switches
+  - found bug in the way linux handles reading /proc - may read past end of 
+    existing structure) and so changed handling of /proc/pid/stat to only read 1 line
+  - make sure collectl will run on windows in playback mode by changing some
+    linux specific code
+
+1.2.5-4	Dec 14, 2004
+  - modified processing of /proc/net/netstat to accomdate slightly different
+    format with debian 2.6 kernel (leading blank line not expected!)
+  - removed 'partition' as valid subsystem for 2.6 kernels as that data now
+    comes from /proc/diskstats
+  - wasn't recognizing 'sd' devices in /proc/diskstats
+
+1.2.5-3	Dec 14, 2004
+  - found latent bug - thanks tom - in process processing code.  when not using -Z
+    new processes weren't discovered.  now they are!
+  - had to move 'interval' processing code to section before alarm set
+  - wan't honoring -t when printing process data
+  - on systems where lustre fs was created outside of 'sfs' environment. MDS
+    directories had different name format so pattern match had to change
+  - not all MDS read/write fields always defined and so conditional prints req'd
+  - changed single quotes in man page to \` so at least something would print
+  - removed 'C' as a valid option which was moved to -O a number of versions ago
+
+1.2.5-2	Dec 14, 2004
+  - fixed a problem in 1.2.5 which wasn't properly handling return status from gzflush()
+  - enhanced error messages when invalid subsystems are specified with '-'
+  - removed restriction against adding core subsystems with '+'
+  - enhanced -sLL processing to deal with /proc with data in different positions
+  - bumped indexes for getProc() 12/13 to 13/14 to keep Lustre processing together
+  - if flush timer set AND using -H, only execute command every flush interval
+  - flush timer was off by 1 second (tested it using > instead of >=)
+
+1.2.5	Nov 03, 2005
+  - The 'subtotal' feature of -M1 causes cron based scripts to blow up because
+    the 'M1' code wants to check for terminal I/O.  This feature has now been
+    disabled for environments with no terminal.
+  - Found a corrupted compressed raw file!  Closer inspection of collectl 
+    showed no error handling for gzflush() errors and limited error handling 
+    for gzwrite errors.  Changed to close/recreate new logs on zlib errors or
+    abort if recovery impossible.  As a safety net will kill itself if there are
+    ever more than $ZlibMaxErrors in a single day - currently setting that value 
+    to 20 but can be overridden in collectl.conf.
+  - Added code to make sure valid time marker in raw file and if not to declare
+    file corrupted and exit.  This is for the case noted above where a compresses
+    file had bad data in it.  Still a mystert how this happened but I'm hoping  
+    it was related to gzflush and so now shouldn't happen again.
+
+1.2.4-3	Oct 19, 2004
+  - _SC_PAGESIZE posix variable not supported on 5.6 releases of perl and
+    results in uninitialized variable warning and errors during SLAB
+    reporting.  Added code to force pagesize to 4096 for IA32 and 16384 
+    for other architectures which is not completely correct for all cases.
+
+1.2.4-2	Oct 13, 2004
+  - using wrong pagesize for slab calculations on IA64.  use sysconf()
+    and added PageSize to logfile headers
+  - writes slab version into header instead of whole version line and drive
+    format off that number.  report errors for unsupported versions.
+  - removed a line of code that couldn't execute if daemon found to be
+    already running
+  - found reference to cvt2() which was removed in last version
+  - ministats with a -c leaving echo turned off!
+  - changed width of memory reporting fields for slabs and memory stats 
+    from 6 to 7 so more significant digits retained when displaying a 
+    number like 123456K which in 6 columns displayed as 123M.  Not sure 
+    if it should be done to other fields as well because it does effect 
+    screen real estate.  Remember to use -w to get rid of K/M/G
+  - removed unused c and s from -O
+  - added code to filter slabs and remove those with no allocations,
+    -Os, or those with no change in slab activity since last interval, -OS.
+    NOTE - slab objects change all the time and so including them in the
+    filter is pointless
+  - added 't' to core variables to be monitored since it only takes about
+    an extra cpu second per 8640 samples.
+  - added 'sockets' to ministats.  this means one can now simply do
+    'collectl -M1' and get ALL ministats for default variables (of course you'll
+    need a VERY WIDE window)
+
+1.2.4	Oct 07, 2004
+  - added SLABS!
+  - add -oF tell collectl to use cumulativetotals for Maj/Min faults
+  - fix printing of process data in plot format
+  - found a couple of inconsistencies when reporting in 'K/M/G' format.
+    made sure bytes /1024 and counts/1000
+  - fixed uninitialize variable with -sP -p xxx
+  - echo not turned back on with -M1 and -p
+  - fixed bug with -p -f -P
+  - changed $ProcInterval/$EnvInterval names to $Interval2/3 so that
+    slab interval processing could be slipped into $interval2.  this is
+    really an internal thing.
+
+1.2.3	Sep 18, 2004
+  - Added -sZ and -Z to capture process data. 
+  - Added -M3 to report finer detailed memory data for processes 
+  - Added ability for dynamic subtotals with -M1 (see manpage) 
+  - Added -st and -sT for tcp counters 
+  - Made lustre and quadric counters part of default subsystems 
+
+1.2.1	Aug 12, 2004
+  - Support added for lustre clients 
+  - Search for 'collectl.conf' in /etc, collectl bin dir, then current
+     dir if no -C 
+
+1.2.0	Jul 16, 2004
+  - Support added for quadrics and lustre 
+  - Replaced /usr/sbin/collectl.ph with more flexible /etc/collectl.conf 
+  - Added switch to override location of /etc/collectl.conf 
+  - Performance improvements to /proc processing 
+
+1.1.13	Jul 16, 2004
+  - Fixed timer bug (since there since version 1) that only shows up
+     on 2.6 kernels 
+  - Fixed formatting bug in NFS detail display introduced by -oT 
+  - Preserve /etc/init.d/collectl so any custom changes are preserved 
+    across versions 
+
+1.1.12	Jun 07, 204
+  - Fixed bug that was causing nfs client data to not be correctly captured
+  - Moved nfs client option 'C' from -o to -OP/dd> 
+  - Changed format/use of -M1: more/optional fields
+  - Made timestamp line formats dDT available for 'standard' output
+  - Changed column widths for DISK/PARTITIONS fields from 4 to 6 as needed
+
+1.1.11	May 21, 2004
+  - assured 'wc' used correctly since 2.6 kernels changed format
+  - renamed kit to 'noarch'
+
+1.1.10	Jul 16, 2004
+  - Fixed extra space getting printed in plot format by -ss.
+  - removed -a 0 from init.d file since it would prevent starting on 
+    machines that don't have HiRes installed
+
+1.1.9	May 03, 2004
+  - The biggie - support for 2.6 kernels resulting in changes to -sd & -sp
+  - Added -a to startup script to align times to minute boundary
+  - New switches for ministats to control date/time format: -o dDT
+  - Combined ministats 1 thru 4 to more intelligent -M1
+  - New ministat M2 mimics vmstat but with date/time stamps 
+  - Clarification of memory statistics in man page
+  - Minor bug fixes with custom ministat directory name processing
+
+1.1.8e	Mar 24, 2004
+  - Added new subsystems -sE -slL [environmental and lustre]
+  - Added new output options -otH
+  - Added 'ministats' which are combined subsystems on singe line 
+    (see manpage for -M)
+  - Added ability to send output to a socket for remote monitoring
+
+1.1.7	Feb 06, 2004
+  - Updated Copyright notice
+  - Fixed bug when trying to use -P without -f
+
+1.1.6	Dec 05, 2003
+  - wan't properly handling -p -f -P for multiple files on same day but 
+    different -s values: first one overrides the rest!
+
+1.1.5	Dec 03, 2003
+  - added error checking to ignore partially read /proc data
+  - added ability to specify YESTERDAY or TODAY in playback file name
+
+1.1.4	Nov 26, 2003
+  - bug in playback of nfs client data
+  - enhance -v to show zlib/compress if present
+  - fixed bug handling -p -f of mulitple files on same date
+  - fixed but handling logs from different systems with different subsys values
+
+1.1.3	Nov 26, 2003
+  - added support for Smart Array devices in partition table reporting
+
+1.1.2	Nov 26, 2003
+  - added support for disk and partition exception reporting along with 
+    several switches to support it. See -l, -L and -o x/X 

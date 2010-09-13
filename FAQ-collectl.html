@@ -1,0 +1,405 @@
+<html>
+<title>collectl Freuqently Asked Questions</title>
+<body>
+
+<h1>Collectl Frequently Asked Questions</h1>
+<h2>General Questions</h2>
+<ul>
+  <li><a href="#gen1">What is the difference between collectl and sar?</a></li>
+  <li><a href="#gen2">Isn't a default monitoring frequency of 1 second going to kill my system?</a></li>
+  <li><a href="#gen3">What is the best monitoring frequency?</a></li>
+  <li><a href="#gen4">Why so many switches?</a></li>
+  <li><a href="#gen5">Why doesn't <i>--top</i> show as much data as the <i>top</i> command?</a></li>
+</ul>
+<h2>Running collectl</h2></ul>
+<ul>
+  <li><a href="#run1">How do I get started?</a></li>
+  <li><a href="#run2">How do I make a plot?</a></li>
+  <li><a href="#run3">How do I drill down to get a closer look at what's going on?</a></li>
+  <li><a href="#run4">I want to look at detail data but forgot to specify it when 
+                      I collected the data.  Now what?</a></li>
+  <li><a href="#run5">How do I configure collectl to run all the time as a service?</a></li>
+  <li><a href="#run6">How do I change the monitoring parameters for the 'service'?</a></li>
+  <li><a href="#run7">What are the differences between --rawtoo and --sexpr</a></li>
+  <li><a href="#run8">How can I pass collectl data to other applications like CMU?</a></li>
+</ul>
+<h2>Lustre Specific</h2>
+<ul>
+  <li><a href="#lus1">Tell me again about the differences between -sL and -sLL</a></li>
+  <li><a href="#lus2">I just collected client data with -OBMR so how to I create details?</a></li>
+  <li><a href="#lus3">I tried to play back a lustre client raw file with -sL and it told
+      me I need -sLL for -OB</a></li>
+  <li><a href="#lus4">I tried to playback the same file using -sLL and it told me -OM
+      does not apply to -sLL</a></li>
+  <li><a href="#lus5">So how do I play it back the file described in the last 2 questions?</a></li>
+</ul>
+<h2>Operational Problems</h2>
+<ul>
+  <li><a href="#ops1">Why won't collectl run as a service?</a></li>
+  <li><a href="#ops2">Why is my 'raw' file so big?</a></li>
+  <li><a href="#ops3">Playing back multiple files to terminal doesn't show file names</a></li>
+  <li><a href="#ops4">Why don't the averages/totals produced in brief mode look correct?</a></li>
+  <li><a href="#ops5">I'm getting errors "<i>Ignoring '!' modifier for short option</i>"</a></li>
+  <li><a href="#ops6">What does <i>New slab created after logging started</i> mean?</a></li>
+  <li><a href="#ops7">Why does collectl say <i>waiting for 60 second sample...</i> but doesn't?</a></li>
+  <li><a href="#ops8">Why am I not seeing exceptions only with -ox?</a></li>
+  <li><a href="#ops9">I'm seeing a bogus data point!</a></li>
+</ul>
+
+<h1>General Questions</h1>
+
+<a name="gen1"></a>
+<h2>What is the difference between collectl and sar?</h2>
+At the highest level, both collectl and sar provide lightweight collection of 
+device performance information.  However, when used in a diagnostic mode sar
+falls short on a number of points, though admittedly some could be addressed
+by wrapping it with scripts that reformat the data:
+<ul>
+  <li>sar plays back data by device/subsystem, sorted by time</li>
+  <li>sar does not deal with sub-second time</li>
+  <li>sar output cannot be directly fed into a plotting tool</li>
+  <li>sar does not provide nfs, lustre or interconnect statistics
+  <li>sar does not provide for the collection of slab data
+  <li>sar's process monitoring is limited in that if cannot save
+    process data in a file, cannot monitor threads, cannot select processes
+    to monitor other than ALL or by pid (so cannot selectively discover new 
+    processes) and in interactive mode is limited to 256 processes</li>
+</ul>
+
+<a name="gen2"></a>
+<h2>Isn't a default monitoring frequency of 1 second going to kill my system?</h2>
+Running collectl interactively at a 1 second interval has been shown to provide
+mininal load.  However, for running collectl for long periods of time it is 
+recommended to use a default monitoring period of 10 second and in fact is the 
+default when collectl is run as a daemon and started using the 'service start
+collectl command'.
+<br>
+A lot of effort has gone into making collectl very efficient in spite of the fact
+that it's written in an interpretive language like perl, which by the way is known
+for its efficiency.  collectl has been measured to use less than 0.01% of the cpu
+on most systems at an interval of 10 seconds.  
+To measure collectl's load on your own system you can use the command
+"time collectl -i0 -c8640 -s??? -f." to see the load of collecting a day's worth 
+of data for the specific subsystems included with the -s switch.
+
+<a name="gen3"></a>
+<h2>What is the best monitoring frequency?</h2>
+There really isn't a 'best' per se.  In general collecting counter data every 10 seconds
+and process/slab data every minute has been observed to produce a maximum amount of data
+with a minimal load.  When this granularity isn't sufficient there have been uses for 
+collecting data as 0.1 second intervals!  There have even been times when wanting to 
+verify a short lived process really does start that doing process monitoring by name at 
+an interval of 0.01 seconds has been found to be useful.
+
+<a name="gen4"></a>
+<h2>Why so many switches?</h2>
+In general, most people will not need most switches and that's the main reason
+for 'basic' vs 'extended' help.  However, it's also possible that there may be
+an extended switch that provides some specific piece of functionality not there
+with the basic ones and it is recommended that once you feel more comfortable
+with the basic operations that you spend a little time looking at them too.
+
+<a name="gen5"></a>
+<h2>Why doesn't <i>--top</i> show as much data as the <i>top</i> command?</h2>
+The simple answer is because this is <i>collectl</i>, not <i>top</i>.
+Actually I thought of that and then decided with all the different switches
+and options, the easiest thing to do is just run
+a second instance of collectl in another window, 
+showing whatever else you want to see in whatever
+format you like.  You can even pick different monitoring intervals.
+
+<h1>Running collectl</h1>
+
+<a name="run1"></a>
+<h2>How do I get started?</h2>
+The easiest way to get started is to just type 'collectl'.  It will report
+summary statistics on cpu, disk and network once a second.  
+If you want to change the subsystems being reported on use -s and to change
+the interval use -i.  More verbose information can be displayed with --verbose.  See
+the man pages for more detail.
+
+<a name="run2"></a>
+<h2>How do I make a plot?</h2>
+Collectl supports saving data in plot format - space separated fields - through
+the use of the -P switch.  The resultant output can then be easily plotted 
+using gnuplot, excel or any other packages that understand this format.  You
+can redirect collectl's output to a file OR it's much easier to just use the
+-f switch to speficy a location to write the data.
+
+<a name="run3"></a>
+<h2>How do I drill down to get a closer look at what's going on?</h2>
+The first order of business is to familiarize yourself with the types of data 
+collectl is capable of collecting.  This is best done by looking at the data
+produced by all the different settings for -s, both lower and upper case as 
+there is some detail data that is not visible at the summary level.  
+Take a look at -sd and -sD.  If you still
+don't see something it might actually be written in -P format.  See -sT for an
+example.
+<br>
+Next, run collectl and instruct it to log everything (or at least as much as you 
+think you'll need) to a file.  When you believe you've collected enough data - and
+this could span multiple days - identify times of interest or just plot everything
+(see the -P switch).
+Visually inspecting the plotted data can often show times of unusually heavy resource
+loads.  Often times there is a strong time delineation between good and bad.
+<br>
+It you want to see the actual numbers in the data as opposed to plots,
+play back the data using the -b switch to 
+select a begin time, usually a few samples prior to the time when things started to
+go bad.  To reduce the amount of output you can also use -e to set the end time for
+the collection.  You can also start selecting specific subsystems to look at as well
+as individual devices.  For example, if you've discovered that at 11:03 there was 
+an unusal network load, try 'collectl -p filename -b 11:02 -e 11:05 -sN' to see
+the activity at each NIC.
+<br>
+And don't forget process and/or slab activity if either has been collected.  You can
+also play back this data at specific time intervals too.
+
+<a name="run4"></a>
+<h2>I want to look at detail data but forgot to specify it when I collected the 
+data.  Now what?</h2>
+Good news!  With the exception of CPU data, collectl always collects
+detail data whether you ask for it or not - that's how it generates the 
+summaries.  When you extract data into plot format, by default it extracts the
+data based on the switches you used when you collected it.  So, if you 
+specified -sd you'll only see summary data when you extract it.  BUT if you
+include -s+D during the generation of plotting data you WILL generate disk
+details as well.
+
+<a name="run5"></a>
+<h2>How do I configure collectl to run all the time as a service?</h2>
+Use the chkconfig to change collectl's setting to 'on'.  On boot, collectl will
+be automatically started.  To start collectl immediately, type 
+'service collectl start'.
+
+<a name="run6"></a>
+<h2>How do I change the monitoring parameters for the 'service'?</h2>
+Edit /etc/collectl.conf and add any switches you like to the 'DaemonCommands'
+line.  To verify these are indeed compatible (some switches aren't), cut/paste
+that line into a collectl run command to make sure they work before trying to
+start the service.
+
+<a name="run7"></a>
+<h2>What are the differences between --rawtoo and --sexpr</h2>
+--rawtoo will cause data to be written to the <i>raw</i> file in addition
+to a plottable one, which can be overkill in many situations.  --sexpr
+will cause the contents of most counters to be written to the same file
+as an <i>s-expression</i> after each monitoring cycle and is intended to 
+be consumed by a program and not a human.  
+For more details see <i>man collectl-logging</i>
+
+<a name="run8">
+</a><h2>How can I pass collectl data to other applications like CMU?</h2>
+In environments such as CMU that support the integration of external data 
+sources all you need to do is run collectl with <i>--sexpr</i> as described
+above.  You can now pass the counters of interest to CMU WITH with the 
+collectl <i>readS</i>  utility, which is
+installed as part of the <i>collectl-utils</i> rpm.  This utility will
+read a specific counter from an s-expression and print it to stdout, 
+which is the way CMU integrates external data.
+<p>
+The arguments to readS take the following form:
+<p><tt>dir category variable [instance [divisor]]</tt>
+<ul>
+  <li>dir - directory in which the s-expression S exists, often
+      /var/log/collectl
+  <li>category - category of data element, such asc <i>cputotals</i> or <i>diskinfo</i>
+  <li>variable - the name of a summary item such as <i>nice</i> for cpu data 
+      or the name of the detail category such as <i>diskinfo</i>.
+  <li>instance - for detail data this is the instance name
+  <li>divisor - divide the results by this number, noting for summary data 
+      <i>instance</i> needs to be a null string
+</ul>
+
+Detailed customization instructions for use of data returned by <i>readS</i> 
+within CMU or other applications is beyond the scope of this FAQ.
+
+<h1>Lustre Specific</h1>
+
+<a name="lus1"></a>
+<h2>Tell me again about the differences between -sL and -sLL</h2>
+<p>
+The easiest way to think about this is that -sL provides details and
+-sLL provides more details.  Lustre data is oriented around filesystems
+and filesystems are built on top of one or more OSTs.  Therefore, at
+the client level -sL provides details at the filesystem level and -sLL 
+provides data at the OST level.  In the case of an OSS, it's already
+at the OST level and so there's really no lower level of detail.  As a
+matter of convenience, -sLL does the same as -sL on an OSS.  An MDS only
+generates detail level data at the disk block level and -sL and -sLL 
+on it both provide the same details.
+
+<a name="lus2"></a>
+<h2>I just collected client data with -OBMR so how to I create details?</h2>
+<p>
+The thing to remember is that you can either generate filesystem details
+or ost details but not both.  Since M&R apply to filesystems and B to OSTs,
+you would playback the raw data file with <i>-sL -OMR</i> to generate M&R
+date or with <i>-sLL -OB</i> to generate rpc-buffer details at the OST
+level.
+
+<a name="lus3"></a>
+<h2>I tried to play back a lustre client raw file with -sL and it told
+   me I need -sLL for -OB</h2>
+<p>
+By design, <i>collectl</i> tries to play back data using the same switches
+that were used when you collected it.  This error message would be 
+generated if you collected data using -OBM and tried to play it back by
+only specifying -sL, in which case it would take -OBM as the default,
+and -oB is incompatible with -sL. 
+
+<a name="lus4"></a>
+<h2>I tried to playback the same file using -sLL and it told me -OM
+   does not apply to -sLL</h2>
+<p>
+As in the previous case, by only specifying -sLL it would again take -OBM
+as the default and this time -OM is incompatible with -sLL.
+
+<a name="lus5"></a>
+<h2>So how do I play it back the file described in the last 2 questions?</h2>
+<p>
+The trick here is to <i>always</i> specify -O and include those subsystem options
+that are compatible with your -s switch.
+
+<h1>Operational Problems</h1>
+
+<a name="ops1"></a>
+<h2>Why won't collectl run as a service?</h2>
+As configured, collectl will write its date/time named log files to 
+/var/log/collectl, rolling them every day just after midnight and retaining 
+one week's worth.  In addition it also maintains a 'message log' file named for
+the host, year and month, eg hostname-200508.log - the creation of the message log is
+driven off the -m switch in DaemonCommands.  Check this log for any messages
+that should explain what is going on.
+
+<a name="ops2"></a>
+<h2>Why is my 'raw' file so big?</h2>
+By default, collectl will collect a lot of data - as much as 10 or more MB/day!
+If the perl-Compress library is installed, these logs will automatically be 
+compressed and are typically less than 2MB/day.
+<br>
+The output file size is also effected by the number of devices being monitored.
+In geneneral, even on large systems the number network interfaces is small and
+shouldn't matter, but if the number of disks gets very high, say in the dozens
+or more, this can begin to have an effect on the file size.  The other big
+variable is the number of processes when collecting process data.  As this 
+number grows to the many hundreds (or more), you will see the size of the data
+file grow.
+<br>
+Finally the other parameter that effects size is the monitoring interval.  The
+aforementioned sizes are based on the defaults which are process/slab 
+monitoring once every 60 seconds and device monitoring once every 10 seconds.
+Did you override these and make them too small?
+
+<a name="ops3"></a>
+<h2>Playing back multiple files to terminal doesn't show file names</h2>
+By design, collectl is expected to be used in multiple ways and a lot of 
+flexibility in the output format has been provided.  The most common 
+way of using playback mode is to play back a single file and therefore the name
+of the file is not displayed.  The -m switch will provide the file names as
+they are processed.
+
+<a name="ops4"></a>
+<h2>Why don't the averages/totals produced in <i>brief</i> mode look correct?</h2>
+There may be two reasons for this, the most obvious being that by default the 
+intermediate numbers are normalized into a /sec rate and the averages/totals
+are based on the raw numbers.  If the monitoring interval is 1 sec or you use
+-on to supress normalization, the results will be very close.
+<br>
+The other point to consider is that numbers are often stored at a higher 
+resolution than displayed and so there is less round-off error with the averages
+and totals.
+
+<a name="ops5"></a>
+<h2>I'm getting errors "<i>Ignoring '!' modifier for short option</i>"</h2>
+As of Version 2, collectl expects at least perl version 5.8 to be installed.  If
+you do not have a newer version of perl and cannot install a newer one, you can 
+get around this problem by installing a newer version of the module <i>perl-Appconfig</i>.
+Unfortunately, newer versions of perl-Appconfig only operate with perl 5.8 or 
+greater so you will have to install it on some other system running perl 5.8 first.  
+Then you need to manually replace the three modules <i>Getopt.pm, Long.pm</i> and 
+<i>Std.pm</i> on your perl 5.6 system, which can be found under /usr/lib/perl5/.  
+It is also recommended you rename rather than overwrite the originals.
+
+<a name="ops6"></a>
+<h2>What does <i>New slab created after logging started</i> mean?</h2>
+When collectl first starts, it builds a list of all the existing slabs.
+As the message states, collectl has discovered a new slab and adds it to
+its list.  This is relatively rare but can also indicate collection was
+started too soon, possibly before system processes or applications
+have allocated system data structures.  It is really just an informational
+message and can safely be ignored.
+
+<a name="ops7"></a>
+<h2>Why does collectl say <i>waiting for 60 second sample...</i> but doesn't?</h2>
+This is very rare as it will only happen when collecting a small number of process
+or slab data samples, but it is also worth understanding what is happening
+because it gets into the internal mechanics of data collection.  In addition to the
+normal counter collectl uses to collect most data, it also maintains a second
+one for coarser samples such as process and slab data.  When reporting how long
+collectl is going to wait for a sample, it uses a number based on the type of
+data being collected.  In almost all cases this is the value of the fine-grained
+counter, but if only collecting process or slab data, it reports the second
+counter whose default is 60 seconds.
+<p>
+Collection of counters, such as disk traffic or cpu load, always requires 2
+samples since it's their different that represent the actual value.  Other
+data such as memory in use or process data only require a single sample 
+<i>but</i> in order to synchronize all the values being reported, collectl
+always uses its first sampling interval to collectl a base sample and doesn't
+actually report anything until the second sample is taken which is why it
+reports the <i>waiting...</i> message even if it isn't being asked to report
+any counters.
+<p>
+Finally, the -c switch which specifies the number of samples to collect
+applies to the finer-grained counter.  This means if you try to collect a number
+of samples that will cause the -c switch limit to be reached because any data
+is actually collected, you will see collectl exit without reporting anything!
+The best example of this would be the command <i>collectl -sZ -c1</i>.
+Since the default interactive sample counters are 1 and 60 seconds respectively
+<i>and</i> collectl has to actually take 2 samples, collectl will only run long
+enough for one tick of the fine-grained counter or 1 second and immediately
+exit with no output.  Therefore to 
+collect 1 process sample you will actually need to use -c60 but will also have
+to wait 60 seconds to see anything.  
+Alternatively you could set the fine-grained sample counter to the same as
+the process sample counter
+and so the command <i>collectl -i60:60 -sZ -c1</i> would also report 1 sample
+after waiting for 60 seconds.  If you want to collect a sample after just 1
+second, you should use <i>collectl -i:1 -sZ -c1</i>.
+
+<a name="ops8"></a>
+<h2>Why am I not seeing exceptions only with -ox?</h2>
+Exception processing requires --verbose.  Did you forget to include it?
+
+<a name="ops9"></a>
+<h2>I'm seeing a bogus data point!</h2>
+Every effort has been made to filter out <i>bogus</i> or <i>invalid</i> data
+and other than rare occurances you should not be seeing any but
+the important thing to remember is
+that collectl simply reports what it sees.  If that data is being presented
+incorrectly is it <i>not</i> a collectl bug.  One example of this is the way
+network counters are reported and if monitored once a second you <i>will</i>
+see incorrect values every minute or two!  See the <i>collectl-themath</i>
+man page for more details on this.  In kernels prior to 2.6.15, some
+disk statistics showed up incorrectly because the numbers reported for
+<I>bytes transferred</I> were actually the bytes queued.  This anomaly has
+since been corrected in the kernel.
+<p>
+There are also times when a corrupted record may be read from /proc and to
+keep things efficient, collectl may not detect this until <i>playback</i>
+at which time it will generate a message to that effect.  There have even
+been a few occasions when network data is read correctly but for unknown
+reasons there are one or more bogus values in the fields.  In most cases
+these too are also detected.
+<p>
+Even with all these tests, there may still be occasions where something
+slips through the cracks, but hopefully these will be rare enough to only be a
+minor annoyance.  If one is trying to plot data that has 
+<i>slipped through</i> with tools that 
+autoscale based on the data, you may see extemely high values for the y-axis
+with a spike for the bad data point.  In order to see the rest of the data
+at a proper scale you will either have to select plotting times outside the
+time of the bad data OR manually set the maximum value for the y-axis.
+</body>
+</html>

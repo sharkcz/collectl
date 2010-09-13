@@ -1,0 +1,151 @@
+.TH COLLECTL-PROCESS 1 "JANUARY 2005" LOCAL "Collectl" -*- nroff -*-
+
+.SH Collectl Process Monitoring
+
+Collectl has the ability to monitor processes in pretty much the same way as
+ps or top do.  You can select processes to monitor by pid, parent, owner or 
+command name.
+When using names, you can use partial or full names or even use strings that
+were part of the invocation string.  The main benefit of monitoring 
+processes with
+collectl is that you can coordinate the sample times of process data with
+any of the other subsystems collectl can monitor.
+
+The way you tell collectl to monitor processes is to specify the Z subsystem
+and any optional parameteres with -Z (sorry, but -P was already taken).  Since
+monitoring processes is a heavier-weight function, it is recommended to use a 
+different interval, which can be specified after the main monitoring interval
+separated by a colon.  The default is 60 seconds.  Therefore, to monitor all
+the processes once every 20 seconds and the rest of the parameters every 5
+simply say:
+
+collectl -sZ -i5:20
+
+The biggest mistake people make when running this command interactively is to
+leave off the interval or specificy something like -i1 and not see any process
+data.  That is because the default interval is 60 seconds and they just 
+haven't waited long enough for the output!
+
+There are a few restrictions to the way these intervals are specified.  The
+process interval must be a multiple of the main interval AND cannot be less
+than it.  If you specify a process interval without a main interval, the main
+interval defaults to the process interval.
+
+To monitor a subset of processes use the -Z switch followed by one or more
+process selectors, separated by commas.  If a plus sign immediately follows a
+process selector any processes selected by it will have their threads 
+monitored as well.
+
+Finally, as with other data collected by collectl you can play back process
+data by specifying -p.  While not exactly plottable data, you can specify
+-P and the output will be written to a separate file as time stamped space 
+delimited data, one process per line.
+
+.SH Dynamic Process/Thread Monitoring
+
+A unique feature of process monitoring is that processes specified with a 
+selection list via -Z do
+not have to exist at the time collectl is run.  In other words, collectl will
+continue to look for new processes that match this selection list on every
+pass!  While this is indeed a good thing if that's 
+what you want to do, it does
+come with a price in overhead - not a lot, but overhead never-the-less.  If
+you do not want this effect and only want to look at those processes that match
+the selection list at the time collectl is started, specify -OP to suppress 
+this behavior.
+
+This holds for process threads as well.  If you use -OP you will not see 
+threads that were created after collectl starts.
+
+Perhaps the best way to see this in effect is to run collectl with the 
+following command:
+
+collectl -i:.1 -sZ -Zfabc -oh
+
+noting a few tricks.  First of all, the .1 for an interval is not a mistake.  
+It is there to show that you 
+can indeed use collectl to spot the appearance of short
+lived processes - just don't do it unless you really need to.  The pupose of 
+the -oh is to suppress headers which can be really annoying in this mode - try
+it without it and see what I mean.  Finally, the -Z switch is saying to look
+for any processes invoked with a command that contained the string 'abc' in it.
+When this command is invoked there shouldn't be any output unless someone IS
+running a command with 'abc' in it.  Now go to a
+different window or terminal and edit the file abc.  You will immediately see
+collectl output and when you exit the editor the output will stop.
+
+.SH The Time Fields
+
+The SysT and UsrT represent the system and user time the line item spent during
+the current interval.  One might think this means that in a 60 second interval the
+most time a process could spend is 60 seconds.  Not quite!  If this is a 
+multi-processor/multi-core system the process could actually spend up to 60 seconds
+on each core, so just be careful how the times are interpretted.  The Pct field is
+the percentage of the current interval the process had consumed in system and user
+time, which can exceed 100% in multi-processor situations.  Finally, since the
+AccuTime field accumulates these times it can exceed the actual wall clock time.
+
+When run in non-threaded mode, the times reported include all time consumed by
+all threads.  When run in threaded mode, times are reported for indivual
+threads as well as the main process.  In other words, if a
+process's only job is to start threads, it will typically show times of 0.  If
+you rerun collectl in non-threaded mode you will see it report aggregated
+times.
+
+.SH Understanding Processing Overhead
+
+This is intended to be a brief description of how process monitoring works with
+the hope that it will help use the capability more efficiently.
+
+Collectl maintains 2 main lists of monitoring information - pids to monitor
+and pids to ignore.  These lists are built at the time collectl starts, so if
+-OP is not specified, the effect is to execute a ps command and save all the 
+pids in the to-be-monitored list.  If filters are specified with -Z, only those
+pids that match are placed in to-be-monitored and the rest placed in the 
+do-not-monitor list.
+
+If collectl is only monitoring a specific set of processes, either because -OP
+was specified or -Z was used and only specified specific pids (not ppids), on
+each monitoring pass collectl only looks at the pids in the to-be-monitored 
+list.  In other words, this is as efficient as it gets.
+
+If doing dynamic process monitoring, every monitoring pass collectl has to 
+read /proc to get a list of ALL current processes.  While it ignores any in
+do-not-monitor, it must look at the rest.  If any of these are in the
+to-be-monitored list and have had thread monitoring requested, additional work
+is required to see if any new threads have shown up.
+Any processes not in to-be-monitored are obviously NEW processes and must 
+then be examined to see if they 
+match any selection criteria and this involves 
+reading the /proc/pid/stat file.  That pid is
+then placed in one of the two lists.
+It should be understood that during any particular interval a lot of processes
+come and go, such as cat, ls, etc.  However, these are short lived enough as to
+not even be seen by collectl, unless of course collectl is running at a very
+fine grained monitoring level.
+
+Occasionally a process being monitored disappears because it had terminated.
+When this happens its pid is removed from the to-be-monitored list.
+
+Finally, these data structures (and a couple of others that have not been
+described) need maintenance to keep them from growing.  If the number of 
+processes to monitor has been fixed, this maintenance is significantly reduced.
+
+So the bottom line is if you have to use dynamic monitoring, try to bound the
+number of processes and/or threads.  If you really need to see it all, don't
+be afraid to but just be mindful of the overhead.  Collecting all process 
+data with the default interval has been observed to take about 1 minute of CPU
+time, which is less than 1%, on a lightly loaded DL380.  I'm sure that load 
+will be higher with more active process.
+
+.SH RESTRICTIONS
+
+You cannot specify -Z during playback mode.  If you need to look at a subset of
+the data consider using a filter like grep.  
+
+At this time thread monitoring is limited to 2.6 kernels.
+
+.SH AUTHOR
+Copyright 2003-2007 Hewlett-Packard Development Company, LP
+collectl may be copied only under the terms of either the Artistic License
+or the GNU General Public License, which may be found in the source kit

@@ -1,0 +1,74 @@
+#!/bin/sh
+# Startup script for collectl on distros that support start-stop-daemon
+#
+# description: Run data collection for a number of subsystems
+#    see /etc/collectl.conf for startup options
+
+PERL=/usr/bin/perl
+COLLECTL=/usr/sbin/collectl
+PIDFILE="/var/run/collectl.pid"
+
+if [ ! -f $PERL ]; then
+    echo -n "Cannot find $PERL"
+    exit 0
+fi
+
+if [ ! -f $COLLECTL ]; then
+    echo -n "Cannot find $COLLECTL"
+    exit 0
+fi
+
+state=0
+start-stop-daemon --quiet --stop --exec $PERL --pidfile $PIDFILE --signal 0 && state=1
+
+case "$1" in
+   start)
+      echo -n "Starting collectl: collectl"
+      if [ $state -eq 0 ]; then
+         start-stop-daemon --quiet --start --exec $COLLECTL -- -D
+	 echo "."
+      else
+	 echo " [already running]"
+      fi
+      ;;
+
+  stop)
+      echo -n "Stopping collectl: collectl"
+
+      if [ $state -eq 1 ]; then
+	 start-stop-daemon --quiet --stop --exec $PERL --pidfile $PIDFILE
+	 echo "."
+      else
+	 echo " [not running]"
+      fi
+      ;;
+
+  flush)
+      if [ $state -eq 1 ]; then
+	  echo "Flushing buffers for collectl"
+	  kill -s USR1 `cat /var/run/collectl.pid`
+      else
+	  echo "collectl is not running"
+      fi
+      ;;
+
+  status)
+      if [ $state -eq 1 ]; then
+          echo "collectl is running..."
+      else
+          echo "collectl is not running"
+      fi
+      ;;
+
+  restart|force-reload)
+   	$0 stop
+	sleep 1
+   	$0 start
+	;;
+  *)
+	echo "Usage: $0 {start|stop|flush|restart|force-reload|status}"
+	exit 1
+esac
+
+exit 0
+

@@ -40,6 +40,33 @@ KNOWN PROBLEMS/RESTRICTIONS
 
 CHANGES
 
+next
+  - in INSTALL, change cp to mv for default distro case
+
+3.4.3-3 August 19, 2010
+  - added --netfilt
+  - very rare: if playing back CPU data but none collected, be sure to
+    set $cpusEnabled to number of CPUs or else you'll get warning that
+    one or more disabled
+  - pattern match wrong for 'emcpower' disks [thanks lewis]
+  - changed disk details to use 'cvt()' for reporting number of I/Os since DM numbers
+    can be more than 4 digits
+  - change --umask behavior.  default is to do nothing unless explicity set
+    AND user is 'root'
+  - 2 new process sort fields: pid and cpu
+
+3.4.3-2 August 16, 2010
+  - only look at $cpuDisabledFlag when processing CPU data
+  - perfquery in OFED 1.5 can report warnings in its output stream which need to be ignored
+  - if you try to playback a file and specify -s with no existing subsystems you'll 
+    get an error
+
+3.4.3-1 August 02, 2010
+  - perfquery checks problems
+    - version finding code not working correctly for ofed 1.5
+    - disabling -sl by mistake when perfquery not found
+    - when errors detected during initialization not skipping subsequent checks
+
 3.4.2-5 July 21, 2010
   - changed INSTALL to only execute commands like chkconfig OR update-rc
     when $DESTDIR is / [thanks mike]

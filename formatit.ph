@@ -239,34 +239,43 @@ sub initRecord
         # The way forward is clearly OFED
 	if (-e $SysIB)
         {
-          print "Looking for 'perfquery' and 'ofed_info'\n"    if $debug & 2;
-          $PQuery=getOfedPath($PQuery, 'perfquery', 'PQuery');
-          if ($PQuery eq '')
+          # This block's job is to make sure perfquery is there
           {
-            disableSubsys('l', "couldn't find perfquery!");
-            $mellanoxFlag=0;
+            print "Looking for 'perfquery' and 'ofed_info'\n"    if $debug & 2;
+            $PQuery=getOfedPath($PQuery, 'perfquery', 'PQuery');
+            if ($PQuery eq '')
+            {
+              disableSubsys('x', "couldn't find perfquery!");
+              $mellanoxFlag=0;
+	      last;
+            }
+
+            # I hate support questions and this is the place to catch perfquery problems!
+            # so, if perfquery IS there, since it generates warnings on stderr in V1.5 and
+            # we don't know the version yet, always ignore them
+            if ($mellanoxFlag)
+            {
+              my $message='';
+              my $temp=`$PQuery 2>/dev/null`;
+
+              $message="Permission denied"            if $temp=~/Permission denied/;
+              $message="Required module missing"      if $temp=~/required by/;
+              $message="No such file or directory"    if $temp=~/No such file/;
+              if ($message ne '')
+              {
+                disableSubsys('x', "perfquery error: $message!");
+                $mellanoxFlag=0;
+                $PQuery='';
+		last;
+              }
+            }
+
+            # perfquery IS there and we can execute it w/o error...
+            # Can you believe it?  PQuery writes its version output to stderr!
+            $temp=`$PQuery -V 2>&1`;
+            $temp=~/VERSION: (\d+\.\d+\.\d+)/;
+            $PQVersion=$1;
           }
-
-          # I hate support questions and this is the place to catch perfquery problems!
-          # also, since perfquery generates warnings on stderr in V1.5 and we don't know
-          # the version yet, always ignore it.
-          my $message='';
-          my $temp=`$PQuery 2>/dev/null`;
-
-          $message="Permission denied"            if $temp=~/Permission denied/;
-          $message="Required module missing"      if $temp=~/required by/;
-          $message="No such file or directory"    if $temp=~/No such file/;
-          if ($message ne '')
-          {
-            disableSubsys('l', "perfquery error: $message!");
-            $mellanoxFlag=0;
-            $PQuery='';
-          }
-
-          # Can you believe it?  PQuery writes its version output to stderr!
-          $temp=`$PQuery -V 2>&1`;
-          $temp=~/VERSION: (.*)_/;
-          $PQVersion=$1;
 
           # perfquery there, but what is ofed's version?
           # NOTE - looks like RedHat is no longer shipping ofed
@@ -1021,6 +1030,10 @@ sub initFormat
     $slubinfoFlag=   ($flags=~/s/) ? 1 : 0;
     $cpuDisabledFlag=($flags=~/D/) ? 1 : 0;
 
+    # If we're not processing CPU data, this message will never be set so
+    # just initialized for all cases.
+    $cpuDisabledMsg='';
+
     $header=~/Memory:\s+(\d+)/;
     $Memory=$1;
 
@@ -1669,7 +1682,9 @@ sub initInterval
   # Since the number of cpus can change dynamically, we need to clear these every pass,
   # BUT for now since we're only checking when monitoring CPUS and not interrupts we
   # can't clear the '$cpuEnabled' when not do cpu stats since that's to much overhead
-  $cpusEnabled=0    if $subsys=~/c/i;
+  # Further, if cpu data wasn't recorded but we're playing back, set the number enabled
+  # to all so we don't report warnings that one or more are disabled
+  $cpusEnabled=($subsys=~/c/i && ($playback eq '' || $recSubsys=~/c/i)) ? 0 : $NumCpus;
   for (my $i=0; $i<$NumCpus; $i++)
   {
     $cpuEnabled[$i]=0    if $subsys=~/c/i;
@@ -1808,16 +1823,19 @@ sub intervalEnd
 
   # This is sooo rare, but if a CPU goes off-line it can happen at any time and so we need
   # to check at the end of every interval, whether interactively or during playback.
-  $cpuDisabledFlag=($cpusEnabled!=$NumCpus) ? 1 : 0;
-  $cpuDisabledMsg= ($cpuDisabledFlag) ? ': *** One or more CPUs disabled ***' : '';
-  if ($cpuDisabledFlag)
+  if ($subsys=~/c/)
   {
-    # Since current stats never get updated for cpus that are offline and not in /proc/stat
-    # we need to manaually force their current values to 0.
-    for (my $i=0; $i<$NumCpus; $i++)    # in case cpu0 goes offline on its own?
+    $cpuDisabledFlag=($cpusEnabled!=$NumCpus) ? 1 : 0;
+    $cpuDisabledMsg= ($cpuDisabledFlag) ? ': *** One or more CPUs disabled ***' : '';
+    if ($cpuDisabledFlag)
     {
-      $userP[$i]=$niceP[$i]=$sysP[$i]=$waitP[$i]=$irqP[$i]=$softP[$i]=$stealP[$i]=$idleP[$i]=0
-	if !$cpuEnabled[$i];
+      # Since current stats never get updated for cpus that are offline and not in /proc/stat
+      # we need to manaually force their current values to 0.
+      for (my $i=0; $i<$NumCpus; $i++)    # in case cpu0 goes offline on its own?
+      {
+        $userP[$i]=$niceP[$i]=$sysP[$i]=$waitP[$i]=$irqP[$i]=$softP[$i]=$stealP[$i]=$idleP[$i]=0
+	  if !$cpuEnabled[$i];
+      }
     }
   }
 
@@ -4127,6 +4145,8 @@ sub printPlotHeaders
   {
     for ($i=0; $i<$NumNets; $i++)
     {
+      next    if $netFilt ne '' && $netName[$i]!~/$netFilt/;
+
       $temp= "[NET]Name${SEP}[NET]RxPkt${SEP}[NET]TxPkt${SEP}[NET]RxKB${SEP}[NET]TxKB${SEP}";
       $temp.="[NET]RxErr${SEP}[NET]RxDrp${SEP}[NET]RxFifo${SEP}[NET]RxFra${SEP}[NET]RxCmp${SEP}[NET]RxMlt${SEP}";
       $temp.="[NET]TxErr${SEP}[NET]TxDrp${SEP}[NET]TxFifo${SEP}[NET]TxColl${SEP}[NET]TxCar${SEP}";
@@ -4916,6 +4936,8 @@ sub printPlot
     $netPlot='';
     for ($i=0; $i<$NumNets; $i++)
     {
+      next    if $netFilt ne '' && $netName[$i]!~/$netFilt/;
+
       $netPlot.=sprintf("$SEP%s$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
                   $netName[$i],
                   $netRxPkt[$i]/$intSecs, $netTxPkt[$i]/$intSecs,
@@ -5324,11 +5346,11 @@ sub printTerm
       # If exception processing in effect, make sure this entry qualities
       next    if $options=~/x/ && $dskRead[$i]/$intSecs<$limIOS && $dskWrite[$i]/$intSecs<$limIOS;
 
-      $line=sprintf("$datetime%-11s %6d %6d %4d %4s  %6d %6d %4d %4s   %5d %5d  %4d   %4d  %3d\n",
+      $line=sprintf("$datetime%-11s %6d %6d %4s %4s  %6d %6d %4s %4s   %5d %5d  %4d   %4d  %3d\n",
 		$dskName[$i],
-		$dskReadKB[$i]/$intSecs,  $dskReadMrg[$i]/$intSecs,  $dskRead[$i]/$intSecs,
+		$dskReadKB[$i]/$intSecs,  $dskReadMrg[$i]/$intSecs,  cvt($dskRead[$i]/$intSecs),
 	        $dskRead[$i] ? cvt($dskReadKB[$i]/$dskRead[$i],4,0,1) : 0,
-		$dskWriteKB[$i]/$intSecs, $dskWriteMrg[$i]/$intSecs, $dskWrite[$i]/$intSecs,
+		$dskWriteKB[$i]/$intSecs, $dskWriteMrg[$i]/$intSecs, cvt($dskWrite[$i]/$intSecs),
                 $dskWrite[$i] ? cvt($dskWriteKB[$i]/$dskWrite[$i],4,0,1) : 0,
 		$dskRqst[$i], $dskQueLen[$i], $dskWait[$i], $dskSvcTime[$i], $dskUtil[$i]);
       printText($line);
@@ -6081,6 +6103,8 @@ sub printTerm
 
     for ($i=0; $i<$netIndex; $i++)
     {
+        next    if $netFilt ne '' && $netName[$i]!~/$netFilt/;
+
         $line=sprintf("$datetime %3d  %${NetWidth}s %6d %6d %6d %6d %6d %6d %6d %6d %6d %6d %6d\n",
 	$i, $netName[$i], 
         $netRxKB[$i]/$intSecs,  $netRxPkt[$i]/$intSecs, $netRxPkt[$i] ? $netRxKB[$i]*1024/$netRxPkt[$i] : 0,
@@ -6563,8 +6587,10 @@ sub printTermProc
 	} elsif ($topType eq 'rss') {
 	  $accum=defined($procVmRSS[$ipid]) ? $procVmRSS[$ipid] : 0;
 
-	} elsif ($topType eq 'syst') {
-  	  $accum=$procSTime[$ipid];
+	} elsif ($topType eq 'pid') {
+  	  $accum=32767-$pid;                 # to sort ascending
+	} elsif ($topType eq 'cpu') {
+  	  $accum=$NumCpus-$procCPU[$ipid];   # to sort ascending
 	} elsif ($topType eq 'usrt') {
           $accum=$procUTime[$ipid];
 	} elsif ($topType eq 'time') {
@@ -7077,7 +7103,7 @@ sub printBrief
     $fill1=($Hyper eq '') ? "----" : "";
     $fill2=($Hyper eq '') ? "----" : "-";
     $line.="$clscr";
-    $line.="#$cpuDisabledMsg\n";
+    $line.="#$cpuDisabledMsg\n"    if $cpuDisabledMsg ne '';
     $line.="#$pad";
     $line.="<----${fill1}CPU$Hyper$fill2---->"     if $subsys=~/c/;
     if ($subsys=~/j/)
@@ -8744,7 +8770,7 @@ sub getOfedPath
   my $RHVersion=($Distro=~/Red Hat.*(\d+\.\d+)/) ? $1 : '';
 
   # Can't find in standard places so ask rpm, but only if it's there
-  if ($found eq '' && -e $Rpm && $RHVersion<5.4)
+  if ($found eq '' && -e $Rpm && $RHVersion ne '' && $RHVersion<5.4)
   {
     # This is something we really don't want to have to be doing
     logmsg('W', "Cannot find '$name' in ${configFile}'s OFED search list, checking with rpm");

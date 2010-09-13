@@ -729,8 +729,8 @@ cannot use this switch in "record" mode.
 
 .B "--umask mask"
 .RS
-Sets collectl's umask to control output file permissions.  Defaultis 0137.
-See "man umask" for details.
+Sets collectl's umask to control output file permissions.  Only root can set
+the umask.  See "man umask" for details.
 .RE
 
 .B -v
@@ -767,6 +767,14 @@ to align data with the column headings in this mode.
 
 The following options are subsystem specific and typically filter data for collection
 and/or display as well as affect the output format:
+
+.B "--dskfilt perl-regx[,perl-regx...]"
+.RS
+This ONLY applies to disk detail output and not data collection.
+Only data for disk names that match the pattern(s) will
+be displayed.  If you don't know perl, a partial string will usually 
+work too.
+.RE
 
 .B "--envopts Environmental Options"
 .RS
@@ -815,6 +823,14 @@ M - For clients, collect metadata
 O - For OSTs, show detail level stats
 .br
 R - For client, collect readahead stats
+.RE
+
+.B "--netfilt perl-regx[,perl-regx...]"
+.RS
+This ONLY applies to network detail output and not data collection.
+Only data for network interface names that match the pattern(s) will
+be displayed.  If you don't know perl, a partial string will usually 
+work too.
 .RE
 
 .B "--nfsfilt NFS Filters"

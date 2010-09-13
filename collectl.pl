@@ -79,7 +79,7 @@ $ReqDir=       '/usr/share/collectl';    # may not exist
 
 %TopProcTypes=qw(vsz '' rss '' syst '' usrt '' time '' rkb '' wkb '' iokb ''
                  rkbc '' wkbc '' iokbc '' ioall '' rsys '' wsys '' iosys  ''
-                 iocncl '' majf '' minf '' flt '');
+                 iocncl '' majf '' minf '' flt '' pid '' cpu '');
 %TopSlabTypes=qw(numobj '' name '' actobj '' objsize '' numslab '' objslab '' totsize '' totchg '' totpct '');
 
 # Constants and removing -w warnings
@@ -107,7 +107,7 @@ require "Sys/Syslog.pm"    if !$PcFlag;
 $rootFlag=(!$PcFlag && `whoami`=~/root/) ? 1 : 0;
 $SrcArch= $Config{"archname"};
 
-$Version=  '3.4.2-5';
+$Version=  '3.4.3-3';
 $Copyright='Copyright 2003-2010 Hewlett-Packard Development Company, L.P.';
 $License=  "collectl may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
@@ -223,9 +223,9 @@ $DefNetSpeed=10000;
 $IbDupCheckFlag=1;
 $TimeHiResCheck=1;
 $PasswdFile='/etc/passwd';
-$Umask=133;
+$umask='';
 $DiskMaxValue=-1;    # disabled
-$DiskFilter='cciss/c\d+d\d+ |hd[ab] | sd[a-z]+ |xvd[a-z] |fio[a-z]+ |dm-\d+ |emcpower|psv\d+';
+$DiskFilter='cciss/c\d+d\d+ |hd[ab] | sd[a-z]+ |xvd[a-z] |fio[a-z]+ |dm-\d+ |emcpower[a-z]+ |psv\d+';
 $DiskFilterFlag=0;   # only set when filter set in collectl.conf
 
 # Standard locations
@@ -338,7 +338,7 @@ $procAnalFlag=$procAnalCounter=$slabAnalFlag=$slabAnalCounter=$lastInt2Secs=0;
 $lastLogPrefix=$passwdFile='';
 $nfsOpts=$nfsFilt=$lustOpts=$userEnvOpts='';
 $grepPattern=$pname='';
-$dskFilt='';
+$dskFilt=$netFilt='';
 
 # Since --top has optionals arguments, we need to see if it was specified without
 # one and stick in the defaults noting -1 means to use the window size for size
@@ -407,7 +407,7 @@ GetOptions('align!'     => \$alignFlag,
            'ssh!'       => \$sshFlag,
 	   'top=s'      => \$topOpts,
            'utc!'       => \$utcFlag,
-           'umask=s'    => \$Umask,
+           'umask=s'    => \$umask,
 	   'v!'         => \$vSwitch,
            'version!'   => \$vSwitch,
 	   'V!'         => \$VSwitch,
@@ -429,6 +429,7 @@ GetOptions('align!'     => \$alignFlag,
            'hr=i'          => \$headerRepeat,
 	   'import=s'      => \$import,
            'lustopts=s'    => \$lustOpts,
+           'netfilt=s'     => \$netFilt,
            'nfsopts=s'     => \$nfsOpts,
            'nfsfilt=s'     => \$nfsFilt,
            'envopts=s'     => \$userEnvOpts,
@@ -882,6 +883,7 @@ error('--showmergedheader not allowed with -f')            if $filename ne '' &&
 error('--showplotheader not allowed with -f')              if $filename ne '' && $showPHeaderFlag;
 
 error("--align require HiRes time module")                 if $alignFlag && !$hiResFlag;
+error('--umask can only be set by root')                   if $umask ne '' && !$rootFlag;
 
 # if user enters --envOpts that don't conflict with defaults, we need to add it to theh
 # otherwise override them
@@ -897,7 +899,9 @@ $SEP=sprintf("%c", $SEP)    if $SEP=~/\d+/;
 
 # comma is the same as | in perl
 error("--dskfilt only applies to -sD")    if $dskFilt ne '' && $subsys!~/D/;
+error("--netfilt only applies to -sN")    if $netFilt ne '' && $subsys!~/N/;
 $dskFilt=~s/,/|/g;
+$netFilt=~s/,/|/g;
 
 #    L i n u x    S p e c i f i c
 
@@ -945,7 +949,7 @@ if (!$PcFlag)
   }
 
   # Set protections for output files
-  umask oct($Umask) or error("Couldn't set umask to $Umask");
+  umask oct($umask) or error("Couldn't set umask to $umask")    if $umask ne '' && $rootFlag;
 }
 
 #    C o m m o n    I n i t i a l i z a t i o n
@@ -1458,9 +1462,14 @@ if ($playback ne '')
     # we need to initialize a bunch of stuff including these variables and the
     # starting time for the file as well as the corresponding UTC seconds.
     ($recVersion, $recDate, $recTime, $recSecs, $recTZ, $recInterval, $recSubsys, $recNfsFilt)=initFormat($file);
-    printf "Host: $Host  Version: %s  Date: %s  Time: %s  Interval: %s Subsys: $recSubsys\n",
+    printf "RECORDED -- Host: $Host  Version: %s  Date: %s  Time: %s  Interval: %s Subsys: $recSubsys\n",
               $recVersion, $recDate, $recTime, $recInterval
 		  if $debug & 1;
+
+    # Make sure at least 1 requested subsys is actually recorded
+    my $tempSys=$subsys;           # this is what we want to report
+    $tempSys=~s/[$recSubsys]//g;   # remove ANY that are recorded
+    error("none of the requested subsystems are recorded in selected file")    if $subsys eq $tempSys;
 
     loadUids($passwdFile)      if $recSubsys=~/Z/;
     #print "SUBSYS: $subsys  RECSUBSYS: $recSubsys  FLAGS: $playback{$prefix}->{flags}\n";
@@ -3291,7 +3300,7 @@ sub setNames
   my $oldNames=shift;
   my $name;
 
-  print "SET NAME -- Type: $type Old: $oldNames  New: $newNames\n"
+  print "Set Name -- Type: $type Old: $oldNames  New: $newNames\n"
       if $debug & 8;
 
   # remember, it's ok for names to go away.  we just want new ones!
@@ -3416,7 +3425,7 @@ sub getProc
         if ($line=~/xvd[a-z] /)          { record(2, "$tag $line"); next; }
         if ($line=~/fio[a-z]+ /)         { record(2, "$tag $line"); next; }
         if ($line=~/dm-\d+ /)            { record(2, "$tag $line"); next; }
-        if ($line=~/emcpower/)           { record(2, "$tag $line"); next; }
+        if ($line=~/emcpower[a-z]+/)     { record(2, "$tag $line"); next; }
         if ($line=~/psv\d+/)             { record(2, "$tag $line"); next; }
       }
       else
@@ -3546,6 +3555,9 @@ sub getExec
     my $lineNum=0;
     foreach my $line (<CMD>)
     {
+      # Skip warnings found in perfquery/ofed 1.5
+	next    if $line=~/^ibwarn/;
+
       # Perfquery V1.5 adds an extra field called CounterSelect2 so ignore.
       next    if ++$lineNum==13 && ($PQVersion ge '1.5.0');
 
@@ -4265,7 +4277,7 @@ sub setOutputFormat
   }
 
   $briefFlag=($verboseFlag) ? 0 : 1;
-  print "SET OUTPUT -- Subsys: $subsys Verbose: $verboseFlag SameCols: $sameColsFlag\n"    if $debug & 1;
+  print "Set Output -- Subsys: $subsys Verbose: $verboseFlag SameCols: $sameColsFlag\n"    if $debug & 1;
 
   # This also feels like a good place to do these
   $i1DataFlag=($subsys!~/^[EYZ]+$/i) ? 1 : 0;
@@ -5835,6 +5847,12 @@ Lustre
     case other tools might care.  see the collectl documentation on lustre
     for details
 
+Network
+  --netfilt perl-regx[,perl-regx...]
+      this ONLY applies to network detail output and not data collection
+      only data for network interface names that match the pattern(s) 
+      will be displayed
+
 NFS
   --nfsfilt  TypeVer,...
       C - client
@@ -5964,6 +5982,13 @@ sub whatsnew
 {
   my $whatsnew=<<EOF6;
 What's new in collectl?
+
+Version 3.4.3
+- new switches
+  -- netfilt filters network detail data on output
+- new functionality
+  - only set umask if 'root' AND --umask explicitly specified
+  - 2 new top process sort fields: pid & cpu number
 
 Version 3.4.2
 - new switches

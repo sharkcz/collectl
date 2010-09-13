@@ -93,12 +93,13 @@ Like collectl itself, which has its own debugging variable (see -d), the value o
 debugging variable should be interpretted as setting a bit mask, where each bit results in
 different behavior.  Refer to the header of <i>gexpr</i> for the complete set, but
 the following example uses 2 bits, one for printing the data being set over the socket
-and the second with disables opening the socket and actually sending the data over it.
-Note that in this case you are not required to include a host name or port.
+and the second with disables actually sending the data over the socket.
+Note that in this case you are still required to supply a socket:port because they will be opened 
+but also realize you can use just about anything you want since no data is actually sent over it.
 
 <div class=terminal>
 <pre>
- collectl -scd --export gexpr,d=5
+ collectl -scd --export gexpr,192.168.253.168:2222,d=9
  07:32:11.004 Name: cputotals.user       Units: percent               Val: 0
  07:32:11.004 Name: cputotals.nice       Units: percent               Val: 0
  07:32:11.004 Name: cputotals.sys        Units: percent               Val: 0

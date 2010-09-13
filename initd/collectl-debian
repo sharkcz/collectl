@@ -22,7 +22,7 @@
 #    see /etc/collectl.conf for startup options
 
 PERL=/usr/bin/perl
-COLLECTL=/usr/sbin/collectl
+COLLECTL=/usr/bin/collectl
 
 if [ ! -f $PERL ]; then
     echo -n "Cannot find $PERL"

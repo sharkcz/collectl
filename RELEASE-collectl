@@ -40,6 +40,16 @@ KNOWN PROBLEMS/RESTRICTIONS
   - if a symlink is used to point to the executable, it MUST contain the full
     path or collectl will not be able to find 'formatit.ph'
 
+3.3.6.2 Sep 16, 2009
+  - if printing interrupts in brief mode, Cpu headers have to be changed as the number
+    of cpus increase to 2 or 3 digits.  [thanks Aron]
+
+3.3.6-1 Aug 19, 2009
+  - changed error message about missing ethtool or lspci to just ethtool since 
+    missing lspci was already caught and reported
+  - change location of collectl to /usr/bin in collectl-debian
+  - make -P honor --hr which it currently does not [thanks giles]
+
 3.3.5-4 Jul 20. 2009
   - performance optimizations in dataAnalyze()
     - check process/slabs first whenever type is proc/slab.  then in a separate clause

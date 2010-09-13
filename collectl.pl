@@ -110,7 +110,7 @@ if ($PerlVers lt '5.08.00')
   print "See /opt/hp/collectl/docs/FAQ-collectl.html for details.\n";
 }
 
-$Version=  '3.3.5-4';
+$Version=  '3.3.6-2';
 $Copyright='Copyright 2003-2009 Hewlett-Packard Development Company, L.P.';
 $License=  "collectl may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
@@ -327,8 +327,11 @@ $grepPattern=$pname='';
 # Since --top has optionals arguments, we need to see if it was specified without
 # one and stick in the defaults noting -1 means to use the window size for size
 $topFlag=0;
+$plotFlag=0;
 for (my $i=0; $i<scalar(@ARGV); $i++)
 {
+  $plotFlag=1   if $ARGV[$i]=~/-P/;    # see if -P specified for setting --hr below
+
   if ($ARGV[$i]=~/--to/)
   {
     $topFlag=1;
@@ -339,6 +342,7 @@ for (my $i=0; $i<scalar(@ARGV); $i++)
 
 $scrollEnd=0;
 $headerRepeat=(!$topFlag) ? $termHeight-2 : 5;
+$headerRepeat=0     if $plotFlag;
 
 # now that we've made it through first call fo Getopt, disable pass_through so
 # we can catch any errors in parameter names.
@@ -893,8 +897,7 @@ if (!$PcFlag)
     $Ethtool='/usr/sbin/ethtool';
     if (!-e $Ethtool)
     {
-      logmsg("W", "Can't find '$Ethtool' or '/usr/sbin/lspci'\n".
-	   "Interface speeds in header will be disabled");
+      logmsg("W", "Can't find '$Ethtool' so interface speeds in header will be disabled");
       $Ethtool='';
     }
   }

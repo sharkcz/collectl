@@ -494,7 +494,7 @@ sub initRecord
 	$temp=~/(\d.*)/;
 	$sfsVersion=$1;
       }
-      elsif (-e "/usr/sbin/sfsmount")
+      elsif (-e "/usr/sbin/sfsmount" && -e $Rpm)
       {
         # XC and client enabler
         $llite=`$Rpm -qa | $Grep lustre-client`;
@@ -4241,8 +4241,10 @@ sub printPlot
     return    if $subsys=~/^[YZ]$/;    # we're done if ONLY printing slabs or processes
   }
 
-  # Print one set of headers if $headerRepeat >= 0
-  printHeaders()    if $headerRepeat>-1 && !$headersPrinted;
+  # Print headers noting that by default $headerRepeat set to 0 for -P
+  $interval1Counter++;
+  printHeaders()    if ($headerRepeat==0 && $interval1Counter==1) ||
+                       ($headerRepeat>0  && ($interval1Counter % $headerRepeat)==1);
 
   #######################
   #    C O R E    D A T A
@@ -6953,13 +6955,17 @@ sub printBrief
 
     $line.="#$miniDateTime";
     $line.="cpu sys inter  ctxsw "                 if $subsys=~/c/;
+
     if ($subsys=~/j/)
     {
-      for (my $i=0; $i<$NumCpus; $i++)
-      {
-        $line.=sprintf("Cpu$i ");
-      }
+      # If < 10 cpus, use header of 'Cpu'.  otherwiswe use 'Cp', 'C' or just the number.
+      # Naturally if more than a couple of dozen we'll need a very wide monitor.
+      $line.=sprintf("Cpu%d "x($NumCpus>10?10:$NumCpus),        0..$NumCpus);
+      $line.=sprintf("Cp%d "x($NumCpus>100?90:$NumCpus-10),    10..$NumCpus);
+      $line.=sprintf("C%d "x($NumCpus>1000?900:$NumCpus-100), 100..$NumCpus);
+      $line.=sprintf("%d "x($NumCpus-1000),                  1000..$NumCpus);
     }
+
     $line.="Free Buff Cach Inac Slab  Map "          if $subsys=~/m/;
     $line.="  Fragments "                            if $subsys=~/b/;
     $line.=" Alloc   Bytes "	 		     if $subsys=~/y/ && $slabinfoFlag;

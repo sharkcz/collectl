@@ -5,13 +5,12 @@ BINDIR=/opt/hp/collectl
 mkdir -p $BINDIR
 mkdir -p $BINDIR/sbin
 mkdir -p $BINDIR/docs
-mkdir -p $BINDIR/initd
 mkdir -p $BINDIR/man1
-mkdir -p $BINDIR/etc
+mkdir -p $BINDIR/etc/init.d
 
 cp GPL ARTISTIC COPYING  $BINDIR
-cp RELEASE-collectl      $BINDIR
 cp UNINSTALL             $BINDIR
+cp RELEASE-collectl      $BINDIR/docs
 
 cp collectl.pl           $BINDIR/sbin/collectl
 cp formatit.ph           $BINDIR/sbin
@@ -19,12 +18,12 @@ cp lexpr.ph sexpr.ph     $BINDIR/sbin
 cp vmstat.ph readS       $BINDIR/sbin
 cp collectl.conf         $BINDIR/etc
 cp docs/*                $BINDIR/docs
-cp initd/*               $BINDIR/initd
+cp initd/*               $BINDIR/etc/init.d
 cp man1/*                $BINDIR/man1
 gzip $BINDIR/man1/*
 
 chmod 755 $BINDIR/sbin/collectl $BINDIR/sbin/readS
-chmod 755 $BINDIR/initd/collectl
+chmod 755 $BINDIR//etc/init.d/collectl
 chmod 444 $BINDIR/sbin/formatit.ph $BINDIR/sbin/*expr.ph $BINDIR/sbin/vmstat.ph
 chmod 444 $BINDIR/etc/collectl.conf
 chmod 444 $BINDIR/ARTISTIC $BINDIR/COPYING $BINDIR/GPL

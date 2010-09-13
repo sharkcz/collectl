@@ -10,5 +10,6 @@ rm -f /etc/collectl.conf
 rm -f /etc/init.d/collectl
 rm -f /usr/share/man/man1/collectl.1.gz
 
-rm -f /etc/init.d/rc*.d/*collectl
-rm -f /etc/rc.d/rc*.d/*collectl
+rm -f /etc/init.d/rc?.d/*collectl
+rm -f /etc/rc.d/rc?.d/*collectl
+rm -f /etc/rc?.d/*collectl       # debian different

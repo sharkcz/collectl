@@ -13,6 +13,18 @@ type of data requested that doesn't have a brief form such as any detail data or
 ionodes, processes or slabs.  Specifying some of the lustre output options with --lustopts
 such as B, D and M will also force verbose format.
 
+<h3>Buddy (Memory Fragmentation) Data, <i>collectl -sb</i></h3>
+<p>
+This data does not appear on systems running 2.4 kernels.
+
+<div class=terminal-wide14><pre>
+# MEMORY FRAGMENTATION SUMMARY (4K pages)
+#       1       2       4       8      16      32      64     128     256     512    1024
+</pre></div>
+
+This table shows the total number of memory fragments by pagesize in increasing powers of 2 for 
+all the memory types.
+<p>
 <p><h3>CPU, <i>collectl -sc</i></h3>
 
 <div class=terminal-wide14>
@@ -327,11 +339,13 @@ As with client data, when you only get read/write average sizes when
 
 <p><h3>Memory, <i>collectl -sm</i></h3>
 
+The format for a 2.4 kernel will not include the <i>Slab, Mapped</i> or <i>Commit</i> columns.
+
 <div class=terminal-wide14>
 <pre>
 # MEMORY STATISTICS
-#<------------------------Physical Memory-----------------------><-----------Swap----------><-Inactive-><Pages/sec>
-#   TOTAL    USED    FREE    BUFF  CACHED    SLAB  MAPPED  COMMIT     TOTAL    USED    FREE     TOTAL     IN    OUT
+#<---------------------------Physical Memory---------------------------><-----------Swap------------><-------Paging------>
+#   Total    Used    Free    Buff  Cached    Slab  Mapped  Commit  Inact Total  Used  Free   In  Out Fault MajFt   In  Out
 </pre></div>
 
 <table>
@@ -341,9 +355,28 @@ As with client data, when you only get read/write average sizes when
 <tr valign=top><td><b>Used</b></td>
 <td>Used physical memory.  This does not include memory used by the kernel itself.</td></tr>
 
+<tr valign=top><td><b>Free</b></td>
+<td>Unallocated memory</td></tr>
+
+<tr valign=top><td><b>Buff</b></td>
+<td>Memory used for system buffers</td></tr>
+
+<tr valign=top><td><b>Cached</b></td>
+<td>Memory used for caching data beween the kernel and disk, noting direct I/O does not use the cache</td></tr>
+
+<tr valign=top><td><b>Slab</b></td>
+<td>Memory used for slabs, see <i>collectl -sY</i></td></tr>
+
+<tr valign=top><td><b>Mapped</b></td>
+<td>Memory mapped by processes</td></tr>
+
 <tr valign=top><td><b>Commit</b></td>
 <td>Accorting to RedHat: <i>"An estimate of how much RAM you would need to make a 99.99% guarantee
 that there never is OOM (out of memory) for this workload."</i></td></tr>
+
+<tr valign=top><td><b>Inactive</b></td>
+<td>Inactive pages.  On ealier kernels this number is the sum of the clean, dirty
+and laundry pages.</td></tr>
 
 <tr><td><b>Swap Total</b></td>
 <td>Total Swap</td></tr>
@@ -354,14 +387,22 @@ that there never is OOM (out of memory) for this workload."</i></td></tr>
 <tr><td><b>Swap Free</b></td>
 <td>Free Swap</td></tr>
 
-<tr valign=top><td><b>Inactive</b></td>
-<td>Inactive pages.  On ealier kernels this number is the sum of the clean, dirty
-and laundry pages.</td></tr>
+<tr><td><b>Swap In</b></td>
+<td>Pages swapped in/sec</td></tr>
 
-<tr><td><b>Pages/Sec In</b></td>
+<tr><td><b>Swap Out</b></td>
+<td>Pages swapped out/sec</td></tr>
+
+<tr><td><b>Fault</b></td>
+<td>Page faults/sec resolved by not going to disk</td></tr>
+
+<tr><td><b>MajFt</b></td>
+<td>These page faults are resolved by going to disk</td></tr>
+
+<tr><td><b>Paging In</b></td>
 <td>Total number of pages read by block devices</td></tr>
 
-<tr><td><b>Pages/Sec Out</b></td>
+<tr><td><b>Paging Out</b></td>
 <td>Total number of pages written by block devices</td></tr>
 </table>
 
@@ -416,28 +457,51 @@ Receive errors are broken out for errors, dropped, fifo and fragments.
 
 <p><h3>NFS, <i>collectl -sf</i></h3>
 <p>
-These statistics will be reported for V3 servers by default but you can
-choose a different version and/or client data via --nfsopts.  They correspond
-to the net, rpc and protocol specific sections of the nfsstat utility.
+As of version 3.2.1, by default collectl collects and reports on all versions of nfs data,
+both clients and servers.  One can limit the types of data reported with <i>--nfsfilt</i>
+and if only server or client data has been selected, only that type of data will be 
+reported as shown in the 2 forms below.  When both server and client data are being 
+reported they will be displayed side by side.  As with brief format, if filters have been
+selected they will be displayed in the header.
 
-<div class=terminal>
+<div class=terminal-wide14>
 <pre>
-# NFS SERVER (/sec)
-#<----------Network-------><----------RPC---------><---NFS V3--->
-#PKTS   UDP   TCP  TCPCONN  CALLS  BADAUTH  BADCLNT   READ  WRITE
+# NFS SUMMARY (/sec)
+#<---------------------------server--------------------------->
+# Reads Writes Meta Comm  UDP   TCP  TCPConn  BadAuth  BadClnt
 </pre></div>
 
 <table>
-<tr><td><b>Pkts</b></td><td>Total network packets, which is the sum of UDP and TCP</td></tr>
+<tr><td><b>Reads</b></td><td>Total reads/sec</td></tr>
+<tr><td><b>Writes</b></td><td>Total writes/sec</td></tr>
+<tr><td><b>Meta</b></td><td>Total nfs meta data calls/sec, where meta data is 
+considered to be any of: lookup, access, getattr, setattr, readdir and readdirplus,
+noting that not all types of nfs version report all as V3 clients/servers do.</td></tr>
+<tr><td><b>Comm</b></td><td>Total commits/sec</td></tr>
 <tr><td><b>UDP</b></td><td>Number of UDP packets/sec</td></tr>
 <tr><td><b>TCP</b></td><td>Number of TCP packets/sec</td></tr>
 <tr><td><b>TCPConn</b></td><td>Number of TCP connections/sec</td></tr>
-<tr><td><b>Calls</b></td><td>Number of RPC calls/sec</td></tr>
 <tr><td><b>BadAuth</b></td><td>Number of authentication failures/sec</td></tr>
 <tr><td><b>BadClnt</b></td><td>Number of unknown clients/sec</td></tr>
-<tr><td><b>Read</b></td><td>Number of reads/sec</td></tr>
-<tr><td><b>Write</b></td><td>Number of writes/sec</td></tr>
 </table>
+
+<div class=terminal-wide14>
+<pre>
+# NFS SUMMARY (/sec)
+#<----------------client---------------->
+# Reads Writes Meta Comm Retrans  Authref
+</pre></div>
+
+<table>
+<tr><td><b>Reads</b></td><td>Total reads/sec</td></tr>
+<tr><td><b>Writes</b></td><td>Total writes/sec</td></tr>
+<tr><td><b>Meta</b></td><td>Total nfs meta data calls/sec, where meta data is 
+considered to be any of: lookup, access, getattr, setattr, readdir and readdirplus,
+noting that not all types of nfs version report all as V3 clients/servers do.</td></tr>
+<tr><td><b>Comm</b></td><td>Total commits/sec</td></tr>
+<tr><td><b>Retrans</b></td><td>Number of retransmissions/sec</td></tr>
+<tr><td><b>Authref</b></td><td>Number of authrefreshes/sec</td></tr>
+</table
 
 <p><h3>NFS, <i>collectl -sf -nfsopts C</i></h3>
 <p>The data reported for clients is slightly different, specifically the 

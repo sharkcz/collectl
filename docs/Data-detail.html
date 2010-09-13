@@ -7,12 +7,25 @@
 <body>
 <center><h1>Detail Data</h1></center>
 <p>
+<h3>Buddy (Memory Fragmentation) Data, <i>collectl -sB</i></h3>
+<p>
+This data does not appear on systems running 2.4 kernels.
+
+<div class=terminal-wide14><pre>
+# MEMORY FRAGMENTATION (4K pages)
+#Node    Zone        1       2       4       8      16      32      64     128     256     512    1024
+</pre></div>
+
+This table shows the number of memory fragments by pagesize in increasing powers of 2 for various types of
+memory defined by the combination of <i>Node</i> and <i>Zone</i>.
+<p>
 <h3>CPU Data, <i>collectl -sC</i></h3>
 <p>
 <div class=terminal><pre>
 # SINGLE CPU STATISTICS
 #   CPU  USER NICE  SYS WAIT IRQ  SOFT STEAL IDLE INTRPT
 </pre></div>
+
 
 These are the same fields as reported for verbose CPU Summary, each preceeded by the 
 CPU number.  If running collectl V2.5.0 or greater AND you request interrupt summary
@@ -363,39 +376,49 @@ Note that this report is only available for HP's SFS.
 <p>
 <h3>NFS Data, <i>collectl -sF</i></h3>
 <p>
-The reporting of NFS data is a little different in that there is a verbose mode to
-the detail data - I hope to straighten this out in a future release.  In any event,
-the following is the normal form.
+By default, collectl will report all 6 types of nfs data (clients and servers for 
+all 3 versions of nfs) unless one has limited the reporting with <i>--nfsfilt</i>.
+For versions prior to 3.2.1 which only collected a single type of
+data, collectl will only report that single type.
+<p>
+Also note that nfs V2 records 2 fields that V3 doesn't record and V4 records many
+more.  At this time and detail data is standardized on the V3 format and fields 
+not collected will be left blank.  These fields map onto those reported by 
+<i>nfsstat</i> as indicated and are reported as rates.
 
-<div class=terminal><pre>
-#<----NFS MetaOps---->
-#  meta commit retran
+<div class=terminal-wide14>
+<pre>
+# NFS SERVER/CLIENT DETAILS (/sec)
+#Type Read Writ Comm Look Accs Gttr Sttr Rdir Cre8 Rmov Rnam Link Rlnk Null Syml Mkdr Rmdr Fsta Finf Path Mknd Rdr+
 </pre></div>
 
 <table>
-<tr><td><b>meta</b></td>
-<td>The number of meta data operations/second</td></tr>
-
-<tr><td><b>commits</b></td>
-<td>The number of commit operations/second</td></tr>
-
-<tr><td><b>retrans</b></td>
-<td>The number of retransmit operations/second</td></tr>
+<tr><td><b>Type</b></td><td>a combination of <i>Clt</i> or <i>Svr</i> and one
+of <i>2, 3</i> or <i>4</i></td></tr>
+<tr><td><b>Read</b></td><td>Reads</td></tr>
+<tr><td><b>Writ</b></td><td>Writes</td></tr>
+<tr><td><b>Comm</b></td><td>Commits</td></tr>
+<tr><td><b>Look</b></td><td>Lookups</td></tr>
+<tr><td><b>Accs</b></td><td>Accesses</td></tr>
+<tr><td><b>Gttr</b></td><td>Getattrs</td></tr>
+<tr><td><b>Sttr</b></td><td>Setattrs</td></tr>
+<tr><td><b>Rdir</b></td><td>Readdirs</td></tr>
+<tr><td><b>Cre8</b></td><td>Creates</td></tr>
+<tr><td><b>Rmov</b></td><td>Removes</td></tr>
+<tr><td><b>Rnam</b></td><td>Renames</td></tr>
+<tr><td><b>Link</b></td><td>Links</td></tr>
+<tr><td><b>Rlnk</b></td><td>Readlinks</tr>
+<tr><td><b>Null</b></td><td>Nulls</td></tr>
+<tr><td><b>Syml</b></td><td>Symlinks</td></tr>
+<tr><td><b>Mkdr</b></td><td>Mkdirs</td></tr>
+<tr><td><b>Rmdr</b></td><td>Rmdirs</td></tr>
+<tr><td><b>Fsta</b></td><td>Fsstats</td></tr>
+<tr><td><b>Finf</b></td><td>Fsinfos</td></tr>
+<tr><td><b>Path</b></td><td>Pathconfs</td></tr>
+<tr><td><b>Mknd</b></td><td>Mknods</td></tr>
+<tr><td><b>Rdr+</b></td><td>Readdirpluses</td></tr>
 </table>
 
-<p>These next two forms require <i>--verbose</i> and apply to NFS versions 2 and 3 
-respectively.  You should consult nfs documentation for detailed definitions of
-these fields.
-
-<div class=terminal-wide14><pre>
-# NFS V2 SERVER (/sec)
-#NULL GETA SETA ROOT LOOK REDL READ WCAC WRIT CRE8 RMOV RENM LINK SYML MKDR RMDR RDIR FSST
-</pre></div>
-
-<div class=terminal-wide14><pre>
-# NFS V3 SERVER (/sec)
-#NULL GETA SETA LOOK ACCS RLNK READ WRIT CRE8 MKDR SYML MKND RMOV RMDR RENM LINK RDIR RDR+ FSTA FINF PATH COMM
-</pre></div>
 <p>
 <h3>Process Data, <i>collectl -sZ</i></h3>
 <p>
@@ -466,7 +489,7 @@ unless <i>--procopts w</i></td></tr>
 <p>
 <h3>Process I/O Data, <i>collectl --procopts i</i></h3>
 <div class=terminal-wide14><pre>
-# PID  User    PPID S  SysT  UsrT   RKB   WKB  RKBC  WKBC  RSys  WSys  Cncl  Command
+# PID  User    PPID S  SysT  UsrT   Pct AccuTime   RKB   WKB  RKBC  WKBC  RSys  WSys  Cncl  Command
 </pre></div>
 
 <table>
@@ -490,6 +513,13 @@ Otherwise the UID will be reported instead.</td></tr>
 
 <tr valign=top><td><b>UsrT<b></td>
 <td>The amount of User Time this process used during this interval</td></tr>
+
+<tr valign=top><td><b>Pct<b></td>
+<td>Percentage of the current interval taken up by this task (the User and System
+time are used for this calculation)</td></tr>
+
+<tr valign=top><td><b>AccuTime<b></td>
+<td>Total accumulated System and User time since the process began execution</td></tr>
 
 <tr valign=top><td><b>RKB<b></td>
 <td>Attempt to count the number of bytes which this process really did cause to

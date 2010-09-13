@@ -208,49 +208,27 @@ fact, if I run collectl as <i>collectl -scfn</i> I see:
 
 <div class=terminal>
 <pre>
-#<--------CPU--------><----------Network----------><--NFS Svr Summary-->
-#cpu sys inter  ctxsw netKBi pkt-in netKBo pkt-out   read  write  calls
-   0   0   144     48      0      2      0       2      0      0      0
-  13  12  2839   1440      5     79      1      10      0      0      0
-  17  16  6539   3061    216   1081  33976   23747      0      0      0
-  15  14  6887   2704    253   1275  40020   27876      0      0      0
-  12  11  4683   2209    252   1256  40166   28008      0      0      0
+#<--------CPU--------><----------Network----------><------NFS Totals------>
+#cpu sys inter  ctxsw   KBIn  PktIn  KBOut  PktOut   read  write meta comm
+  19  19  1672    429      1     11      2      12      0   3885    6    0
+  27  27  8466  12909   1652  20875  56112   39495      0  19383    0    4
+   9   9  4042   1632    301   3781  10125    7129      0   9508    0    0
+   7   7 18677   9074   3557  44897 120375   84729      0      0    0    0
+   8   8 18082   8874   3559  44928 120359   84717      0      0    0    0
 </pre>
 </div>
 
-I can clearly see the network traffic but why don't I see any nfs activity?
-That's because by default collectl shows <i>server</i> activity rather
-than the client and so we need to add the option <i>--nfsopts C</i> to the command which
-now looks like <i>collectl -scfn ---nfsopts C</i> and produces the following:
-
-<div class=terminal>
-<pre>
-#<--------CPU--------><----------Network----------><--NFS Clt Summary-->
-#cpu sys inter  ctxsw netKBi pkt-in netKBo pkt-out   read  write  calls
-   2   1   142     44      0      5      0       3      0      0      0
-   3   2  1562    693     46    253   6348    4456      0    256    285
-  23  22  6735   3026    251   1250  40166   28007      0   1216   1255
-  22  22  6633   3309    241   1220  38053   26541      0   1216   1253
-  20  19  6657   3338    245   1223  39109   27271      0   1204   1242
-</pre>
-</div>
-
-So what is the difference between <i>NFS Writes</i> and <i>NFS Calls</i>?
-To best demonstrate this let's add <i>F</i> to the subsystems which like
-other uppercase subsystems indicates <i>details</i> and in the case of nfs
-this translates to breaking things down by metadata operations, commits and 
-retransmissions:
-
-<div class=terminal-wide14>
-<pre>
-#<--------CPU--------><----------Network----------><--NFS Clt Summary--><----NFS MetaOps---->
-#cpu sys inter  ctxsw netKBi pkt-in netKBo pkt-out   read  write  calls   meta commit retran
-  13  13  3625   1462    128    662  20114   14010      0    640    660      0     20      0
-   9   9  3764   1165    132    662  21110   14742      0    672    693      0     21      0
-</pre>
-</div>
-
-and we can now see those extra calls are in fact <i>nfs commits</i>.
+I first see a batch of over 3K nfs writes which also include 6 metadata calls,
+which are clearly doing a variety of directory accesses to see if the file
+currently exists as well as for creating the new one.  During the next 
+interval the network starts sending the bulk of the data over the network,
+which also include 4 commits (nfs does commits for a batch of writes as 
+opposed to a single commit/write which would be excessive and slow).  In
+the intervals that follow, nfs need do no more writes as they've already been
+queued up and so for the next several intervals all we see is the network
+traffic.  The CPU load has also gone down because the data has already been
+moved into the outbound I/O buffers.  For more details on nfs, see <a href=NfsInfo.html>
+this</a> page.
 <p>
 So in conclusion you can see there is really quite a lot you can do with just a few basic
 switches and I haven't even gotten into <i>--verbose</i>, which as they say is an exercise left for
@@ -258,9 +236,11 @@ the student.  So try some simple dt tests yourself or use you own personal favor
 load generator, while trying out <i>collectl -sc --verbose</i> or <i>collectl -sm --verbose</i> or even
 <i>collectl -sn --verbose</i>.  You can even put them all together as 
 <i>collectl -scmn --verbose</i>, but then as you'll see you end up using a lot of that valuable
-screen real estate.  As a final bonus, try adding the -ot switch which puts collectl into something
-I loosely call <i>top</i> format since each sample is displayed at the top of the screen.  That command
-would then look like <i>collectl -smcn --verbose -ot</i>.
+screen real estate.  As a final bonus, try adding the --home switch which move the cursor to the
+home (upper left-hand corner) position of the screen.  Think of this as something like the
+linux <i>top</i> command (collectl also has a --top switch for displaying slab/process data)
+since each sample is displayed at the top of the screen.  That command
+would then look like <i>collectl -smcn --verbose --home</i>.
 <p>
 enjoy...
 

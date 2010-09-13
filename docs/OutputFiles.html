@@ -27,8 +27,8 @@ Detail plot data, which is typically for devices for which there can be multiple
 instances such as CPUs, is recorded in one file per detail type with an extension
 that reflects the type of data stored in that file.
 Each line contains instance data of a fixed number of
-fields for that particular device.  Although NFS and TCP do not have instance data,
-they too have a detail component and are also written to their own detail files.
+fields for that particular device.  Although TCP do not have instance data,
+it does have a detail component and is also written to its own detail file.
 Process and Slab data are also treated like detail data because they too require
 multiple lines per monitoring period.
 <p>

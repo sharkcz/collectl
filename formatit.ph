@@ -1,4 +1,4 @@
-# copyright, 2003-2007 Hewlett-Packard Development Company, LP
+# copyright, 2003-2009 Hewlett-Packard Development Company, LP
 #
 # collectl may be copied only under the terms of either the Artistic License
 # or the GNU General Public License, which may be found in the source kit
@@ -70,6 +70,26 @@ sub initRecord
   $Swap=(split(/\s+/, $Swap, 2))[1];
   chomp $Swap;
 
+  #    B u d d y i n f o
+
+  if ($subsys=~/b/i)
+  {
+    if (!open BUD, '</proc/buddyinfo')
+    {
+      logmsg("W", "-sb disabled because /proc/buddyinfo does not exist");
+      $subsys=~s/b//;
+    }
+    else
+    {
+      $NumBud=0;
+      while (my $line=<BUD>)
+      {
+	$NumBud++
+      }
+      close BUD;
+    }
+  }
+
   #    D i s k    C h e c k s
 
   # Location of data is kernel specific.  Note we're also including device
@@ -77,7 +97,7 @@ sub initRecord
   $procfile=($kernel2_4) ? '/proc/partitions' : '/proc/diskstats';
   $NumDisks=0;
   $DiskNames='';
-  $diskFilter="cciss\/c\\d+d\\d+ |hd[ab] | sd[a-z]+ |dm-\\d+";
+  $diskFilter="cciss\/c\\d+d\\d+ |hd[ab] | sd[a-z]+ |xvd[a-z] |dm-\\d+";
   @temp=`cat $procfile`;
   foreach $line (@temp)
   {
@@ -217,6 +237,7 @@ sub initRecord
           # I hate support questions and this is the place to catch perfquery problems!
           my $message='';
           my $temp=`$PQuery`;
+          $message="unexpected perfquery error";
           $message="Permission denied"            if $temp=~/Permission denied/;
           $message="Required module missing"      if $temp=~/required by/;
           $message="No such file or directory"    if $temp=~/No such file/;
@@ -226,9 +247,10 @@ sub initRecord
             $xFlag=$XFlag=0;
             $subsys=~s/x//ig;
             $mellanoxFlag=0;
+            $PQuery='';
           }
 
-          # get IB version noting most systems are moving to ofed
+          # perfquery there, but what is ofed's version?
           if ($PQuery ne '')
 	  {
             if (!-e $OfedInfo)
@@ -668,19 +690,33 @@ sub initFormat
     $header=~/Distro:\s+(.+)/;
     $Distro=(defined($1)) ? $1 : '';
 
-    # Since you cannot specify --nfsopts in playback, use whatever is in the header,
-    # noting it can be part of 'SubOpts' in older versions
-    $header=~/SubOpts:\s+(\S*)\s*Options/;
-    $subOpts=$1;
-    $nfsOpts=($header=~/NfsOpts: (\S*)\s*Interval/) ? $1 : $subOpts;
-    $nfsOpts=~s/[BDMORcom]//g;    # in case it came from SubOpts remove lustre stuff
+    # Prior to collect V3.2.1-4, use the header to determine the type of nfs data in the
+    # file noting very old versions used SubOpts.
+    $recNfsFilt=$1    if $header=~/NfsFilt: (\S*) Interval/;
+    $subOpts=($header=~/SubOpts:\s+(\S*)\s*Options/) ? $1 : '';    # pre V3.2.1-4
+    if  ($version lt '3.2.1-4')
+    {
+      $nfsOpts=($header=~/NfsOpts: (\S*)\s*Interval/) ? $1 : $subOpts;
+      $nfsOpts=~s/[BDMORcom]//g;    # in case it came from SubOpts remove lustre stuff
+
+      if ($version lt '3.2.1-3')
+      {
+        $recNfsFilt=($nfsOpts=~/C/) ? 'c' : 's';
+        $recNfsFilt.=($nfsOpts=~/([234])/) ? $1 : 3;
+      }
+      else
+      {
+        # very limited release
+        $recNfsFilt=($nfsOpts=~/C/) ? 'c3,c4' : 's3,s4';
+      }
+    }
 
     # Users CAN overrider LustOpts so we need to do it this way, again accounting for
     # older versions of collectl storing them as part of SubOpts
     if ($lustOpts eq '')
     {
       $lustOpts=($header=~/LustOpts: (\S*)\s*Services/) ? $1 : $subOpts;
-      $lustOpts=~s/[23C]//g;
+      $lustOpts=~s/[23C]//g;    # remove nfs options
     }
 
     # we want to preserve original subsys from the header, but we
@@ -692,6 +728,7 @@ sub initFormat
     $recHdr1.=" Subsys: $subsys";
     $recSubsys=$subsys='Y'    if $topSlabFlag;
     $recSubsys=$subsys='Z'    if $topProcFlag;
+
     if ($userSubsys ne '')
     {
       if ($userSubsys!~/[+-]/)
@@ -951,6 +988,17 @@ sub initFormat
     $PageSize=($SrcArch=~/ia64/) ? 16384 : 4096;
     $PageSize=$1    if $header=~/PageSize:\s+(\d+)/;
 
+    # Even though we don't do anything with CPU, Speed, Cores and Siblings we need
+    # to put them in new header.
+    $header=~/Cpu:\s+(.*) Speed/;
+    $CpuVendor=$1;
+    $header=~/Speed\(MHz\): (\S+)/;
+    $CpuMHz=$1;
+    $header=~/Cores: (\d+)/;
+    $CpuCores=$1;
+    $header=~/Siblings: (\d+)/;
+    $CpuSiblings=$1;
+
     # when playing back from a file we need to make sure the KERNEL is that of
     # the file and not the one the data was collected on.
     $header=~/OS:\s+(.*)/         if $version lt '1.3.3';
@@ -961,6 +1009,9 @@ sub initFormat
     $header=~/NumCPUs:\s+(\d+)/;
     $NumCpus=$1;
     $Hyper=($header=~/HYPER/) ? "[HYPER]" : "";
+
+    $header=~/NumBud:\s+(\d+)/;
+    $NumBud=$1;
 
     $flags=($header=~/Flags:\s+(\S+)/) ? $1 : '';
     $intFlag=      ($flags=~/I/) ? 1 : 0;
@@ -1098,6 +1149,7 @@ sub initFormat
   $dirty=$clean=$target=$laundry=$active=$inactive=0;
   $procsRun=$procsBlock=0;
   $pagein=$pageout=$swapin=$swapout=$swapTotal=$swapUsed=$swapFree=0;
+  $pagefault=$pagemajfault=0;
   $memTot=$memUsed=$memFree=$memShared=$memBuf=$memCached=$memSlab=$memAnon=$memMap=$memCommit=0;
   $sockUsed=$sockTcp=$sockOrphan=$sockTw=$sockAlloc=0;
   $sockMem=$sockUdp=$sockRaw=$sockFrag=$sockFragM=0;
@@ -1110,19 +1162,34 @@ sub initFormat
   $lustreMdsConnect=$lustreMdsDisconnect=0;
 
   # Common nfs stats
-  $rpcCalls=$rpcBadAuth=$rpcBadClnt=$rpcRetrans=$rpcCredRef=0;
+  $rpcCCalls=$rpcSCalls=$rpcBadAuth=$rpcBadClnt=$rpcRetrans=$rpcCredRef=0;
   $nfsPkts=$nfsUdp=$nfsTcp=$nfsTcpConn=0;
 
   # V2
-  $nfs2Null=$nfs2Getattr=$nfs2Setattr=$nfs2Root=$nfs2Lookup=$nfs2Readlink=
-  $nfs2Read=$nfs2Wrcache=$nfs2Write=$nfs2Create=$nfs2Remove=$nfs2Rename=
-  $nfs2Link=$nfs2Symlink=$nfs2Mkdir=$nfs2Rmdir=$nfs2Readdir=$nfs2Fsstat=0;
+  $nfs2CNull=$nfs2CGetattr=$nfs2CSetattr=$nfs2CRoot=$nfs2CLookup=$nfs2CReadlink=
+  $nfs2CRead=$nfs2CWrcache=$nfs2CWrite=$nfs2CCreate=$nfs2CRemove=$nfs2CRename=
+  $nfs2CLink=$nfs2CSymlink=$nfs2CMkdir=$nfs2CRmdir=$nfs2CReaddir=$nfs2CFsstat=$nfs2CMeta=0;
+  $nfs2SNull=$nfs2SGetattr=$nfs2SSetattr=$nfs2SRoot=$nfs2SLookup=$nfs2SReadlink=
+  $nfs2SRead=$nfs2SWrcache=$nfs2SWrite=$nfs2SCreate=$nfs2SRemove=$nfs2SRename=
+  $nfs2SLink=$nfs2SSymlink=$nfs2SMkdir=$nfs2SRmdir=$nfs2SReaddir=$nfs2SFsstat=$nfs2SMeta=0;
 
   # V3
-  $nfsNull=$nfsGetattr=$nfsSetattr=$nfsLookup=$nfsAccess=$nfsReadlink=
-  $nfsRead=$nfsWrite=$nfsCreate=$nfsMkdir=$nfsSymlink=$nfsMknod=$nfsRemove=
-  $nfsRmdir=$nfsRename=$nfsLink=$nfsReaddir=$nfsReaddirplus=$nfsFsstat= 
-  $nfsFsinfo=$nfsPathconf=$nfsCommit=$nfsMeta=0;
+  $nfs3CNull=$nfs3CGetattr=$nfs3CSetattr=$nfs3CLookup=$nfs3CAccess=$nfs3CReadlink=0;
+  $nfs3CRead=$nfs3CWrite=$nfs3CCreate=$nfs3CMkdir=$nfs3CSymlink=$nfs3CMknod=$nfs3CRemove=0;
+  $nfs3CRmdir=$nfs3CRename=$nfs3CLink=$nfs3CReaddir=$nfs3CReaddirplus=$nfs3CFsstat=0;
+  $nfs3CFsinfo=$nfs3CPathconf=$nfs3CCommit=$nfs3CMeta=0;
+  $nfs3SNull=$nfs3SGetattr=$nfs3SSetattr=$nfs3SLookup=$nfs3SAccess=$nfs3SReadlink=0;
+  $nfs3SRead=$nfs3SWrite=$nfs3SCreate=$nfs3SMkdir=$nfs3SSymlink=$nfs3SMknod=$nfs3SRemove=0;
+  $nfs3SRmdir=$nfs3SRename=$nfs3SLink=$nfs3SReaddir=$nfs3SReaddirplus=$nfs3SFsstat=0;
+  $nfs3SFsinfo=$nfs3SPathconf=$nfs3SCommit=$nfs3SMeta=0;
+
+  # V4
+  $nfs4CNull=$nfs4CRead=$nfs4CWrite=$nfs4CCommit=$nfs4CSetattr=$nfs4CFsinfo=0;
+  $nfs4CAccess=$nfs4CGetattr=$nfs4CLookup=$nfs4CRemove=$nfs4CRename=$nfs4CLink=0;
+  $nfs4CSymlink=$nfs4CCreate=$nfs4CPathconf=$nfs4CReadlink=$nfs4CReaddir=$nfs4CMeta=0;
+  $nfs4SAccess=$nfs4SCommit=$nfs4SCreate=$nfs4SGetattr=$nfs4SLink=$nfs4SLookup=0;
+  $nfs4SRead=$nfs4SReaddir=$nfs4SReadlink=$nfs4SRemove=$nfs4SRename=$nfs4SSetattr=0;
+  $nfs4SWrite=$nfs4SMeta=0;
 
   # tcp - just do them all!
   $NumTcpFields=65;
@@ -1232,7 +1299,7 @@ sub initFormat
   $word32=2**32;
   $maxword= ($SrcArch=~/ia64|x86_64/) ? 2**64 : $word32;
 
-  return(($version, $datestamp, $timestamp, $timesecs, $timezone, $interval, $recSubsys))
+  return(($version, $datestamp, $timestamp, $timesecs, $timezone, $interval, $recSubsys, $recNfsFilt))
     if defined($playfile);
 }
 
@@ -1243,20 +1310,29 @@ sub initLast
   undef(%intrptType);
 
   $ctxtLast=$intrptLast=$procLast=0;
-  $rpcCallsLast=$rpcBadAuthLast=$rpcBadClntLast=0;
+  $rpcCCallsLast=$rpcSCallsLast=$rpcBadAuthLast=$rpcBadClntLast=0;
   $rpcRetransLast=$rpcCredRefLast=0;
   $nfsPktsLast=$nfsUdpLast=$nfsTcpLast=$nfsTcpConnLast=0;
   $pageinLast=$pageoutLast=$swapinLast=$swapoutLast=0;
+  $pagefaultLast=$pagemajfaultLast=0;
   $opsLast=$readLast=$readKBLast=$writeLast=$writeKBLast=0;
 
   for ($i=0; $i<18; $i++)
   {
-    $nfs2ValuesLast[$i]=0;
+    $nfs2CValuesLast[$i]=0;
+    $nfs2SValuesLast[$i]=0;
   }
 
   for ($i=0; $i<22; $i++)
   {
-    $nfsValuesLast[$i]=0;
+    $nfs3CValuesLast[$i]=0;
+    $nfs3SValuesLast[$i]=0;
+  }
+
+  for ($i=0; $i<40; $i++)
+  {
+    $nfs4CValuesLast[$i]=0;
+    $nfs4SValuesLast[$i]=0;
   }
 
   for ($i=0; $i<=$NumCpus; $i++)
@@ -1485,6 +1561,12 @@ sub initDay
 # they occur for multiple devices and/or on multiple lines in the raw file.
 sub initInterval
 {
+  $budIndex=0;
+  for (my $i=0; $i<11; $i++)
+  {
+    $buddyInfoTot[$i]=0;
+  }
+
   $userP[$NumCpus]=$niceP[$NumCpus]=$sysP[$NumCpus]=$idleP[$NumCpus]=0;
   $irq[$NumCpus]=$softP[$NumCpus]=$stealP[$NumCpus]=$waitP[$NumCpus]=0;
 
@@ -1504,6 +1586,12 @@ sub initInterval
   $dskIndex=0;
   $dskOpsTot=$dskReadTot=$dskWriteTot=$dskReadKBTot=$dskWriteKBTot=0;
   $dskReadMrgTot=$dskReadTicksTot=$dskWriteMrgTot=$dskWriteTicksTot=0;  
+
+  $nfsCReadsTot=$nfsSReadsTot=$nfsCWritesTot=$nfsSWritesTot=0;
+  $nfsCMetaTot=$nfsSMetaTot=$nfsCCommitTot=$nfsSCommitTot=0;
+  $nfsReadsTot=$nfsWritesTot=$nfsMetaTot=$nfsCommitTot=0;
+  $nfsUdpTot=$nfsTcpTot=$nfsTcpConnTot=0;
+  $rpcBadAuthTot=$rpcBadClntTot=$rpcRetransTot=$rpcCredRefTot=0;
 
   if ($reportOstFlag)
   {
@@ -1640,6 +1728,21 @@ sub dataAnalyze
   chomp $line;
   ($type, $data)=split(/\s+/, $line, 2);
   return    if (!defined($data) || $data eq "");
+
+  if ($type=~/^buddy/ && $subsys=~/b/i)
+  {
+    my @fields=split(/\s+/, $data);
+    $buddyNode[$budIndex]=$fields[1];
+    $buddyZone[$budIndex]=$fields[3];
+    $buddyNode[$budIndex]=~s/,$//;
+
+    for (my $i=0; $i<11; $i++)
+    {  
+      $buddyInfo[$budIndex][$i]=$fields[$i+4];
+      $buddyInfoTot[$i]+=$fields[$i+4];
+    }
+    $budIndex++;
+  }
 
   # if user requested -sd, we had to force -sc so we can get 'jiffies'
   # NOTE - 2.6 adds in wait, irq and softIrq.  2.6 disk stats also need
@@ -2409,9 +2512,13 @@ sub dataAnalyze
     }
   }
 
-  # this only applies to nfs server
-  elsif ($type=~/^nfs-net/ && $subsys=~/f/i)
+  # Only if collecting nfs server data
+  elsif ($subsys=~/f/i && $type=~/^nfs(.?)-net/)
   {
+    # for earlier versions we've already know this is server data
+    # but for newer ones we collectl both
+    my $nfsType=($1 ne '') ? $1 : 's';
+
     ($nfsPktsNow, $nfsUdpNow, $nfsTcpNow, $nfsTcpConnNow)=split(/\s+/, $data);
     if (!defined($nfsTcpConnNow))
     {
@@ -2419,85 +2526,157 @@ sub dataAnalyze
       return;
     }
 
-    $nfsPkts=   fix($nfsPktsNow-$nfsPktsLast);
-    $nfsUdp=    fix($nfsUdpNow-$nfsUdpLast);
-    $nfsTcp=    fix($nfsTcpNow-$nfsTcpLast);
-    $nfsTcpConn=fix($nfsTcpConnNow-$nfsTcpConnLast);
+    # only look at the data for servers
+    if ($nfsType eq 's')
+    {
+      $nfsPkts=   fix($nfsPktsNow-$nfsPktsLast);
+      $nfsUdp=    fix($nfsUdpNow-$nfsUdpLast);
+      $nfsTcp=    fix($nfsTcpNow-$nfsTcpLast);
+      $nfsTcpConn=fix($nfsTcpConnNow-$nfsTcpConnLast);
 
-    $nfsPktsLast=   $nfsPktsNow;
-    $nfsUdpLast=    $nfsUdpNow;
-    $nfsTcpLast=    $nfsTcpNow;
-    $nfsTcpConnLast=$nfsTcpConnNow;
+      $nfsPktsLast=   $nfsPktsNow;
+      $nfsUdpLast=    $nfsUdpNow;
+      $nfsTcpLast=    $nfsTcpNow;
+      $nfsTcpConnLast=$nfsTcpConnNow;
+
+      $nfsUdpTot+=$nfsUdp;
+      $nfsTcpTot+=$nfsTcp;
+      $nfsTcpConnsTot+=$nfsTcpConn;
+    }
   }
 
   # nfs rpc for server doesn't use fields 2/5
-  elsif ($type=~/^nfs-rpc/ && $subsys=~/f/i && $nfsOpts!~/C/)
+  elsif ($subsys=~/f/i && $type=~/^nfs(.?)-rpc/)
   {
-    ($rpcCallsNow, $rpcBadAuthNow, $rpcBadClntNow)=(split(/\s+/, $data))[0,2,3];
-    if (!defined($rpcBadClntNow))
+    # For earlier versions, we've already set the client/server flag
+    my $nfsType=($nfsCFlag) ? 'c' : 's';
+    $nfsType=$1    if $1 ne '';
+
+    my (@rpcFields)=split(/\s+/, $data);
+    if (($nfsType eq 'c' && !defined($rpcFields[2])) || ($nfsType eq 's' && !defined($rpcFields[4])))
     {
       incomplete("RPC", $lastSecs);
       return;
     }
 
-    $rpcCalls=   fix($rpcCallsNow-$rpcCallsLast);
-    $rpcBadAuth= fix($rpcBadAuthNow-$rpcBadAuthLast);
-    $rpcBadClnt= fix($rpcBadClntNow-$rpcBadClntLast);
-
-    $rpcCallsLast=  $rpcCallsNow;
-    $rpcBadAuthLast=$rpcBadAuthNow;
-    $rpcBadClntLast=$rpcBadClntNow;
-  }
-
-  # nfs rpc for client used everything, but different meanings
-  elsif ($type=~/^nfs-rpc/ && $subsys=~/f/i && $nfsOpts=~/C/)
-  {
-    ($rpcCallsNow, $rpcRetransNow, $rpcCredRefNow)=split(/\s+/, $data);
-    if (!defined($rpcCredRefNow))
+    # NOTE - 'calls' common to both clients and servers
+    if ($nfsType eq 's' && $nfsSFlag)
     {
-      incomplete("RPC", $lastSecs);
-      return;
+      $rpcCallsNow=  $rpcFields[0];
+      $rpcBadAuthNow=$rpcFields[2];
+      $rpcBadClntNow=$rpcFields[3];
+
+      $rpcSCalls=  fix($rpcCallsNow-$rpcSCallsLast);
+      $rpcBadAuth= fix($rpcBadAuthNow-$rpcBadAuthLast);
+      $rpcBadClnt= fix($rpcBadClntNow-$rpcBadClntLast);
+
+      $rpcSCallsLast= $rpcCallsNow;
+      $rpcBadAuthLast=$rpcBadAuthNow;
+      $rpcBadClntLast=$rpcBadClntNow;
+    }
+    elsif ($nfsCFlag)
+    {
+      $rpcCallsNow=  $rpcFields[0];
+      $rpcRetransNow=$rpcFields[1];
+      $rpcCredRefNow=$rpcFields[2];
+
+      $rpcCCalls= fix($rpcCallsNow-$rpcCCallsLast);
+      $rpcRetrans=fix($rpcRetransNow-$rpcRetransLast);
+      $rpcCredRef=fix($rpcCredRefNow-$rpcCredRefLast);
+
+      $rpcCCallsLast= $rpcCallsNow;
+      $rpcRetransLast=$rpcRetransNow;
+      $rpcCredRefLast=$rpcCredRefNow;
     }
 
-    $rpcCalls=  fix($rpcCallsNow-$rpcCallsLast);
-    $rpcRetrans=fix($rpcRetransNow-$rpcRetransLast);
-    $rpcCredRef=fix($rpcCredRefNow-$rpcCredRefLast);
-
-    $rpcCallsLast=  $rpcCallsNow;
-    $rpcRetransLast=$rpcRetransNow;
-    $rpcCredRefLast=$rpcCredRefNow;
+    $rpcBadAuthTot+=$rpcBadAuth;
+    $rpcBadClntTot+=$rpcBadClnt;
+    $rpcRetransTot+=$rpcRetrans;
+    $rpcCredRefTot+=$rpcCredRef;
   }
 
-  elsif ($type=~/^nfs-proc2/ && $subsys=~/f/i)
+  elsif ($subsys=~/f/i && $type=~/^nfs(.?)-proc2/ && $nfs2Flag)
   {
+    # For earlier versions, we've already set the client/server flag
+    my $nfsType=($nfsCFlag) ? 'c' : 's';
+    $nfsType=$1    if $1 ne '';
+
     # field 0 is field count, which we know to be 18
-    @nfs2ValuesNow=(split(/\s+/, $data))[1..18];
-    if (scalar(@nfs2ValuesNow)<18)
+    @nfsValuesNow=(split(/\s+/, $data))[1..18];
+    if (scalar(@nfsValuesNow)<18)
     {
       incomplete("NFS2", $lastSecs);
       return;
     }
 
-    # a lot less typing.
-    for ($i=0; $i<18; $i++)
+    # Until we've seen a non-zero read/write counter for clients/servers
+    # we won't even look at or report the other fields
+    if ($nfsValuesNow[6] || $nfsValuesNow[8])
     {
-      $nfs2Value[$i]=fix($nfs2ValuesNow[$i]-$nfs2ValuesLast[$i]);
-      $nfs2ValuesLast[$i]=$nfs2ValuesNow[$i];
+      $nfs2CSeen=1    if $nfsType eq 'c';
+      $nfs2SSeen=1    if $nfsType eq 's';
     }
 
-    $nfs2Null=$nfs2Value[0];       $nfs2Getattr=$nfs2Value[1];
-    $nfs2Setattr=$nfs2Value[2];    $nfs2Root=$nfs2Value[3];
-    $nfs2Lookup=$nfs2Value[4];     $nfs2Readlink=$nfs2Value[5];
-    $nfs2Read=$nfs2Value[6];       $nfs2Wrcache=$nfs2Value[7];
-    $nfs2Write=$nfs2Value[8];      $nfs2Create=$nfs2Value[9];
-    $nfs2Remove=$nfs2Value[10];    $nfs2Rename=$nfs2Value[11];
-    $nfs2Link=$nfs2Value[12];      $nfs2Symlink=$nfs2Value[13];
-    $nfs2Mkdir=$nfs2Value[14];     $nfs2Rmdir=$nfs2Value[15];
-    $nfs2Readdir=$nfs2Value[16];   $nfs2Fsstat=$nfs2Value[17];
-  }
+    if ($nfsType eq 'c' && $nfs2CFlag && $nfs2CSeen)
+    {
+      for ($i=0; $i<18; $i++)
+      {
+        $nfs2CValue[$i]=fix($nfsValuesNow[$i]-$nfs2CValuesLast[$i]);
+        $nfs2CValuesLast[$i]=$nfsValuesNow[$i];
+      }
 
-  elsif ($type=~/^nfs-proc3/ && $subsys=~/f/i)
+      $nfs2CNull=   $nfs2CValue[0];    $nfs2CGetattr= $nfs2CValue[1];
+      $nfs2CSetattr=$nfs2CValue[2];    $nfs2CRoot=    $nfsC2Value[3];
+      $nfs2CLookup= $nfs2CValue[4];    $nfs2CReadlink=$nfs2CValue[5];
+      $nfs2CRead=   $nfs2CValue[6];    $nfs2CWrcache= $nfs2CValue[7];
+      $nfs2CWrite=  $nfs2CValue[8];    $nfs2CCreate=  $nfs2CValue[9];
+      $nfs2CRemove= $nfs2CValue[10];   $nfs2CRename=  $nfs2CValue[11];
+      $nfs2CLink=   $nfs2CValue[12];   $nfs2CSymlink= $nfs2CValue[13];
+      $nfs2CMkdir=  $nfs2CValue[14];   $nfs2CRmdir=   $nfs2CValue[15];
+      $nfs2CReaddir=$nfs2CValue[16];   $nfs2CFsstat=  $nfs2CValue[17];
+      $nfs2CMeta=$nfs2CLookup+$nfs2CSetattr+$nfs2CGetattr+$nfs2CReaddir;
+
+      $nfsReadsTot+=  $nfs2CRead;
+      $nfsCReadsTot+= $nfs2CRead;
+      $nfsWritesTot+= $nfs2CWrite;
+      $nfsCWritesTot+=$nfs2CWrite;
+      $nfsMetaTot+=   $nfs2CMeta;
+      $nfsCMetaTot+=  $nfs2CMeta;
+    }
+    elsif ($nfsType eq 's' && $nfs2SFlag && $nfs2SSeen)
+    {
+      for ($i=0; $i<18; $i++)
+      {
+        $nfs2SValue[$i]=fix($nfsValuesNow[$i]-$nfs2SValuesLast[$i]);
+        $nfs2SValuesLast[$i]=$nfsValuesNow[$i];
+      }
+
+      $nfs2SNull=   $nfs2SValue[0];    $nfs2SGetattr= $nfs2SValue[1];
+      $nfs2SSetattr=$nfs2SValue[2];    $nfs2SRoot=    $nfs2SValue[3];
+      $nfs2SLookup= $nfs2SValue[4];    $nfs2SReadlink=$nfs2SValue[5];
+      $nfs2SRead=   $nfs2SValue[6];    $nfs2SWrcache= $nfs2SValue[7];
+      $nfs2SWrite=  $nfs2SValue[8];    $nfs2SCreate=  $nfs2SValue[9];
+      $nfs2SRemove= $nfs2SValue[10];   $nfs2SRename=  $nfs2SValue[11];
+      $nfs2SLink=   $nfs2SValue[12];   $nfs2SSymlink= $nfs2SValue[13];
+      $nfs2SMkdir=  $nfs2SValue[14];   $nfs2SRmdir=   $nfs2SValue[15];
+      $nfs2SReaddir=$nfs2SValue[16];   $nfs2SFsstat=  $nfs2SValue[17];
+      $nfs2SMeta=$nfs2SLookup+$nfs2SSetattr+$nfs2SGetattr+$nfs2SReaddir;
+
+      $nfsReadsTot+=  $nfs2SRead;
+      $nfsSReadsTot+= $nfs2SRead;
+      $nfsWritesTot+= $nfs2SWrite;
+      $nfsSWritesTot+=$nfs2SWrite;
+      $nfsMetaTot+=   $nfs2SMeta;
+      $nfsSMetaTot+=  $nfs2SMeta;
+    }
+  }
+  
+  elsif ($subsys=~/f/i && $type=~/^nfs(.?)-proc3/ && $nfs3Flag)
   {
+    # For earlier versions, we've already set the client/server flag
+    my $nfsType=($nfsCFlag) ? 'c' : 's';
+    $nfsType=$1    if $1 ne '';
+
     # field 0 is field count
     @nfsValuesNow=(split(/\s+/, $data))[1..22];
     if (scalar(@nfsValuesNow)<22)
@@ -2506,29 +2685,154 @@ sub dataAnalyze
       return;
     }
 
-    # a lot less typing.
-    for ($i=0; $i<22; $i++)
+    if ($nfsValuesNow[6] || $nfsValuesNow[7])
     {
-      $nfsValue[$i]=fix($nfsValuesNow[$i]-$nfsValuesLast[$i]);
-      $nfsValuesLast[$i]=$nfsValuesNow[$i];
+      $nfs3CSeen=1    if $nfsType eq 'c';
+      $nfs3SSeen=1    if $nfsType eq 's';
     }
 
-    $nfsNull=$nfsValue[0];       $nfsGetattr=$nfsValue[1];
-    $nfsSetattr=$nfsValue[2];    $nfsLookup=$nfsValue[3];
-    $nfsAccess=$nfsValue[4];     $nfsReadlink=$nfsValue[5];
-    $nfsRead=$nfsValue[6];       $nfsWrite=$nfsValue[7];
-    $nfsCreate=$nfsValue[8];     $nfsMkdir=$nfsValue[9];
-    $nfsSymlink=$nfsValue[10];   $nfsMknod=$nfsValue[11];
-    $nfsRemove=$nfsValue[12];    $nfsRmdir=$nfsValue[13];
-    $nfsRename=$nfsValue[14];    $nfsLink=$nfsValue[15];
-    $nfsReaddir=$nfsValue[16];   $nfsReaddirplus=$nfsValue[17];
-    $nfsFsstat=$nfsValue[18];    $nfsFsinfo=$nfsValue[19];
-    $nfsPathconf=$nfsValue[20];  $nfsCommit=$nfsValue[21];
+    if ($nfsType eq 'c' && $nfs3CFlag && $nfs3CSeen)
+    {
+      for ($i=0; $i<22; $i++)
+      {
+        $nfs3CValue[$i]=fix($nfsValuesNow[$i]-$nfs3CValuesLast[$i]);
+        $nfs3CValuesLast[$i]=$nfsValuesNow[$i];
+      }
+
+      $nfs3CNull=    $nfs3CValue[0];   $nfs3CGetattr=    $nfs3CValue[1];
+      $nfs3CSetattr= $nfs3CValue[2];   $nfs3CLookup=     $nfs3CValue[3];
+      $nfs3CAccess=  $nfs3CValue[4];   $nfs3CReadlink=   $nfs3CValue[5];
+      $nfs3CRead=    $nfs3CValue[6];   $nfs3CWrite=      $nfs3CValue[7];
+      $nfs3CCreate=  $nfs3CValue[8];   $nfs3CMkdir=      $nfs3CValue[9];
+      $nfs3CSymlink= $nfs3CValue[10];  $nfs3CMknod=      $nfs3CValue[11];
+      $nfs3CRemove=  $nfs3CValue[12];  $nfs3CRmdir=      $nfs3CValue[13];
+      $nfs3CRename=  $nfs3CValue[14];  $nfs3CLink=       $nfs3CValue[15];
+      $nfs3CReaddir= $nfs3CValue[16];  $nfs3CReaddirplus=$nfs3CValue[17];
+      $nfs3CFsstat=  $nfs3CValue[18];  $nfs3CFsinfo=     $nfs3CValue[19];
+      $nfs3CPathconf=$nfs3CValue[20];  $nfs3CCommit=     $nfs3CValue[21];
+      $nfs3CMeta=$nfs3CLookup+$nfs3CAccess+$nfs3CSetattr+$nfs3CGetattr+$nfs3CReaddir+$nfs3CReaddirplus;
+
+      $nfsReadsTot+=  $nfs3CRead;
+      $nfsCReadsTot+= $nfs3CRead;
+      $nfsWritesTot+= $nfs3CWrite;
+      $nfsCWritesTot+=$nfs3CWrite;
+      $nfsCommitTot+= $nfs3CCommit;
+      $nfsCCommitTot+=$nfs3CCommit;
+      $nfsMetaTot+=   $nfs3CMeta;
+      $nfsCMetaTot+=  $nfs3CMeta;
+    }
+    elsif ($nfsType eq 's' && $nfs3SFlag && $nfs3SSeen)
+    {
+      for ($i=0; $i<22; $i++)
+      {
+        $nfs3SValue[$i]=fix($nfsValuesNow[$i]-$nfs3SValuesLast[$i]);
+        $nfs3SValuesLast[$i]=$nfsValuesNow[$i];
+      }
+
+      $nfs3SNull=    $nfs3SValue[0];   $nfs3SGetattr=    $nfs3SValue[1];
+      $nfs3SSetattr= $nfs3SValue[2];   $nfs3SLookup=     $nfs3SValue[3];
+      $nfs3SAccess=  $nfs3SValue[4];   $nfs3SReadlink=   $nfs3SValue[5];
+      $nfs3SRead=    $nfs3SValue[6];   $nfs3SWrite=      $nfs3SValue[7];
+      $nfs3SCreate=  $nfs3SValue[8];   $nfs3SMkdir=      $nfs3SValue[9];
+      $nfs3SSymlink= $nfs3SValue[10];  $nfs3SMknod=      $nfs3SValue[11];
+      $nfs3SRemove=  $nfs3SValue[12];  $nfs3SRmdir=      $nfs3SValue[13];
+      $nfs3SRename=  $nfs3SValue[14];  $nfs3SLink=       $nfs3SValue[15];
+      $nfs3SReaddir= $nfs3SValue[16];  $nfs3SReaddirplus=$nfs3SValue[17];
+      $nfs3SFsstat=  $nfs3SValue[18];  $nfs3SFsinfo=     $nfs3SValue[19];
+      $nfs3SPathconf=$nfs3SValue[20];  $nfs3SCommit=     $nfs3SValue[21];
+      $nfs3SMeta=$nfs3SLookup+$nfs3SAccess+$nfs3SSetattr+$nfs3SGetattr+$nfs3SReaddir+$nfs3SReaddirplus;
+
+      $nfsReadsTot+=  $nfs3SRead;
+      $nfsSReadsTot+= $nfs3SRead;
+      $nfsWritesTot+= $nfs3SWrite;
+      $nfsSWritesTot+=$nfs3SWrite;
+      $nfsCommitTot+= $nfs3SCommit;
+      $nfsSCommitTot+=$nfs3SCommit;
+      $nfsMetaTot+=   $nfs3SMeta;
+      $nfsSMetaTot+=  $nfs3SMeta;
+    }
+  }
+
+  # A little trickier because proc4 has client data but proc4ops has server data
+  elsif ($subsys=~/f/i && $type=~/^nfs(.?)-proc4/ && $nfs4Flag)
+  {
+    # For earlier versions, we've already set the client/server flag
+    my $nfsType=($nfsCFlag) ? 'c' : 's';
+    $nfsType=$1    if $1 ne '';
+
+    # field 0 is field count
+    ($numFields,@nfsValuesNow)=split(/\s+/, $data);
+    if (scalar(@nfsValuesNow)<$numFields)
+    {
+      incomplete("NFS4", $lastSecs);
+      return;
+    }
+
+    # I can't believe they didn't use the same field numbers for clients/servers
+    $nfs4CSeen=1    if $nfsType eq 'c' &&  ($nfsValuesNow[1] || $nfsValuesNow[2]);
+    $nfs4SSeen=1    if $nfsType eq 's' && ($nfsValuesNow[25] || $nfsValuesNow[38]);
+
+    if ($nfsType eq 'c' && $nfs4CFlag && $nfs4CSeen)
+    { 
+      for ($i=0; $i<$numFields; $i++)
+      {
+        $nfs4CValue[$i]=fix($nfsValuesNow[$i]-$nfs4CValuesLast[$i]);
+        $nfs4CValuesLast[$i]=$nfsValuesNow[$i];
+      }
+
+      # Not Used: Mkdir Mknod Readdirplus Fsstat Rmdir
+      $nfs4CNull=    $nfs4CValue[0];   $nfs4CRead=    $nfs4CValue[1];
+      $nfs4CWrite=   $nfs4CValue[2];   $nfs4CCommit=  $nfs4CValue[3];
+      $nfs4CSetattr= $nfs4CValue[9];   $nfs4CFsinfo=  $nfs4CValue[10];
+      $nfs4CAccess=  $nfs4CValue[17];  $nfs4CGetattr= $nfs4CValue[18];
+      $nfs4CLookup=  $nfs4CValue[19];  $nfs4CRemove=  $nfs4CValue[21];
+      $nfs4CRename=  $nfs4CValue[22];  $nfs4CLink=    $nfs4CValue[23];
+      $nfs4CSymlink= $nfs4CValue[24];  $nfs4CCreate=  $nfs4CValue[25];
+      $nfs4CPathconf=$nfs4CValue[26];  $nfs4CReadlink=$nfs4CValue[28];
+      $nfs4CReaddir= $nfs4CValue[29];
+      $nfs4CMeta=$nfs4CLookup+$nfs4CAccess+$nfs4CSetattr+$nfs4CGetattr+$nfs4CReaddir;
+
+      $nfsReadsTot+=  $nfs4CRead;
+      $nfsCReadsTot+= $nfs4CRead;
+      $nfsWritesTot+= $nfs4CWrite;
+      $nfsCWritesTot+=$nfs4CWrite;
+      $nfsCommitTot+= $nfs4CCommit;
+      $nfsCCommitTot+=$nfs4CCommit;
+      $nfsMetaTot+=   $nfs4CMeta;
+      $nfsCMetaTot+=  $nfs4CMeta;
+    }
+    elsif ($type=~/^nfs(.?)-proc4ops/ && $nfs4SFlag && $nfs4SSeen)
+    {
+      for ($i=0; $i<$numFields; $i++)
+      {
+        $nfs4SValue[$i]=fix($nfsValuesNow[$i]-$nfs4SValuesLast[$i]);
+        $nfs4SValuesLast[$i]=$nfsValuesNow[$i];
+      }
+
+      # Not Used: Null Pathconf Mkdir Mknod Readdirplus Fsinfo Fsstat Symlink Rmdir
+      $nfs4SAccess=  $nfs4SValue[3];   $nfs4SCommit=  $nfs4SValue[5];
+      $nfs4SCreate=  $nfs4SValue[6];   $nfs4SGetattr= $nfs4SValue[9];
+      $nfs4SLink=    $nfs4SValue[11];  $nfs4SLookup=  $nfs4SValue[15];
+      $nfs4SRead=    $nfs4SValue[25];  $nfs4SReaddir= $nfs4SValue[26];
+      $nfs4SReadlink=$nfs4SValue[27];  $nfs4SRemove=  $nfs4SValue[28]; 
+      $nfs4SRename=  $nfs4SValue[29];  $nfs4SSetattr= $nfs4SValue[34];
+      $nfs4SWrite=   $nfs4SValue[38];
+      $nfs4SMeta=$nfs4SLookup+$nfs4SAccess+$nfs4SSetattr+$nfs4SGetattr+$nfs4SReaddir;
+
+      $nfsReadsTot+=  $nfs4SRead;
+      $nfsSReadsTot+= $nfs4SRead;
+      $nfsWritesTot+= $nfs4SWrite;
+      $nfsSWritesTot+=$nfs4SWrite;
+      $nfsCommitTot+= $nfs4SCommit;
+      $nfsSCommitTot+=$nfs4SCommit;
+      $nfsMetaTot+=   $nfs4SMeta;
+      $nfsSMetaTot+=  $nfs4SMeta;
+    }
   }
 
   #    M e m o r y    S t a t s    -    2 . 4    K e r n e l
 
-  elsif ($type=~/^page/ && $subsys=~/m/)
+  elsif ($kernel2_4 && $subsys=~/m/ && $type=~/^page/)
   {
     ($pageinNow, $pageoutNow)=split(/\s+/, $data);
 
@@ -2539,7 +2843,7 @@ sub dataAnalyze
     $pageoutLast=$pageoutNow;
   }
 
-  elsif ($type=~/^swap/ && $subsys=~/m/)
+  elsif ($kernel2_4 && $subsys=~/m/ && $type=~/^swap/)
   {
     ($swapinNow, $swapoutNow)=split(/\s+/, $data);
 
@@ -2550,7 +2854,7 @@ sub dataAnalyze
     $swapoutLast=$swapoutNow;
   }
 
-  elsif ($type=~/^Mem:/ && $subsys=~/m/)
+  elsif ($kernel2_4 && $subsys=~/m/ && $type=~/^Mem:/)
   {
     ($memTot, $memUsed, $memFree, $memShared, $memBuf)=split(/\s+/, $data);
     $memTot/=$OneKB;
@@ -2559,12 +2863,12 @@ sub dataAnalyze
     $memShared/=$OneKB;
     $memBuf/=$OneKB;
   }
-  elsif ($type=~/^Cached/ && $subsys=~/m/)
+  elsif ($kernel2_4 && $subsys=~/m/ && $type=~/^Cached/)
   {
     ($memCached)=split(/\s+/, $data);
   }
 
-  elsif ($type=~/^Swap:/ && $subsys=~/m/)
+  elsif ($kernel2_4 && $subsys=~/m/ && $type=~/^Swap:/)
   {
     ($swapTotal, $swapUsed, $swapFree)=split(/\s+/, $data);
     $swapTotal/=$OneKB;
@@ -2572,7 +2876,7 @@ sub dataAnalyze
     $swapFree/=$OneKB;
   }
 
-  elsif ($type=~/^Active|^Inact/ && $subsys=~/m/ && $kernel2_4)
+  elsif ($kernel2_4 && $subsys=~/m/ && $type=~/^Active|^Inact/)
   {
     $active=(split(/\s+/, $data))[0]    if $type=~/^Active/;
     $dirty=(split(/\s+/, $data))[0]     if $type=~/^Inact_dirty/;
@@ -2584,7 +2888,15 @@ sub dataAnalyze
 
   #    M e m o r y    S t a t s    -    2 . 6    K e r n e l
 
-  elsif ($type=~/^pgpg|^pswp/ && $subsys=~/m/)
+  elsif ($subsys=~/m/ && $kernel2_6 && $type=~/^procs/)
+  {
+    # never include ourselves in count of running processes
+    $data=(split(/\s+/, $data))[0];
+    $procsRun=$data-1     if $type=~/^procs_r/;
+    $procsBlock=$data     if $type=~/^procs_b/;
+  }
+
+  elsif ($subsys=~/m/ && $kernel2_6 && $type=~/^pg|^pswp/)
   {
     if ($type=~/^pgpgin/)
     {
@@ -2592,19 +2904,31 @@ sub dataAnalyze
       $pagein=fix($pageinNow-$pageinLast);
       $pageinLast=$pageinNow;
     }
-    if ($type=~/^pgpgout/)
+    elsif ($type=~/^pgpgout/)
     {
       $pageoutNow=$data;
       $pageout=fix($pageoutNow-$pageoutLast);
       $pageoutLast=$pageoutNow;
     }
-    if ($type=~/^pswpin/)
+    elsif ($type=~/^pgfault/)
+    {
+      $pagefaultNow=$data;
+      $pagefault=fix($pagefaultNow-$pagefaultLast);
+      $pagefaultLast=$pagefaultNow;
+    }
+    elsif ($type=~/^pgmaj/)
+    {
+      $pagemajfaultNow=$data;
+      $pagemajfault=fix($pagemajfaultNow-$pagemajfaultLast);
+      $pagemajfaultLast=$pagemajfaultNow;
+    }
+    elsif ($type=~/^pswpin/)
     {
       $swapinNow=$data;
       $swapin=fix($swapinNow-$swapinLast);
       $swapinLast=$swapinNow;
     }
-    if ($type=~/^pswpout/)
+    elsif ($type=~/^pswpout/)
     {
       $swapoutNow=$data;
       $swapout=fix($swapoutNow-$swapoutLast);
@@ -2612,14 +2936,14 @@ sub dataAnalyze
     }
   }
 
-  elsif ($type=~/^Mem/ && $subsys=~/m/ && $kernel2_6)
+  elsif ($subsys=~/m/ && $kernel2_6 && $type=~/^Mem/)
   {
     $data=(split(/\s+/, $data))[0];
     $memTot= $data    if $type=~/^MemTotal/;
     $memFree=$data    if $type=~/^MemFree/;
   }
 
-  elsif ($type=~/^Buffers|^Cached|^Dirty|^Active|^Inactive|^AnonPages|^Mapped|^Slab:|^Committed_AS:/ && $subsys=~/m/ && $kernel2_6)
+  elsif ($subsys=~/m/ && $kernel2_6 && $type=~/^Buffers|^Cached|^Dirty|^Active|^Inactive|^AnonPages|^Mapped|^Slab:|^Committed_AS:/)
   {
     $data=(split(/\s+/, $data))[0];
     $memBuf=$data             if $type=~/^Buf/;
@@ -2633,15 +2957,7 @@ sub dataAnalyze
     $memCommit=$data          if $type=~/^Com/;
   }
 
-  elsif ($type=~/^procs/ && $subsys=~/m/ && $kernel2_6)
-  {
-    # never include outselves in count of running processes
-    $data=(split(/\s+/, $data))[0];
-    $procsRun=$data-1     if $type=~/^procs_r/;
-    $procsBlock=$data     if $type=~/^procs_b/;
-  }
-
-  elsif ($type=~/^Swap/ && $subsys=~/m/ && $kernel2_6)
+  elsif ($subsys=~/m/ && $kernel2_6 && $type=~/^Swap/)
   {
     $data=(split(/\s+/, $data))[0];
     $swapTotal=$data    if $type=~/^SwapT/;
@@ -3260,8 +3576,7 @@ sub dataAnalyze
     elsif ($data=~/^Uid:\s+(\d+)/)
     { 
       $uid=$1;
-      $procUser[$i]=($passwdFile ne '') ? $UidSelector{$uid} : $uid;
-      $procUser[$i]=$uid    if !defined($procUser[$i]);
+      $procUser[$i]=(defined($UidSelector{$uid})) ? $UidSelector{$uid} : $uid;
     }
   }
 }
@@ -3292,7 +3607,8 @@ sub printHeaders
     $headers.="[MEM]Tot${SEP}[MEM]Used${SEP}[MEM]Free${SEP}[MEM]Shared${SEP}[MEM]Buf${SEP}[MEM]Cached${SEP}";
     $headers.="[MEM]Slab${SEP}[MEM]Map${SEP}[MEM]Commit${SEP}";    # always from V1.7.5 forward
     $headers.="[MEM]SwapTot${SEP}[MEM]SwapUsed${SEP}[MEM]SwapFree${SEP}[MEM]SwapIn${SEP}[MEM]SwapOut${SEP}";
-    $headers.="[MEM]Dirty${SEP}[MEM]Clean${SEP}[MEM]Laundry${SEP}[MEM]Inactive${SEP}[MEM]PageIn${SEP}[MEM]PageOut${SEP}";
+    $headers.="[MEM]Dirty${SEP}[MEM]Clean${SEP}[MEM]Laundry${SEP}[MEM]Inactive${SEP}";
+    $headers.="[MEM]PageIn${SEP}[MEM]PageOut${SEP}[MEM]PageFaults${SEP}[MEM]PageMajFaults${SEP}";
   }
 
   if ($subsys=~/s/)
@@ -3322,11 +3638,11 @@ sub printHeaders
 
   if ($subsys=~/f/)
   {
-    my $nfsType=($nfsOpts=~/2/) ?  'NFS2' : 'NFS3';
-    $nfsType.=  ($nfsOpts=~/C/) ?     'C' : 'S';
-    $headers.="[NFS]Packets${SEP}[NFS]Udp${SEP}[NFS]Tcp${SEP}[NFS]TcpConn${SEP}[NFS]Calls${SEP}";
-    $headers.=($nfsOpts!~/C/) ? "[NFS]BadAuth${SEP}[NFS]BadClient${SEP}" : "[NFS]Retrans${SEP}[NFS]AuthRef${SEP}";
-    $headers.="[$nfsType]Reads${SEP}[$nfsType]Writes${SEP}";
+    # Alway write client/server fields
+    $headers.="[NFS]ReadsS${SEP}[NFS]WritesS${SEP}[NFS]MetaS${SEP}[NFS]CommitS${SEP}";
+    $headers.="[NFS]Udp${SEP}[NFS]Tcp${SEP}[NFS]TcpConn${SEP}[NFS]BadAuth${SEP}[NFS]BadClient${SEP}";
+    $headers.="[NFS]ReadsC${SEP}[NFS]WritesC${SEP}[NFS]MetaC${SEP}[NFS]CommitC${SEP}";
+    $headers.="[NFS]Retrans${SEP}[NFS]AuthRef${SEP}";
   }
 
   if ($subsys=~/l/)
@@ -3396,6 +3712,14 @@ sub printHeaders
     $headers.="[SLAB]InUse${SEP}[SLAB]InUseB${SEP}[SLAB]All${SEP}[SLAB]AllB${SEP}[SLAB]CacheInUse${SEP}[SLAB]CacheTotal${SEP}";
   }
 
+  if ($subsys=~/b/)
+  {
+    for (my $i=0; $i<11; $i++)
+    {
+      $headers.=sprintf("[BUD]%dKPage$SEP", 2**$i);
+    }
+  }
+
   # only if at least one core subsystem selected.  if not, make sure
   # $headersAll contains the date/time in case writing to the terminal
   writeData(0, '', \$headers, $LOG, $ZLOG, 'log', \$headersAll)    if $coreFlag;
@@ -3412,6 +3736,7 @@ sub printHeaders
 
   $cpuHeaders=$dskHeaders=$envHeaders=$nfsHeaders=$netHeaders='';
   $ostHeaders=$mdsHeaders=$cltHeaders=$tcpHeaders=$elanHeaders='';
+  $budHeaders='';
 
   # Whenever we print a header to a file, we do both the common header
   # and date/time.  Remember, if we're printing the terminal, this is
@@ -3462,22 +3787,59 @@ sub printHeaders
 
   if ($subsys=~/F/)
   {
-     if ($nfsOpts=~/2/)
+    if ($nfs2CFlag)
     {
-      my $type=($nfsOpts=~/C/) ? 'NFS2CD' : 'NFS2SD';
-      $nfsHeaders.="[$type]Null${SEP}[$type]Getattr${SEP}[$type]Setattr${SEP}[$type]Root${SEP}[$type]Lookup${SEP}[$type]Readlink${SEP}";
-      $nfsHeaders.="[$type]Read${SEP}[$type]Wrcache${SEP}[$type]Write${SEP}[$type]Create${SEP}[$type]Remove${SEP}[$type]Rename${SEP}";
-      $nfsHeaders.="[$type]Link${SEP}[$type]Symlink${SEP}[$type]Mkdir${SEP}[$type]Rmdir${SEP}[$type]Readdir${SEP}[$type]Fsstat${SEP}";
+      my $type='NFS:2cd';
+      $nfsHeaders.="[$type]Read${SEP}[$type]Write${SEP}[$type]Lookup${SEP}[$type]Getattr${SEP}[$type]Setattr${SEP}[$type]Readdir${SEP}";
+      $nfsHeaders.="[$type]Create${SEP}[$type]Remove${SEP}[$type]Rename${SEP}[$type]Link${SEP}[$type]ReadLink${SEP}[$type]Null${SEP}";
+      $nfsHeaders.="[$type]Symlink${SEP}[$type]Mkdir${SEP}[$type]Rmdir${SEP}[$type]Fsstat${SEP}";
     }
 
-    if ($nfsOpts=~/3/)
+    if ($nfs2SFlag)
     {
-      my $type=($nfsOpts=~/C/) ? 'NFS3CD' : 'NFS3SD';
-      $nfsHeaders.="[$type]Null${SEP}[$type]Getattr${SEP}[$type]Setattr${SEP}[$type]Lookup${SEP}[$type]Access${SEP}[$type]Readlink${SEP}";
-      $nfsHeaders.="[$type]Read${SEP}[$type]Write${SEP}[$type]Create${SEP}[$type]Mkdir${SEP}[$type]Symlink${SEP}[$type]Mknod${SEP}";
-      $nfsHeaders.="[$type]Remove${SEP}[$type]Rmdir${SEP}[$type]Rename${SEP}[$type]Link${SEP}[$type]Readdir${SEP}";
-      $nfsHeaders.="[$type]Readdirplus${SEP}[$type]Fsstat${SEP}[$type]Fsinfo${SEP}[$type]Pathconf${SEP}[$type]Commit${SEP}";
+      my $type='NFS:2sd';
+      $nfsHeaders.="[$type]Read${SEP}[$type]Write${SEP}[$type]Lookup${SEP}[$type]Getattr${SEP}[$type]Setattr${SEP}[$type]Readdir${SEP}";
+      $nfsHeaders.="[$type]Create${SEP}[$type]Remove${SEP}[$type]Rename${SEP}[$type]Link${SEP}[$type]ReadLink${SEP}[$type]Null${SEP}";
+      $nfsHeaders.="[$type]Symlink${SEP}[$type]Mkdir${SEP}[$type]Rmdir${SEP}[$type]Fsstat${SEP}";
     }
+
+    if ($nfs3CFlag)
+    {
+      my $type='NFS:3cd';
+      $nfsHeaders.="[$type]Read${SEP}[$type]Write${SEP}[$type]Commit${SEP}[$type]Lookup${SEP}";
+      $nfsHeaders.="[$type]Access${SEP}[$type]Getattr${SEP}[$type]Setattr${SEP}[$type]Readdir${SEP}";
+      $nfsHeaders.="[$type]Create${SEP}[$type]Remove${SEP}[$type]Rename${SEP}[$type]Link${SEP}[$type]ReadLink${SEP}[$type]Null${SEP}";
+      $nfsHeaders.="[$type]Symlink${SEP}[$type]Mkdir${SEP}[$type]Rmdir${SEP}[$type]Fsstat${SEP}";
+      $nfsHeaders.="[$type]Fsinfo${SEP}[$type]Pathconf${SEP}[$type]Mknod${SEP}[$type]Readdirplus${SEP}";
+    }
+
+    if ($nfs3SFlag)
+    {
+      my $type='NFS:3sd';
+      $nfsHeaders.="[$type]Read${SEP}[$type]Write${SEP}[$type]Commit${SEP}[$type]Lookup${SEP}";
+      $nfsHeaders.="[$type]Access${SEP}[$type]Getattr${SEP}[$type]Setattr${SEP}[$type]Readdir${SEP}";
+      $nfsHeaders.="[$type]Create${SEP}[$type]Remove${SEP}[$type]Rename${SEP}[$type]Link${SEP}[$type]ReadLink${SEP}[$type]Null${SEP}";
+      $nfsHeaders.="[$type]Symlink${SEP}[$type]Mkdir${SEP}[$type]Rmdir${SEP}[$type]Fsstat${SEP}";
+      $nfsHeaders.="[$type]Fsinfo${SEP}[$type]Pathconf${SEP}[$type]Mknod${SEP}[$type]Readdirplus${SEP}";
+    }
+
+    if ($nfs4CFlag)
+    {
+      my $type='NFS:4cd';
+      $nfsHeaders.="[$type]Read${SEP}[$type]Write${SEP}[$type]Commit${SEP}[$type]Lookup${SEP}";
+      $nfsHeaders.="[$type]Access${SEP}[$type]Getattr${SEP}[$type]Setattr${SEP}[$type]Readdir${SEP}";
+      $nfsHeaders.="[$type]Create${SEP}[$type]Remove${SEP}[$type]Rename${SEP}[$type]Link${SEP}[$type]ReadLink${SEP}[$type]Null${SEP}";
+      $nfsHeaders.="[$type]Symlink${SEP}[$type]Fsinfo${SEP}[$type]Pathconf${SEP}";
+    }
+
+    if ($nfs4SFlag)
+    {
+      my $type='NFS:4sd';
+      $nfsHeaders.="[$type]Read${SEP}[$type]Write${SEP}[$type]Commit${SEP}[$type]Lookup${SEP}";
+      $nfsHeaders.="[$type]Access${SEP}[$type]Getattr${SEP}[$type]Setattr${SEP}[$type]Readdir${SEP}";
+      $nfsHeaders.="[$type]Create${SEP}[$type]Remove${SEP}[$type]Rename${SEP}[$type]Link${SEP}[$type]ReadLink${SEP}";
+    }
+
     writeData(0, $ch, \$nfsHeaders, NFS, $ZNFS, 'nfs', \$headersAll);
    }
 
@@ -3628,6 +3990,19 @@ sub printHeaders
     writeData(0, $ch, \$ibHeaders, IB, $ZIB, 'ib', \$headersAll);
   }
 
+  if ($subsys=~/B/)
+  {
+    for (my $i=0; $i<$NumBud; $i++)
+    {
+      $budHeaders.="[BUD:$i]Name${SEP}[BUD:$i]Zone${SEP}";
+      for (my $j=0; $j<11; $j++)
+      {
+        $budHeaders.=sprintf("[BUD:$i]%dKPage$SEP", 2**$i);
+      }
+    }
+    writeData(0, $ch, \$budHeaders, BUD, $ZBUD, 'bud', \$headersAll);
+  }
+
   # When going to the terminal OR socket we need a final call with no 'data' 
   # to write.  Also note that there is a final separator that needs to be removed.
   # It also turns out if doing --export -P, THAT module is responsible for sending
@@ -3767,10 +4142,10 @@ sub printPlot
       $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
                 $memTot, $memUsed, $memFree, $memShared, $memBuf, $memCached); 
       $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS", $memSlab, $memMap, $memCommit);   # Always from V1.7.5 forward
-      $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
+      $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
                 $swapTotal, $swapUsed, $swapFree, $swapin/$intSecs, $swapout/$intSecs,
                 $dirty, $clean, $laundry, $inactive,
-                $pagein/$intSecs, $pageout/$intSecs);
+                $pagein/$intSecs, $pageout/$intSecs, $pagefault/$intSecs, $pagemajfault/$intSecs);
     }
 
     # SOCKETS
@@ -3810,15 +4185,13 @@ sub printPlot
     # NFS
     if ($subsys=~/f/)
     {
-      $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
-            $nfsPkts/$intSecs,    $nfsUdp/$intSecs,
-            $nfsTcp/$intSecs,     $nfsTcpConn/$intSecs, $rpcCalls/$intSecs);
-
-      $plot.=sprintf("$SEP%$FS$SEP%$FS", $rpcBadAuth/$intSecs, $rpcBadClnt/$intSecs)    if $nfsOpts!~/C/;
-      $plot.=sprintf("$SEP%$FS$SEP%$FS", $rpcRetrans/$intSecs, $rpcCredRef/$intSecs)    if $nfsOpts=~/C/;
-
-      $plot.=sprintf("$SEP%$FS$SEP%$FS", $nfs2Read/$intSecs, $nfs2Write/$intSecs)       if $nfsOpts=~/2/;
-      $plot.=sprintf("$SEP%$FS$SEP%$FS", $nfsRead/$intSecs,  $nfsWrite/$intSecs)        if $nfsOpts=~/3/;
+      $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
+            $nfsSReadsTot/$intSecs,  $nfsSWritesTot/$intSecs, $nfsSMetaTot/$intSecs, 
+            $nfsSCommitTot/$intSecs, $nfsUdpTot/$intSecs,     $nfsTcpTot/$intSecs, 
+            $nfsTcpConnTot/$intSecs, $rpcBadAuthTot/$intSecs, $rpcBadClntTot/$intSecs);
+      $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
+            $nfsCReadsTot/$intSecs,  $nfsCWritesTot/$intSecs, $nfsCMetaTot/$intSecs,
+            $nfsCCommitTot/$intSecs, $rpcRetransTot/$intSecs, $rpcCredRefTot/$intSecs);
     }
 
     # Lustre
@@ -3946,6 +4319,15 @@ sub printPlot
 	$slabObjActTotal,  $slabObjActTotalB,  $slabObjAllTotal,  $slabObjAllTotalB,
 	$slabSlabActTotal, $slabSlabActTotalB, $slabSlabAllTotal, $slabSlabAllTotalB,
    	$slabNumAct,       $slabNumTot,6);
+    }
+
+    # BUDDYINFO
+    if ($subsys=~/b/)
+    {
+      for (my $i=0; $i<11; $i++)
+      {
+        $plot.=sprintf("$SEP%d", $buddyInfoTot[$i]);
+      }
     }
 
     writeData(0, $datetime, \$plot, $LOG, $ZLOG, 'log', \$oneline);
@@ -4148,31 +4530,71 @@ sub printPlot
   if ($subsys=~/F/)
   {
     $nfsPlot='';
-    if ($nfsOpts=~/2/)
+    if ($nfs2CFlag)
     {
-      $nfsPlot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP",
-            $nfs2Null/$intSecs,   $nfs2Getattr/$intSecs, $nfs2Setattr/$intSecs,
-            $nfs2Root/$intSecs,   $nfs2Lookup/$intSecs,  $nfs2Readlink/$intSecs,
-            $nfs2Read/$intSecs,   $nfs2Wrcache/$intSecs, $nfs2Write/$intSecs);
-
-      $nfsPlot.=sprintf("%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
-            $nfs2Create/$intSecs, $nfs2Remove/$intSecs,  $nfs2Rename/$intSecs,
-            $nfs2Link/$intSecs,   $nfs2Symlink/$intSecs, $nfs2Mkdir/$intSecs,
-            $nfs2Rmdir/$intSecs,  $nfs2Readdir/$intSecs, $nfs2Fsstat/$intSecs);
+      $nfsPlot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
+            $nfs2CRead/$intSecs,    $nfs2CWrite/$intSecs,   $nfs2CLookup/$intSecs,   $nfs2CGetattr/$intSecs, 
+            $nfs2CSetattr/$intSecs, $nfs2CReaddir/$intSecs, $nfs2CCreate/$intSecs,   $nfs2CRemove/$intSecs,);
+      $nfsPlot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
+            $nfs2CRename/$intSecs,  $nfs2CLink/$intSecs,    $nfs2CReadlink/$intSecs, $nfs2CNull/$intSecs,
+            $nfs2CSymlink/$intSecs, $nfs2CMkdir/$intSecs,   $nfs2CRmdir/$intSecs,    $nfs2CFsstat/$intSecs);
     }
 
-    if ($nfsOpts=~/3/)
+    if ($nfs2SFlag)
     {
-      $nfsPlot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP",
-            $nfsNull/$intSecs,   $nfsGetattr/$intSecs, $nfsSetattr/$intSecs,
-            $nfsLookup/$intSecs, $nfsAccess/$intSecs,  $nfsReadlink/$intSecs,
-            $nfsRead/$intSecs,   $nfsWrite/$intSecs,   $nfsCreate/$intSecs,
-            $nfsMkdir/$intSecs,  $nfsSymlink/$intSecs);
-      $nfsPlot.=sprintf("%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
-            $nfsMknod/$intSecs,  $nfsRemove/$intSecs,   $nfsRmdir/$intSecs,
-            $nfsRename/$intSecs, $nfsLink/$intSecs,     $nfsReaddir/$intSecs,
-            $nfsReaddirplus/$intSecs,                   $nfsFsstat/$intSecs,
-            $nfsFsinfo/$intSecs, $nfsPathconf/$intSecs, $nfsCommit/$intSecs);
+      $nfsPlot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
+            $nfs2SRead/$intSecs,    $nfs2SWrite/$intSecs,   $nfs2SLookup/$intSecs,   $nfs2SGetattr/$intSecs, 
+            $nfs2SSetattr/$intSecs, $nfs2SReaddir/$intSecs, $nfs2SCreate/$intSecs,   $nfs2SRemove/$intSecs);
+      $nfsPlot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
+            $nfs2SRename/$intSecs,  $nfs2SLink/$intSecs,    $nfs2SReadlink/$intSecs, $nfs2SNull/$intSecs,
+            $nfs2SSymlink/$intSecs, $nfs2SMkdir/$intSecs,   $nfs2SRmdir/$intSecs,    $nfs2SFsstat/$intSecs);
+    }
+
+    if ($nfs3CFlag)
+    {
+      $nfsPlot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
+            $nfs3CRead/$intSecs,     $nfs3CWrite/$intSecs,   $nfs3CCommit/$intSecs,  $nfs3CLookup/$intSecs,   
+            $nfs3CAccess/$intSecs,   $nfs3CGetattr/$intSecs, $nfs3CSetattr/$intSecs, $nfs3CReaddir/$intSecs, 
+	    $nfs3CCreate/$intSecs,   $nfs3CRemove/$intSecs,  $nfs3CRename/$intSecs,  $nfs3CLink/$intSecs);
+
+      $nfsPlot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
+            $nfs3CReadlink/$intSecs, $nfs3CNull/$intSecs,    $nfs3CSymlink/$intSecs, $nfs3CMkdir/$intSecs,
+            $nfs3CRmdir/$intSecs,    $nfs3CFsstat/$intSecs,  $nfs3CFsinfo/$intSecs,  $nfs3CPathconf/$intSecs,
+            $nfs3CMknod/$intSecs,    $nfs3CReaddirplus/$intSecs);
+    }
+
+    if ($nfs3SFlag)
+    {
+      $nfsPlot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
+            $nfs3SRead/$intSecs,     $nfs3SWrite/$intSecs,   $nfs3SCommit/$intSecs,  $nfs3SLookup/$intSecs,   
+            $nfs3SAccess/$intSecs,   $nfs3SGetattr/$intSecs, $nfs3SSetattr/$intSecs, $nfs3SReaddir/$intSecs, 
+	    $nfs3SCreate/$intSecs,   $nfs3SRemove/$intSecs,  $nfs3SRename/$intSecs,  $nfs3SLink/$intSecs);
+
+      $nfsPlot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
+            $nfs3SReadlink/$intSecs, $nfs3SNull/$intSecs,    $nfs3SSymlink/$intSecs, $nfs3SMkdir/$intSecs,
+            $nfs3SRmdir/$intSecs,    $nfs3SFsstat/$intSecs,  $nfs3SFsinfo/$intSecs,  $nfs3SPathconf/$intSecs,
+            $nfs3SMknod/$intSecs,    $nfs3SReaddirplus/$intSecs);
+    }
+
+    if ($nfs4CFlag)
+    {
+      $nfsPlot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
+            $nfs4CRead/$intSecs,     $nfs4CWrite/$intSecs,   $nfs4CCommit/$intSecs,  $nfs4CLookup/$intSecs,   
+            $nfs4CAccess/$intSecs,   $nfs4CGetattr/$intSecs, $nfs4CSetattr/$intSecs, $nfs4CReaddir/$intSecs, 
+	    $nfs4CCreate/$intSecs,   $nfs4CRemove/$intSecs,  $nfs4CRename/$intSecs,  $nfs4CLink/$intSecs);
+
+      $nfsPlot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
+            $nfs4CReadlink/$intSecs, $nfs4CNull/$intSecs,    $nfs4CSymlink/$intSecs, $nfs4CFsinfo/$intSecs,
+            $nfs4CPathconf/$intSecs);
+    }
+
+    if ($nfs4SFlag)
+    {
+      $nfsPlot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
+            $nfs4SRead/$intSecs,     $nfs4SWrite/$intSecs,   $nfs4SCommit/$intSecs,  $nfs4SLookup/$intSecs,   
+            $nfs4SAccess/$intSecs,   $nfs4SGetattr/$intSecs, $nfs4SSetattr/$intSecs, $nfs4SReaddir/$intSecs, 
+	    $nfs4SCreate/$intSecs,   $nfs4SRemove/$intSecs,  $nfs4SRename/$intSecs,  $nfs4SLink/$intSecs,
+            $nfs4SReadlink/$intSecs);
     }
     writeData(0, $datetime, \$nfsPlot, NFS, $ZNFS, 'nfs', \$oneline);
   }
@@ -4247,6 +4669,24 @@ sub printPlot
       $tcpPlot.=sprintf("$SEP%$FS", $tcpValue[$i]/$intSecs);
     }
     writeData(0, $datetime, \$tcpPlot, TCP, $ZTCP, 'tcp', \$oneline);
+  }
+
+  #########################
+  #    B U D D Y I N F O
+  ###########################
+
+  if ($subsys=~/B/)
+  {
+    $budPlot='';
+    for (my $i=0; $i<$NumBud; $i++)
+    {
+      $budPlot.="$SEP$buddyNode[$i]$SEP$buddyZone[$i]";
+      for (my $j=0; $j<11; $j++)
+      {
+        $budPlot.=sprintf("$SEP%d", $buddyInfo[$i][$j]);
+      }
+    }
+    writeData(0, $datetime, \$budPlot, BUD, $ZBUD, 'bud', \$oneline);
   }
 
   #    F i n a l    w r i t e
@@ -4429,7 +4869,7 @@ sub printTerm
     {
       printText("\n")    if !$homeFlag;
       printText("#$miniFiller CPU$Hyper SUMMARY (INTR, CTXSW & PROC $rate)\n");
-      printText("#$miniFiller USER  NICE   SYS  WAIT   IRQ  SOFT STEAL  IDLE  INTR  CTXSW  PROC  RUNQ   RUN   AVG1  AVG5 AVG15\n");
+      printText("#$miniFiller User  Nice   Sys  Wait   IRQ  Soft Steal  Idle  Intr  Ctxsw  Proc  RunQ   Run   Avg1  Avg5 Avg15\n");
     }
     $line=sprintf("$datetime  %4d  %4d  %4d  %4d  %4d  %4d  %4d  %4d  %4s   %4s  %4d  %4d  %4d  %5.2f %5.2f %5.2f\n",
 	    $userP[$i], $niceP[$i], $sysP[$i],   $waitP[$i],
@@ -4446,7 +4886,7 @@ sub printTerm
       printText("\n")    if !$homeFlag;
       printText("# SINGLE CPU$Hyper STATISTICS\n");
       my $intrptText=($subsys=~/j/i) ? ' INTRPT' : '';
-      printText("#$miniFiller   CPU  USER NICE  SYS WAIT IRQ  SOFT STEAL IDLE$intrptText\n");
+      printText("#$miniFiller   Cpu  User Nice  Sys Wait IRQ  Soft Steal Idle$intrptText\n");
     }
 
     # if not recorded and user chose -s C don't print line items
@@ -4565,119 +5005,128 @@ sub printTerm
     }
   }
 
-  # server summary different than client summary
-  if ($subsys=~/f/ && $nfsOpts!~/C/)
+  if ($subsys=~/f/)
   {
     if (printHeader())
     {
+      my $temp=($nfsFilt ne '') ? "Filters: $nfsFilt" : '';
       printText("\n")    if !$homeFlag;
-      printText("# NFS SERVER ($rate)\n");
-      printText("#$miniFiller<----------Network-------><----------RPC--------->");
-      printText("<---NFS V2--->")     if $nfsOpts=~/2/;
-      printText("<---NFS V3--->")     if $nfsOpts=~/3/;
-      printText("\n");
-      printText("#${miniFiller}PKTS   UDP   TCP  TCPCONN  CALLS  BADAUTH  BADCLNT ");
-      printText("  READ  WRITE ")    if $nfsOpts=~/2/;
-      printText("  READ  WRITE ")    if $nfsOpts=~/3/;
+      printText("# NFS SUMMARY ($rate) $temp\n");
+      printText("#$miniFiller");
+      printText("<---------------------------server--------------------------->")     if $nfsSFlag;
+      printText("<----------------client---------------->")                           if $nfsCFlag;
+      printText("\n#$miniFiller");
+      printText(" Reads Writes Meta Comm  UDP   TCP  TCPConn  BadAuth  BadClnt ")     if $nfsSFlag;
+      printText(" Reads Writes Meta Comm Retrans  Authref")                           if $nfsCFlag;
       printText("\n");
     }
 
-    $line=sprintf("$datetime %4s  %4s  %4s     %4s   %4s     %4s     %4s ",
-	    cvt($nfsPkts/$intSecs),    cvt($nfsUdp/$intSecs), 
-	    cvt($nfsTcp/$intSecs),     cvt($nfsTcpConn/$intSecs),
-            cvt($rpcCalls/$intSecs),   cvt($rpcBadAuth/$intSecs), 
-            cvt($rpcBadClnt/$intSecs));
-    $line.=sprintf("  %4s   %4s ", cvt($nfs2Read/$intSecs), cvt($nfs2Write/$intSecs))
-	if $nfsOpts=~/2/;
-    $line.=sprintf("  %4s   %4s ", cvt($nfsRead/$intSecs),  cvt($nfsWrite/$intSecs))
-	if $nfsOpts=~/3/;
-    $line.="\n"; 
-    printText($line);
-  }
+    $line=$datetime;
+    $line.=sprintf(" %6s %6s %4s %4s %4s  %4s     %4s     %4s     %4s",
+	 	cvt($nfsSReadsTot/$intSecs,6), cvt($nfsSWritesTot/$intSecs,6), 
+                cvt($nfsSMetaTot/$intSecs),    cvt($nfsSCommitTot/$intSecs),
+                cvt($nfsUdpTot/$intSecs),      cvt($nfsTcpTot/$intSecs),
+                cvt($nfsTcpConnTot/$intSecs),  cvt($rpcBadAuthTot/$intSecs),
+                cvt($rpcBadClntTot/$intSecs))
+			if $nfsSFlag;
 
-  # client summary different than server summary
-  if ($subsys=~/f/ && $nfsOpts=~/C/)
-  {
-    if (printHeader())
-    {
-      printText("\n")    if !$homeFlag;
-      printText("# NFS CLIENT ($rate)\n");
-      printText("#$miniFiller<----------RPC--------->");
-      printText("<---NFS V2--->")     if $nfsOpts=~/2/;
-      printText("<---NFS V3--->")     if $nfsOpts=~/3/;
-      printText("\n");
-      printText("#${miniFiller}CALLS  RETRANS  AUTHREF  ");
-      printText("  READ  WRITE ")    if $nfsOpts=~/2/;
-      printText("  READ  WRITE ")    if $nfsOpts=~/3/;
-      printText("\n");
-    }
-
-    $line=sprintf("$datetime  %4s     %4s     %4s  ",
-            cvt($rpcCalls/$intSecs),   cvt($rpcRetrans/$intSecs), 
-            cvt($rpcCredRef/$intSecs));
-    $line.=sprintf("  %4s   %4s ", cvt($nfs2Read/$intSecs), cvt($nfs2Write/$intSecs))
-	if $nfsOpts=~/2/;
-    $line.=sprintf("  %4s   %4s ", cvt($nfsRead/$intSecs),  cvt($nfsWrite/$intSecs))
-	if $nfsOpts=~/3/;
-    $line.="\n"; 
+    $line.=sprintf(" %6s %6s %4s %4s    %4s     %4s",
+                cvt($nfsCReadsTot/$intSecs,6), cvt($nfsCWritesTot/$intSecs,6),
+                cvt($nfsCMetaTot/$intSecs),    cvt($nfsCCommitTot/$intSecs),
+		cvt($rpcRetransTot/$intSecs),  cvt($rpcCredRefTot/$intSecs))
+			if $nfsCFlag;
+    $line.="\n";
     printText($line);
-  }
+  }  
 
   if ($subsys=~/F/)
   {
-    if ($nfsOpts=~/2/)
+    if (printHeader())
     {
-      if (printHeader())
-      {
-        printText("\n")    if !$homeFlag;
-        printText("# NFS V2 ");
-        $line=sprintf("%s ($rate)\n", $nfsOpts!~/C/ ? "SERVER" : "CLIENT");
-	printText($line);
+      printText("\n")    if !$homeFlag;
+      printText("# NFS SERVER/CLIENT DETAILS ($rate)\n");
+      printText($line);
 
-        printText("#${miniFiller}NULL GETA SETA ROOT LOOK REDL READ WCAC WRIT CRE8 RMOV RENM LINK SYML MKDR RMDR RDIR FSST\n");
-      }
+      # NOTE - we're not including V2 root/wrcache
+      printText("#${miniFiller}Type Read Writ Comm Look Accs Gttr Sttr Rdir Cre8 Rmov Rnam Link Rlnk Null Syml Mkdr Rmdr Fsta Finf Path Mknd Rdr+\n");
+    }
 
-      $line =sprintf("$datetime %4s %4s %4s %4s %4s %4s %4s %4s %4s",
-	    cvt($nfs2Null/$intSecs),    cvt($nfs2Getattr/$intSecs), 
-            cvt($nfs2Setattr/$intSecs), cvt($nfs2Root/$intSecs),
-            cvt($nfs2Lookup/$intSecs),  cvt($nfs2Readlink/$intSecs),
-	    cvt($nfs2Read/$intSecs),    cvt($nfs2Wrcache/$intSecs),
-            cvt($nfs2Write/$intSecs));
-      $line.=sprintf(" %4s %4s %4s %4s %4s %4s %4s %4s %4s\n",
-	    cvt($nfs2Create/$intSecs),  cvt($nfs2Remove/$intSecs),   
-            cvt($nfs2Rename/$intSecs),  cvt($nfs2Link/$intSecs), 
-            cvt($nfs2Symlink/$intSecs), cvt($nfs2Mkdir/$intSecs),
-            cvt($nfs2Rmdir/$intSecs),   cvt($nfs2Readdir/$intSecs), 
-	    cvt($nfs2Fsstat/$intSecs));
+    # As an optimization, only show data where the filesystem is actually active but if --nfsopts z, only show
+    # entries with non-zero data.  Currently only valid value for $nfsOpts is 'z'
+    if ($nfs2CFlag && $nfs2CSeen && ($nfsOpts!~/z/ || $nfs2CRead+$nfs2CWrite+$nfs2CMeta))
+    {
+      $line =sprintf("$datetime Clt2 %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s\n",
+		cvt($nfs2CRead/$intSecs),    cvt($nfs2CWrite/$intSecs),   '',
+		cvt($nfs2CLookup/$intSecs),  '',                          cvt($nfs2CGetattr/$intSecs), 
+		cvt($nfs2CSetattr/$intSecs), cvt($nfs2CReaddir/$intSecs), cvt($nfs2CCreate/$intSecs), 
+		cvt($nfs2CRemove/$intSecs),  cvt($nfs2CRename/$intSecs),  cvt($nfs2CLink/$intSecs),        
+		cvt($nfs2CReadlink/$intSecs),cvt($nfs2CNull/$intSecs),    cvt($nfs2CSymlink/$intSecs), 
+		cvt($nfs2CMkdir/$intSecs),   cvt($nfs2CRmdir/$intSecs),   cvt($nfs2CFsstat/$intSecs));
       printText($line);
     }
 
-    if ($nfsOpts=~/3/)
+    if ($nfs2SFlag && $nfs2SSeen && ($nfsOpts!~/z/ || $nfs2SRead+$nfs2SWrite+$nfs2SMeta))
     {
-      if (printHeader())
-      {
-        printText("\n")    if !$homeFlag;
-        printText("# NFS V3 ");
-        $line=sprintf("%s ($rate)\n", $nfsOpts!~/C/ ? "SERVER" : "CLIENT");
-	printText($line);
+      $line =sprintf("$datetime Svr2 %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s\n",
+		cvt($nfs2SRead/$intSecs),    cvt($nfs2SWrite/$intSecs),   '',
+		cvt($nfs2SLookup/$intSecs),  '',                          cvt($nfs2SGetattr/$intSecs), 
+		cvt($nfs2SSetattr/$intSecs), cvt($nfs2SReaddir/$intSecs), cvt($nfs2SCreate/$intSecs), 
+		cvt($nfs2SRemove/$intSecs),  cvt($nfs2SRename/$intSecs),  cvt($nfs2SLink/$intSecs),        
+		cvt($nfs2SReadlink/$intSecs),cvt($nfs2SNull/$intSecs),    cvt($nfs2SSymlink/$intSecs), 
+		cvt($nfs2SMkdir/$intSecs),   cvt($nfs2SRmdir/$intSecs),   cvt($nfs2SFsstat/$intSecs));
+      printText($line);
+    }
 
-        printText("#${miniFiller}NULL GETA SETA LOOK ACCS RLNK READ WRIT CRE8 MKDR SYML MKND RMOV RMDR RENM LINK RDIR RDR+ FSTA FINF PATH COMM\n");
-      }
+    if ($nfs3CFlag && $nfs3CSeen && ($nfsOpts!~/z/ || $nfs3CRead+$nfs3CWrite+$nfs3CMeta))
+    {
+      $line =sprintf("$datetime Clt3 %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s\n",
+		cvt($nfs3CRead/$intSecs),    cvt($nfs3CWrite/$intSecs),   cvt($nfs3CCommit/$intSecs),
+		cvt($nfs3CLookup/$intSecs),  cvt($nfs3CAccess/$intSecs),  cvt($nfs3CGetattr/$intSecs), 
+		cvt($nfs3CSetattr/$intSecs), cvt($nfs3CReaddir/$intSecs), cvt($nfs3CCreate/$intSecs), 
+		cvt($nfs3CRemove/$intSecs),  cvt($nfs3CRename/$intSecs),  cvt($nfs3CLink/$intSecs),        
+		cvt($nfs3CReadlink/$intSecs),cvt($nfs3CNull/$intSecs),    cvt($nfs3CSymlink/$intSecs), 
+		cvt($nfs3CMkdir/$intSecs),   cvt($nfs3CRmdir/$intSecs),   cvt($nfs3CFsstat/$intSecs), 
+		cvt($nfs3CFsinfo/$intSecs),  cvt($nfs3CPathconf/$intSecs),cvt($nfs3CMknod/$intSecs),  
+		cvt($nfs3CReaddirplus/$intSecs));
+      printText($line);
+    }
 
-      $line =sprintf("$datetime %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s",
-	    cvt($nfsNull/$intSecs),    cvt($nfsGetattr/$intSecs), 
-            cvt($nfsSetattr/$intSecs), cvt($nfsLookup/$intSecs),
-            cvt($nfsAccess/$intSecs),  cvt($nfsReadlink/$intSecs),
-	    cvt($nfsRead/$intSecs),    cvt($nfsWrite/$intSecs),
-            cvt($nfsCreate/$intSecs),  cvt($nfsMkdir/$intSecs),   
-            cvt($nfsSymlink/$intSecs));
-      $line.=sprintf(" %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s\n",
-	    cvt($nfsMknod/$intSecs),       cvt($nfsRemove/$intSecs),   
-            cvt($nfsRmdir/$intSecs),       cvt($nfsRename/$intSecs), 
-            cvt($nfsLink/$intSecs),        cvt($nfsReaddir/$intSecs),
-            cvt($nfsReaddirplus/$intSecs), cvt($nfsFsstat/$intSecs), 
-	    cvt($nfsFsinfo/$intSecs),      cvt($nfsPathconf/$intSecs), 
-            cvt($nfsCommit/$intSecs));
+    if ($nfs3SFlag && $nfs3SSeen && ($nfsOpts!~/z/ || $nfs3SRead+$nfs3SWrite+$nfs3SMeta))
+    {
+      $line =sprintf("$datetime Svr3 %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s\n",
+		cvt($nfs3SRead/$intSecs),    cvt($nfs3SWrite/$intSecs),   cvt($nfs3SCommit/$intSecs),
+		cvt($nfs3SLookup/$intSecs),  cvt($nfs3SAccess/$intSecs),  cvt($nfs3SGetattr/$intSecs), 
+		cvt($nfs3SSetattr/$intSecs), cvt($nfs3SReaddir/$intSecs), cvt($nfs3SCreate/$intSecs), 
+		cvt($nfs3SRemove/$intSecs),  cvt($nfs3SRename/$intSecs),  cvt($nfs3SLink/$intSecs),        
+		cvt($nfs3SReadlink/$intSecs),cvt($nfs3SNull/$intSecs),    cvt($nfs3SSymlink/$intSecs), 
+		cvt($nfs3SMkdir/$intSecs),   cvt($nfs3SRmdir/$intSecs),   cvt($nfs3SFsstat/$intSecs), 
+		cvt($nfs3SFsinfo/$intSecs),  cvt($nfs3SPathconf/$intSecs),cvt($nfs3SMknod/$intSecs),  
+		cvt($nfs3SReaddirplus/$intSecs));
+      printText($line);
+    }
+
+    # Not Used: Mkdir Mknod Readdirplus Fsstat Rmdir
+    if ($nfs4CFlag && $nfs4CSeen && ($nfsOpts!~/z/ || $nfs4CRead+$nfs4CWrite+$nfs4CMeta))
+    {
+      $line =sprintf("$datetime Clt4 %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s\n",
+		cvt($nfs4CRead/$intSecs),    cvt($nfs4CWrite/$intSecs),   cvt($nfs4CCommit/$intSecs),
+		cvt($nfs4CLookup/$intSecs),  cvt($nfs4CAccess/$intSecs),  cvt($nfs4CGetattr/$intSecs), 
+		cvt($nfs4CSetattr/$intSecs), cvt($nfs4CReaddir/$intSecs), cvt($nfs4CCreate/$intSecs), 
+		cvt($nfs4CRemove/$intSecs),  cvt($nfs4CRename/$intSecs),  cvt($nfs4CLink/$intSecs),        
+		cvt($nfs4CReadlink/$intSecs),cvt($nfs4CNull/$intSecs),    cvt($nfs4CSymlink/$intSecs), 
+		'', '', '',                  cvt($nfs4CFsinfo/$intSecs),  cvt($nfs4CPathconf/$intSecs));
+     printText($line);
+    }
+
+    if ($nfs4SFlag && $nfs4SSeen && ($nfsOpts!~/z/ || $nfs4SRead+$nfs4SWrite+$nfs4SMeta))
+    {
+      # Not Used: Null Pathconf Mkdir Mknod Readdirplus Fsinfo Fsstat Symlink Rmdir
+      $line =sprintf("$datetime Svr4 %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s %4s\n",
+		cvt($nfs4SRead/$intSecs),    cvt($nfs4SWrite/$intSecs),   cvt($nfs4SCommit/$intSecs),
+		cvt($nfs4SLookup/$intSecs),  cvt($nfs4SAccess/$intSecs),  cvt($nfs4SGetattr/$intSecs), 
+		cvt($nfs4SSetattr/$intSecs), cvt($nfs4SReaddir/$intSecs), cvt($nfs4SCreate/$intSecs), 
+		cvt($nfs4SRemove/$intSecs),  cvt($nfs4SRename/$intSecs),  cvt($nfs4SLink/$intSecs),        
+		cvt($nfs4SReadlink/$intSecs));
       printText($line);
     }
   }
@@ -5192,15 +5641,15 @@ sub printTerm
       printText("# MEMORY STATISTICS\n");
       if ($kernel2_4 || $recVersion lt '1.5.6')
       {
-        $line=sprintf("#$miniFiller<-------------Physical Memory-----------><-----------Swap----------><-Inactive-><Pages%s>\n", substr($rate, 0, 4));
-      printText($line);
-      printText("#$miniFiller   TOTAL    USED    FREE    BUFF  CACHED     TOTAL    USED    FREE     TOTAL     IN    OUT\n");
+        $line=sprintf("#$miniFiller<---------------Physical Memory---------------><-----------Swap------------><-------Paging------>\n");
+        printText($line);
+        printText("#$miniFiller   Total    Used    Free    Buff  Cached  Inact Total  Used  Free   In  Out Fault MajFt   In  Out\n");
       }
       else
       {
-        $line=sprintf("#$miniFiller<------------------------Physical Memory-----------------------><-----------Swap----------><-Inactive-><Pages%s>\n", substr($rate, 0, 4));
+        $line=sprintf("#$miniFiller<---------------------------Physical Memory---------------------------><-----------Swap------------><-------Paging------>\n");
         printText($line);
-        printText("#$miniFiller   TOTAL    USED    FREE    BUFF  CACHED    SLAB  MAPPED  COMMIT     TOTAL    USED    FREE     TOTAL     IN    OUT\n");
+        printText("#$miniFiller   Total    Used    Free    Buff  Cached    Slab  Mapped  Commit  Inact Total  Used  Free   In  Out Fault MajFt   In  Out\n");
       }
     }
 
@@ -5211,11 +5660,64 @@ sub printTerm
     $line.=sprintf("%7s %7s %7s ", cvt($memSlab,7,1,1), cvt($memMap,7,1,1), cvt($memCommit,7,1,1))
 	    if $kernel2_6 && ($recVersion ge '1.5.6');
 
-    $line.=sprintf("  %7s %7s %7s   %7s %6d %6d\n",
-	    cvt($swapTotal,7,1,1),  cvt($swapUsed,7,1,1), cvt($swapFree,7,1,1),
-            cvt($inactive,7,1,1),   $pagein/$intSecs,     $pageout/$intSecs);
+    $line.=sprintf(" %5s %5s %5s %5s %4s %4s %5s %5s %4s %4s\n",
+            cvt($inactive,5,1,1), 
+            cvt($swapTotal,5,1,1),       cvt($swapUsed,5,1,1), cvt($swapFree,5,1,1), 
+	    cvt($swapin/$intSecs,5,1,1), cvt($swapout/$intSecs,5,1,1),
+            cvt($pagefault/$intSecs,5),  cvt($pagemajfault/$intSecs,5),
+            cvt($pagein/$intSecs,4),     cvt($pageout/$intSecs,4));
 
     printText($line);
+  }
+
+  if ($subsys=~/b/)
+  {
+    if (printHeader())
+    {
+      my $k=$PageSize/1024;
+      my $headers='';
+      for (my $i=0; $i<11; $i++)
+      {
+	$headers.=sprintf("%8d", 2**$i);
+      }
+      printText("\n")    if !$homeFlag;
+      printText("# MEMORY FRAGMENTATION SUMMARY (${k}K pages)\n");
+      printText("#${miniFiller}$headers\n");
+    }
+
+    my $line="$datetime ";
+    for (my $i=0; $i<11; $i++)
+    {
+      $line.=sprintf("%8d", $buddyInfoTot[$i]);
+    }
+    printText("$line\n");
+  }
+
+  if ($subsys=~/B/)
+  {
+    if (printHeader())
+    {
+      my $k=$PageSize/1024;
+      my $headers='';
+      for (my $i=0; $i<11; $i++)
+      {
+	$headers.=sprintf("%8d", 2**$i);
+      }
+      printText("\n")    if !$homeFlag;
+      printText("# MEMORY FRAGMENTATION (${k}K pages)\n");
+      printText("#${miniFiller}Node    Zone $headers\n");
+    }
+
+    for (my $i=0; $i<$NumBud; $i++)
+    {
+      my $line="$datetime ";
+      $line.=sprintf("%4d  %6s ", $buddyNode[$i], $buddyZone[$i]);
+      for (my $j=0; $j<11; $j++)
+      {
+        $line.=sprintf("%8d", $buddyInfo[$i][$j]);
+      }
+      printText("$line\n");
+    }
   }
 
   if ($subsys=~/n/)
@@ -5501,8 +6003,8 @@ sub printTermSlab
     }
     elsif ($slabinfoFlag)
     {
-      printText("#${miniFiller}                      <-----------Objects----------><---------Slab Allocation------><----Change-->\n");
-      printText("#${miniFiller}Name                  InUse   Bytes   Alloc   Bytes   InUse   Bytes   Total   Bytes   Diff    Pct\n");
+      printText("#${miniFiller}                           <-----------Objects----------><---------Slab Allocation------><---Change-->\n");
+      printText("#${miniFiller}Name                       InUse   Bytes   Alloc   Bytes   InUse   Bytes   Total   Bytes   Diff    Pct\n");
     }
     else
     {
@@ -5561,8 +6063,8 @@ sub printTermSlab
         next;
       }
 
-      $line=sprintf("$datetime%-20s %7s %7s  %6s %7s  %6s %7s  %6s %7s %6s %6.1f\n",
-          $slabName[$i],
+      $line=sprintf("$datetime%-25s %7s %7s  %6s %7s  %6s %7s  %6s %7s %6s %6.1f\n",
+          substr($slabName[$i],0,25),
 	  cvt($slabObjActTot[$i],6),    cvt($slabObjActTotB[$i],7,0,1), 
   	  cvt($slabObjAllTot[$i],6),    cvt($slabObjAllTotB[$i],7,0,1),
 	  cvt($slabSlabActTot[$i],6),   cvt($slabSlabActTotB[$i],7,0,1),
@@ -5632,7 +6134,7 @@ sub printTermSlab
       }
 
       printf "$datetime%-25s  %7d  %5d  %7d  %7d  %5d %7d  %8d  %8d  %7s %6.1f\n",
-            $first,
+            substr($first,0,25),
 	    $slabdata{$slab}->{slabsize},
 	    $slabdata{$slab}->{objper},
 	    $numObjects,
@@ -6043,7 +6545,7 @@ sub cvtP
 # Like printInterval, this is also used for terminal/socket output and therefore
 # not something we need to worry about for logging!
 sub printText
-{
+{ 
   my $text=shift;
   my $eol= shift;
   print $text    if !$sockFlag;
@@ -6227,24 +6729,41 @@ sub printBrief
       my $num=int(($NumCpus-1)*5/2);
       my $pad1='-'x$num;
       my $pad2=$pad1;
-      $line.="<${pad1}Int$pad2>";
+      $line.="<${pad1}Int$pad2->";
     }
-    $line.="<-----------Memory----------->"          if $subsys=~/m/;
-    $line.="<-----slab---->"                          if $subsys=~/y/;
-    $line.="<----------Disks----------->"            if $subsys=~/d/ && !$ioSizeFlag;
-    $line.="<---------------Disks---------------->"  if $subsys=~/d/ &&  $ioSizeFlag;
-    $line.="<----------Network---------->"           if $subsys=~/n/ && !$ioSizeFlag;
-    $line.="<---------------Network--------------->" if $subsys=~/n/ &&  $ioSizeFlag;
-    $line.="<------------TCP------------->"           if $subsys=~/t/;
-    $line.="<------Sockets----->"                    if $subsys=~/s/;
-    $line.="<----files---->"                         if $subsys=~/i/;
-    $line.="<---------------Elan------------->"      if $subsys=~/x/ && $NumXRails;
-    $line.="<-----------InfiniBand----------->"      if $subsys=~/x/ && ($NumHCAs || $NumHCAs+$NumXRails==0) && !$ioSizeFlag;
+    $line.="<--Memory-->"                              if $subsys!~/m/ && $subsys=~/b/;
+    $line.="<-----------Memory----------->"            if $subsys=~/m/ && $subsys!~/b/;
+    $line.="<-----------------Memory----------------->"  if $subsys=~/m/ && $subsys=~/b/;
+    $line.="<-----slab---->"                           if $subsys=~/y/;
+    $line.="<----------Disks----------->"              if $subsys=~/d/ && !$ioSizeFlag;
+    $line.="<---------------Disks---------------->"    if $subsys=~/d/ &&  $ioSizeFlag;
+    $line.="<----------Network---------->"             if $subsys=~/n/ && !$ioSizeFlag;
+    $line.="<---------------Network--------------->"   if $subsys=~/n/ &&  $ioSizeFlag;
+    $line.="<------------TCP------------->"            if $subsys=~/t/;
+    $line.="<------Sockets----->"                      if $subsys=~/s/;
+    $line.="<----Files--->"                           if $subsys=~/i/;
+    $line.="<---------------Elan------------->"        if $subsys=~/x/ && $NumXRails;
+    $line.="<-----------InfiniBand----------->"        if $subsys=~/x/ && ($NumHCAs || $NumHCAs+$NumXRails==0) && !$ioSizeFlag;
     $line.="<----------------InfiniBand---------------->" if $subsys=~/x/ && ($NumHCAs || $NumHCAs+$NumXRails==0) &&  $ioSizeFlag;
-    $line.="<--NFS Svr Summary-->"                   if $subsys=~/f/ && $nfsOpts!~/C/;
-    $line.="<--NFS Clt Summary-->"                   if $subsys=~/f/ && $nfsOpts=~/C/;
-    $line.="<----NFS MetaOps---->"                   if $subsys=~/F/;
-    $line.="<--------Lustre MDS-------->"            if $subsys=~/l/ && $reportMdsFlag;
+    # a bunch of extra work but worth it!
+    if ($subsys=~/f/)
+    {
+      # If all filters specified, no room!
+      if ($nfsFilt eq '' || length($nfsFilt)==17)
+      {
+        $line.="<------NFS Totals------>";
+      }
+      else
+      {
+	my $padL=$padR=int((14-length($nfsFilt))/2);
+        $padL++    if length($nfsFilt) & 1;   # handle odd number of -'s
+        $padL='-'x$padL;
+        $padR='-'x$padR;
+        $line.="<$padL-NFS [$nfsFilt]-$padR>";
+      }
+    }
+
+    $line.="<--------Lustre MDS-------->"              if $subsys=~/l/ && $reportMdsFlag;
     $line.="<---------Lustre OST--------->"            if $subsys=~/l/ && $reportOstFlag && !$ioSizeFlag;
     $line.="<--------------Lustre OST-------------->"  if $subsys=~/l/ && $reportOstFlag &&  $ioSizeFlag;
  
@@ -6266,7 +6785,8 @@ sub printBrief
         $line.=sprintf("Cpu$i ");
       }
     }
-    $line.="free buff cach inac slab  map "          if $subsys=~/m/;
+    $line.="Free Buff Cach Inac Slab  Map "          if $subsys=~/m/;
+    $line.="  Fragments "                            if $subsys=~/b/;
     $line.=" Alloc   Bytes "	 		     if $subsys=~/y/ && $slabinfoFlag;
     $line.=" InUse   Total "	 		     if $subsys=~/y/ && $slubinfoFlag;
     $line.="KBRead  Reads KBWrit Writes "            if $subsys=~/[dp]/ && !$ioSizeFlag;
@@ -6274,13 +6794,12 @@ sub printBrief
     $line.="  KBIn  PktIn  KBOut  PktOut "           if $subsys=~/n/    && !$ioSizeFlag;
     $line.="  KBIn  PktIn Size  KBOut  PktOut Size " if $subsys=~/n/    &&  $ioSizeFlag;
     $line.="PureAcks HPAcks   Loss FTrans "          if $subsys=~/t/;
-    $line.="  Tcp  Udp  Raw Frag "                   if $subsys=~/s/;
-    $line.=" Handle Inodes "                         if $subsys=~/i/;
+    $line.=" Tcp  Udp  Raw Frag "                    if $subsys=~/s/;
+    $line.="Handle Inodes "                          if $subsys=~/i/;
     $line.="   KBIn  PktIn   KBOut PktOut Errs "     if $subsys=~/x/ && $NumXRails;
     $line.="   KBIn  PktIn   KBOut PktOut Errs "     if $subsys=~/x/ && ($NumHCAs || $NumHCAs+$NumXRails==0) && !$ioSizeFlag;
     $line.="   KBIn  PktIn Size   KBOut PktOut Size Errs " if $subsys=~/x/ && ($NumHCAs || $NumHCAs+$NumXRails==0) &&  $ioSizeFlag;
-    $line.="  read  write  calls "                   if $subsys=~/f/;
-    $line.="  meta commit retran "                   if $subsys=~/F/;
+    $line.=" Reads Writes Meta Comm "                 if $subsys=~/f/;
     $line.=" KBRead  Reads  KBWrit Writes "           if $subsys=~/l/ && $reportOstFlag && !$ioSizeFlag;
     $line.=" KBRead  Reads Size  KBWrit Writes Size " if $subsys=~/l/ && $reportOstFlag &&  $ioSizeFlag;
 
@@ -6329,6 +6848,11 @@ sub printBrief
         cvt($memFree,4,1,1),   cvt($memBuf,4,1,1), 
 	cvt($memCached,4,1,1), cvt($inactive,4,1,1),
 	cvt($memSlab,4,1,1),   cvt($memMap,4,1,1));
+  }
+
+  if ($subsys=~/b/)
+  {
+    $line.=sprintf("%s ", base36(@buddyInfoTot));
   }
 
   if ($subsys=~/y/)
@@ -6392,13 +6916,13 @@ sub printBrief
 
   if ($subsys=~/s/)
   {
-    $line.=sprintf(" %4s %4s %4s %4s ", 
+    $line.=sprintf("%4s %4s %4s %4s ", 
 	cvt($sockUsed,4), cvt($sockUdp,4), cvt($sockRaw,4), cvt($sockFrag,4));
   }
 
   if ($subsys=~/i/)
   {
-    $line.=sprintf(" %6s %6s ", cvt($filesAlloc, 6), cvt($inodeUsed, 6));
+    $line.=sprintf("%6s %6s ", cvt($filesAlloc, 6), cvt($inodeUsed, 6));
   }
 
   # and so is elan
@@ -6435,15 +6959,9 @@ sub printBrief
 
   if ($subsys=~/f/)
   {
-    $line.=sprintf("%6s %6s %6s ", 
-	cvt($nfsRead/$intSecs,6), cvt($nfsWrite/$intSecs,6), cvt($rpcCalls/$intSecs,6));
-  }
-
-  if ($subsys=~/F/)
-  {
-    $nfsMeta=$nfsLookup+$nfsAccess+$nfsSetattr+$nfsGetattr+$nfsReaddir+$nfsReaddirplus;
-    $line.=sprintf("%6s %6s %6s ", 
-	cvt($nfsMeta/$intSecs,6), cvt($nfsCommit/$intSecs,6), cvt($rpcRetrans/$intSecs,6));
+    $line.=sprintf("%6s %6s %4s %4s ", 
+	cvt($nfsReadsTot/$intSecs,6), cvt($nfsWritesTot/$intSecs,6),
+	cvt($nfsMetaTot/$intSecs),  cvt($nfsCommitTot/$intSecs));
   }
 
   # MDS
@@ -6548,7 +7066,7 @@ sub resetBriefCounters
   $filesAllocTOT=$inodeUsedTOT=0;
   $elanRxKBTOT=$elanRxTOT=$elanTxKBTOT=$elanTxTOT=$elanErrorsTOT=0;
   $ibRxKBTOT=$ibRxTOT=$ibTxKBTOT=$ibTxTOT=$ibErrorsTOT=0;
-  $nfsReadTOT=$nfsWriteTOT=$rpcCallsTOT=$nfsMetaTOT=$nfsCommitTOT=$rpcRetransTOT=0;
+  $nfsReadsTOT=$nfsWritesTOT=$nfsMetaTOT=$nfsCommitTOT=0;
   $lustreMdsGetattrPlusTOT=$lustreMdsSetattrPlusTOT=$lustreMdsSyncTOT=0;
   $lustreMdsReintTOT=$lustreMdsReintUnlinkTOT=0;
   $lustreReadKBytesTOT=$lustreReadOpsTOT=$lustreWriteKBytesTOT=$lustreWriteOpsTOT=0;
@@ -6558,6 +7076,8 @@ sub resetBriefCounters
   { $lustreBufReadTOT[$i]=$lustreBufWriteTOT[$i]=0; }
   for (my $i=0; $i<$NumCpus; $i++)
   { $intrptTOT[$i]=0; }
+  for (my $i=0; $i<11; $i++)
+  { $buddyInfoTOT[$i]=0; }
 }
 
 sub countBriefCounters
@@ -6617,13 +7137,10 @@ sub countBriefCounters
   $ibTxTOT+=       $ibTxTot;
   $ibErrorsTOT+=   $ibErrorsTotTot;
 
-  $nfsReadTOT+=    $nfsRead;
-  $nfsWriteTOT+=   $nfsWrite;
-  $rpcCallsTOT+=   $rpcCalls;
-
-  $nfsMetaTOT+=    $nfsMeta;
-  $nfsCommitTOT+=  $nfsCommit;
-  $rpcRetransTOT+= $rpcRetrans;
+  $nfsReadsTOT+=   $nfsReadsTot;
+  $nfsWritesTOT+=  $nfsWritesTot;
+  $nfsMetaTOT+=    $nfsMetaTot;
+  $nfsCommitTOT+=  $nfsCommitTot;
 
   if ($NumMds)
   {
@@ -6652,6 +7169,14 @@ sub countBriefCounters
 
     $lustreCltRAHitsTOT+=  $lustreCltRAHitsTot;
     $lustreCltRAMissesTOT+=$lustreCltRAMissesTot;
+  }
+
+  if ($NumBud)
+  {
+    for ($i=0; $i<11; $i++)
+    {
+      $buddyInfoTOT[$i]+=$buddyInfoTot[$i];
+    }
   }
 }
 
@@ -6694,6 +7219,14 @@ sub printBriefCounters
 	cvt($memSlabTOT/$miniInstances,4,1,1),
 	cvt($memMapTOT/$miniInstances,4,1,1)
 		  if $subsys=~/m/;
+
+  # Need to average each field before converting
+  if ($subsys=~/b/)
+  {
+    for ($i=0; $i<11; $i++)
+    { $buddyInfoAVG[$i]=$buddyInfoTOT[$i]/$miniInstances; }
+    printf "%s ", base36(@buddyInfoAVG);
+  }
 
   printf "%6s %7s ", 
 	cvt($slabSlabAllTotalTOT/$miniInstances,6,0,1), 
@@ -6741,12 +7274,12 @@ sub printBriefCounters
         cvt($tcpLossTOT/$aveSecs,6), cvt($tcpFTransTOT/$aveSecs,6)
 		  if $subsys=~/t/;
 
-  printf " %4d %4d %4d %4d ",
+  printf "%4d %4d %4d %4d ",
 	cvt(int($sockUsedTOT/$miniInstances),6), cvt(int($sockUdpTOT/$miniInstances),6), 
 	cvt(int($sockRawTOT/$miniInstances),6),  cvt(int($sockFragTOT/$miniInstances),6)
                   if $subsys=~/s/;
 
-  printf " %6s %6s ", cvt($filesAllocTOT/$mi, 6), cvt($inodeUsedTOT/$mi, 6)
+  printf "%6s %6s ", cvt($filesAllocTOT/$mi, 6), cvt($inodeUsedTOT/$mi, 6)
 		  if $subsys=~/i/;
 
   printf "%7s %6s %7s %6s %6s ", 
@@ -6775,15 +7308,10 @@ sub printBriefCounters
     }
   }
 
-  printf "%6s %6s %6s ", 
-	cvt($nfsReadTOT/$aveSecs,6), cvt($nfsWriteTOT/$aveSecs,6), 
-        cvt($rpcCallsTOT/$aveSecs,6)
+  printf "%6s %6s %4s %4s ", 
+	cvt($nfsReadsTOT/$aveSecs,6), cvt($nfsWritesTOT/$aveSecs,6), 
+	cvt($nfsMetaTOT/$aveSecs),    cvt($nfsCommitTOT/$aveSecs)
 	          if $subsys=~/f/;
-
-  printf "%6s %6s %6s ",
-        cvt($nfsMetaTOT/$aveSecs,6), cvt($nfsCommitTOT/$aveSecs,6),
-        cvt($rpcRetransTOT/$aveSecs,6)
-  	          if $subsys=~/F/;
 
   if ($subsys=~/l/ && $reportMdsFlag)
   {
@@ -6832,6 +7360,43 @@ sub printBriefCounters
 	    if $lustOpts=~/R/;
  }
   print "\n";
+}
+
+sub base36
+{
+  my @buddies=@_;
+  my $frags;
+  for (my $i=0; $i<scalar(@buddies); $i++)
+  {
+    my $map;
+    my $num=$buddies[$i];
+    if ($num>=1000)
+    {
+      # 1000->the res => 30->36
+      $map=int(log($num)/log(10))-3;
+      $map=8    if $map>8;
+      $frag=substr('stuvwxyz', $map, 1);
+    }
+    elsif ($num>=100)
+    {
+      # 100->999 => 20->29
+      $map=int($num)/100-1;
+      $frag=substr('jklmnopqr', $map, 1);
+    }
+    elsif ($num>=10)
+    {
+      # 10->99 => 10->19
+      $map=int($num)/10-1;
+      $frag=substr('abcdefghi', $map, 1);
+    }
+    else
+    {
+      # 0->9 => 0->9
+      $frag=$num;
+    }
+    $frags.=$frag;
+  }
+  return($frags);
 }
 
 ####################################################
@@ -7788,18 +8353,26 @@ sub getOfedPath
   {
     # This is something we really don't want to have to be doing
     logmsg('W', "Cannot find '$name' in ${configFile}'s OFED search list, checking with rpm");
+
     $command="$Rpm -qal | $Grep $name | $Grep -v man";
     print "Command: $command\n"    if $debug & 2;
     $found=`$command`;
     if ($found ne '')
     {
-      chomp($found);
-      logmsg('I', "Adding '$found' to '$label' in $configFile");
-      my $conf=`$Cat $configFile`;
-      $conf=~s/($label\s+=\s+)(.*)$/$1$found:$2/m;
-      open  CONF, ">/etc/collectl.conf" or logmsg("F", "Couldn't write to /etc/collectl.conf so do it manually!");
-      print CONF $conf;
-      close CONF;
+      if (-w $configFile)
+      {
+        chomp($found);
+        logmsg('I', "Adding '$found' to '$label' in $configFile");
+        my $conf=`$Cat $configFile`;
+        $conf=~s/($label\s+=\s+)(.*)$/$1$found:$2/m;
+        open  CONF, ">/etc/collectl.conf" or logmsg("F", "Couldn't write to /etc/collectl.conf so do it manually!");
+        print CONF $conf;
+        close CONF;
+      }
+      else
+      {
+        logmsg('W', "found '$name' in rpm but $configFile not writeable so not updated");
+      }
     }
   }
   return($found);

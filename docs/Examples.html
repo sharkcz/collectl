@@ -123,10 +123,10 @@ cciss/c0d2       0      0    0    0       0      0    0    0       0     0     0
 <pre>
 [root@poker]# collectl -scft -oT
 waiting for 1 second sample...
-#         <--------CPU--------><------------TCP------------><--NFS Svr Summary-->
-#Time     cpu sys inter  ctxsw PureAcks HPAcks   Loss FTrans   read  write  calls
-13:52:00    0   0   333    222        0      0      0      0      0      0      0
-13:52:01    0   0   134     41        0      2      0      0      0      0      0
+#         <--------CPU--------><------------TCP-------------><------NFS Totals------>
+#Time     cpu sys inter  ctxsw PureAcks HPAcks   Loss FTrans   read  write meta comm
+08:12:20    0   0  1007    120        1      0      0      0      0      0    0    0
+08:12:21    1   1  1077    400        1      0      0      0      0      0    0    0
 </pre>
 </div>
 
@@ -154,10 +154,10 @@ displayed.
 # DISK SUMMARY (/sec)
 #KBRead RMerged  Reads SizeKB  KBWrite WMerged Writes SizeKB
       0       0      0      0        0       0      0      0
-# NFS SERVER (/sec)
-#<----------Network-------><----------RPC--------->
-#PKTS   UDP   TCP  TCPCONN  CALLS  BADAUTH  BADCLNT
-    0     0     0        0      0        0        0
+# NFS SUMMARY (/sec)
+#<---------------------------server---------------------------><----------------client---------------->
+# Reads Writes Meta Comm  UDP   TCP  TCPConn  BadAuth  BadClnt  Reads Writes Meta Comm Retrans  Authref
+      0      0    0    0    0     0        0        0        0      0      0    0    0       0        0
 # INODE SUMMARY
 #    Dentries      File Handles    Inodes
 # Number  Unused   Alloc   % Max   Number

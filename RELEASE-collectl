@@ -37,6 +37,65 @@ KNOWN PROBLEMS/RESTRICTIONS
   - if a symlink is used to point to the executable, it MUST contain the full
     path or collectl will not be able to find 'formatit.ph'
 
+3.2.1-6 March 03, 2009
+  - added --nfsopts z to filter lines of 0 in -sF mode
+  - if collectl.conf is not writeable (eg in R/O filesystem), do not try to add
+    IB paths dynamically
+  - wrong logic for handling --nfsopts z
+  - minor formatting changes to column positions in brief format and slab detail
+  - wasn't including CPU type, speed, cores and siblings when converting to plot files
+  - dropped inode info from header which was dropped from collectl awhile back
+  - don't report open failures on nfs data since not always there
+  - add support for XEN xvd disk types [thanks brian]
+
+3.2.1-5
+  - incremented $nfsCommit instead of $nfsCommitTot
+  - wasn't handling --nfsfilt correctly on playback of 3.2.1-4 files
+  - don't set $sockFlag until after socket opened otherwise we can't report socket errors
+    on terminal
+  - if read & write fields for an nfs version are both zero assume not active and don't
+    report in detail format
+  - make nfs one of the default subsystems to collect data for
+  - UNINSTALL wasn't removing link to start script on Debian
+  - file selection logic for playback wasn't working correctly for multiple hosts with
+    multiple files on same date
+  - fixed preprocessPlayback() to deal with +/- when -s specified
+  - fixed very subtle bug involving playing back multiple files for same day, the first having
+    -sy and the second having -sY and -s overrided with -s+.  caused print on opened filehandle
+
+3.2.1-4
+  - always write client/server nfs data, using nfsc- and nfss- as prefix
+  - added --nfsfilt to control details output
+  - other misc stuff for support of ALL nfs data in raw file at once
+  - dropped SubOpts and NfsOpts from header
+  - added NfsFilt to header
+
+3.2.1-3
+  - do now allow -O any more, must use --nfsopts and --lustopts
+  - support for nfs V4.  will now collect ALL data in /proc but still only report 
+    on 1 type either interactively or during playback, based on --nfsopts
+  - only turn echo back on in error() if not a PC
+  - only look for passwd file when recording/playing back process data
+  - when playing back a file with a prefix in front of the host name and specifying
+    multiple directories the destination was not being correctly resolved.
+
+3.2.1-2
+  - only set $nfsOpts from header during playback if -s wasnt' specified OR it
+    was and contained an 'f'
+  - do not exit on broken pipe if "-A server"
+  - --vmstat wasn't respecting --hr 0 or 1
+
+3.2.1-1
+  - fixed a couple of bugs in INSTALL
+    - init.d scripts and release notes copied to wrong directory
+  - added Passwd to collectl.conf which if defined will point to default passwd file
+  - changed the way /proc/vmstat read to get more data
+  - added swap in/out and page faults to verbose memory display
+  - added page faults to tab file
+  - when running interactively over multiple days with -P, headers were not being
+    including in subsequent files
+  - changes some verbose summary headers to mix-cased
+
 3.1.3-1 January 23, 2009
   - output for '--procopts i' off by one column near accutim
   - if RETURN entered in brief mode before 1st interval reported, ignore

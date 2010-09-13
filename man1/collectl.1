@@ -550,51 +550,6 @@ a warning which can be suppressed with this switch.
 .RE
 
 .RE
-.B "-O, --subopts Sub-system Options"
-.RS
-These options apply to specific subsystems as opposed to 
-.BR -o
-which apply to all subsystems.  Some control which data is to be collected and
-others may control which data is displayed.
-
-.B 2
-.RS
-Collect nfs V2 data
-.RE
-
-.B 3
-.RS
-Collect nfs V3 data
-.RE
-
-.B B
-.RS
-Display Lustre OST I/O distribution by buffersize, where the buffers range in size from 1 to 
-128 pages and the size of a page is installation dependent.  All IA32 systems have a page size of 4K.
-.RE
-
-.B C
-.RS
-Collect nfs statistics for the CLIENT rather than the SERVER.
-.RE
-
-.B D
-.RS
-For lustre MDSs and OSTs, collectl disk block iostats.
-.RE
-
-.B M
-.RS
-For lustre clients, collect metadata.
-.RE
-
-.B R
-.RS
-For lustre client, collect readahead stats
-.RE
-.RE
-
-.RE
 .B -P, --plot
 .RS
 Generate output in plot format.  This format is space separated data which 
@@ -612,19 +567,6 @@ elements written to one or
 more files, one per detail subsystem.  
 If -f is not specified, all output is sent to the terminal.  
 Output is always one line per sampling interval.
-.RE
-
-.B --procfilt filters
-.RS
-These filters restrict which processes are selected for collection/display
-and replaces -Z which is now deprecated.  See
-collectl -x for more details.
-.RE
-
-.B --procopts options
-.RS
-These options control the way data is displayed and also replaces -OP, --procio
-and --procmem.  See collectl -x for more details.
 .RE
 
 .B "-s, --subsys subsystem"
@@ -648,29 +590,32 @@ The default is 'cdn', which stands for CPU, Disk and Network data.
 
 SUMMARY SUBSYSTEMS
 
-.B "c - CPU"
-
-.B "d - Disk"
-
-.B "f - NFS V3 Data"
-
-.B "i - Inode and File System"
-
-.B "j - Interrupts"
-
-.B "l - Lustre"
-
-.B "m - Memory"
-
-.B "n - Networks"
-
-.B "s - Sockets"
-
-.B "t - TCP"
-
-.B "x - Interconnect"
-
-.B "y - Slabs (system object caches)"
+.br
+b - buddy info (memory fragmentation)
+.br
+c - CPU
+.br
+d - Disk
+.br
+f - NFS V3 Data
+.br
+i - Inode and File System
+.br
+j - Interrupts
+.br
+l - Lustre
+.br
+m - Memory
+.br
+n - Networks
+.br
+s - Sockets
+.br
+t - TCP
+.br
+x - Interconnect
+.br
+y - Slabs (system object caches)
 
 DETAIL SUBSYSTEMS
 
@@ -690,29 +635,28 @@ individual disk totals will be reported but no totals.  Choosing
 .B -sdD
 will get you both.
 
-.B "C - CPU"
-
-.B "D - Disk"
-
-.B "E - Environmental data (fan, power, temp)"
-
-.B "F - NFS Data"
-
-.B "J - Interrupts"
-
-.B "L - Lustre OST detail OR client Filesystem detail"
-
-.B "LL - Lustre client OST detail.  LL overrides L"
-
-.B "N - Networks"
-
-.B "T - 65 TCP counters only available in plot format"
-
-.B "X - Interconnect"
-
-.B "Y - Slabs (system object caches)"
-
-.B "Z - Processes"
+.br
+C - CPU
+.br
+D - Disk
+.br
+E - Environmental data (fan, power, temp)
+.br
+F - NFS Data
+.br
+J - Interrupts
+.br
+L - Lustre OST detail OR client Filesystem detail
+.br
+N - Networks
+.br
+T - 65 TCP counters only available in plot format
+.br
+X - Interconnect
+.br
+Y - Slabs (system object caches)
+.br
+Z - Processes
 .RE
 
 .B --showheader
@@ -765,20 +709,6 @@ Similar to --showoptions, this command summaries just the paramaters associated 
 Yet another way to summare a portion of the help text, this command only shows valid subsystems.
 .RE
 
-.B --slabfilt filters
-.RS
-This replaces -Y which is now deprecated.  One can specify a list of slab names separated
-by commas and only those slabs whose names start with those strings will be listed or 
-summaried.
-.RE
-
-.B --slabopt options
-.RS
-This replaces -Os and -OS which are deprecated.  If an option of s is chosen, any slabs with an
-allocation of 0 will be excluded from the detail display.  If S is chosen only those slabs whose
-allocations changed between samples will be displayed.
-.RE
-
 .B "--top [type][,num]"
 .RS
 Include the top "num" consumers by resource for this interval.  The default number is the height
@@ -824,6 +754,115 @@ mode.  When displaying data on the terminal, some data is formatted followed
 by a K, M or G as appropriate.  Selecting this switch will cause the 
 full field to be displayed.  Note that there is no attempt 
 to align data with the column headings in this mode.
+.RE
+
+.SH SUBSYSTEM OPTIONS
+
+The following options are subsystem specific and typically filter data for collection
+and/or display as well as affect the output format:
+
+.B "--envopts Environmental Options"
+.RS
+The default is to display ALL data but the following will cause a subset to be displayed
+
+.br
+c - display current (power) data
+.br
+f - display fan data
+.br
+t - display temperature data
+.br
+M - display each type of data on separate line
+.RE
+
+.B "--lustopts Lustre Options"
+
+.RS
+.br
+D - For lustre MDSs and OSTs, collect disk block iostats
+.br
+M - For lustre clients, collect metadata
+.br
+R - For lustre client, collect readahead stats
+.RE
+
+.B "--nfsfilt NFS Filters"
+.RS
+Specify one or more comma separated filters as a C/S followed by an nfs 
+version number and only those will have data reported on.  For example, 
+C2 says to report data on V2 Clients.  As a data collection performance
+optimization, if one or more client filters are specified, data will 
+actually be collected for all clients as is also done for servers.
+.RE
+
+.B "--nfsopts NFS Options"
+
+.RS
+z - only display detail lines which have data
+.RE
+
+.B "--procfilt Process Filters"
+.RS
+These filters restrict which processes are selected for collection/display
+and replaces -Z which is now deprecated.  The format of a filter is a one
+charter type followed by a match string.  Multiple filters may be specified
+if separated by commas.
+
+.br
+c - substring of the command being executed
+.br
+C - any command that starts with the specified string
+.br
+f - full path of the command, including arguments
+.br
+p - pid
+.br
+P - parent pid
+.br
+u - any process ownerd by this user's UID
+.br
+U - any process owned by this username
+.RE
+
+.B --procopts options
+.RS
+These options control the way data is displayed and can also improved data
+collection  performance
+
+.br
+c - include CPU time of children who have exited (same as ps -S)
+.br
+f - use cumulative totals for page faults in process data instead of rates
+.br
+i - show process I/O counters in display instead of default format
+.br
+m - show breakdown of memory utilization instead of default format
+.br
+p - never look for new pids or threads during data collection
+.br
+r - show root command name only (no directory) for narrower display
+.br
+t - include ALL process threads (increases collection overhead)
+.br
+w - widen display by including whole argument string, with optional max width
+.br
+z - exclude any processes with 0 in sort field (in --top mode)
+.RE
+
+.RE
+
+.B "--slabfilt Slab Filters"
+.RS
+One can specify a list of slab names separated by commas and only those 
+slabs whose names start with those strings will be listed or summaried.
+.RE
+
+.B "--slabopts Slab Options"
+.RS
+.B "s - exclude any slabs with an allocation of 0"
+.RE
+.RS
+.B "S - only show those slabs whose allocations changed since last display"
 .RE
 
 .SH DESCRIPTION

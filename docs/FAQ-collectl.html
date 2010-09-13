@@ -40,12 +40,12 @@
   <li><a href="#ops10">What does the error <i>-sj or -sJ with -P also requires CPU details so add C or remove J.</i> mean?</a></li>
   <li><a href="#ops11">Why can't I see Process I/O statistics?</a></li>
   <li><a href="#ops12">I'm getting an error that <i>formatit.ph</i> can't be found</a></li>
-  <li><a href="#ops13">When I use an interval >4 seconds I'm getting non-uniform sample times</li>
-  <li><a href="#ops14">I'm getting <i>settimer</i> messages on the console and in dmesg</li>
-  <li><a href="#ops15">Why is a set of process data missing during playback?</li>
-  <li><a href="#ops16">I played back all summary data with -P but got a cpu detail file.  Why?</li>
-  <li><a href="#ops17">What does this message mean: <i>-sj or -sJ with -P also requires CPU details so adding -sC</i></li>
-  <li><a href="#ops18">Why are some process usernames being reported as numbers?</li>
+  <li><a href="#ops13">When I use an interval >4 seconds I'm getting non-uniform sample times</a></li>
+  <li><a href="#ops14">I'm getting <i>settimer</i> messages on the console and in dmesg</a></li>
+  <li><a href="#ops15">Why is a set of process data missing during playback?</a></li>
+  <li><a href="#ops16">I played back all summary data with -P but got a cpu detail file.  Why?</a></li>
+  <li><a href="#ops17">What does this message mean: <i>-sj or -sJ with -P also requires CPU details so adding -sC</i></a></li>
+  <li><a href="#ops18">Why are some process usernames being reported as numbers?</a></li>
 </ul>
 
 <h1>General Questions</h1>
@@ -462,7 +462,8 @@ the file there is no username to associated with it and so collectl
 will report the UID instead.  This can happen when using NIS in which case username information is stored
 remotely OR if playing back a file on a different host than where the raw data was collected.  To get around this
 problem, copy (or create) the passwd file with the correct relationships to the local system and point 
-collectl to it with <i>--passwd</i>.
+collectl to it with <i>--passwd</i> OR change the <i>Passwd</i> entry in collectl.conf to point to that file if
+you get tired of using <i>--passwd</i>.
 
 </body>
 </html>

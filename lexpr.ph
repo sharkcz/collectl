@@ -85,9 +85,20 @@ sub lexpr
   my $nfsString='';
   if ($lexopts=~/f/)
   {
-    $nfsString.=sprintf("nfsinfo.read %d\n",  $nfsRead/$intSecs);
-    $nfsString.=sprintf("nfsinfo.write %d\n", $nfsWrite/$intSecs);
-    $nfsString.=sprintf("nfsinfo.calls %d\n", $rpcCalls/$intSecs);
+    if ($nfsSFlag)
+    {
+      $nfsString.=sprintf("nfsinfo.Sread %d\n",  $nfsSReadsTot/$intSecs);
+      $nfsString.=sprintf("nfsinfo.Swrite %d\n", $nfsSWritesTot/$intSecs);
+      $nfsString.=sprintf("nfsinfo.Smeta %d\n",  $nfsSMetaTot/$intSecs);
+      $nfsString.=sprintf("nfsinfo.Scommit %d\n",$nfsSCommitTot/$intSecs);
+    }
+    if ($nfsCFlag)
+    {
+      $nfsString.=sprintf("nfsinfo.Cread %d\n",  $nfsCReadsTot/$intSecs);
+      $nfsString.=sprintf("nfsinfo.Cwrite %d\n", $nfsCWritesTot/$intSecs);
+      $nfsString.=sprintf("nfsinfo.Cmeta %d\n",  $nfsCMetaTot/$intSecs);
+      $nfsString.=sprintf("nfsinfo.Ccommit %d\n",$nfsCCommitTot/$intSecs);
+    }
   }
 
   my $inodeString='';
@@ -144,6 +155,12 @@ sub lexpr
     $memString.="meminfo.map $memMap\n";
     $memString.="swapinfo.total $swapTotal\n";
     $memString.="swapinfo.used $swapUsed\n";
+    $memString.="swapinfo.in $swapin/$intSecs\n";
+    $memString.="swapinfo.out $swapout/$intSecs\n";
+    $memString.="pageinfo.fault $pagefault/$intSecs\n";
+    $memString.="pageinfo.mayfault $pagemajfault/$intSecs\n";
+    $memString.="pageinfo.in $pagein/$intSecs\n";
+    $memString.="pageinfo.out $pageout/$intSecs\n";
   }
 
   my ($netSumString,$netDetString)=('','');

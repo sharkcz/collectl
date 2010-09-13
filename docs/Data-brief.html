@@ -11,6 +11,26 @@ This format does NOT include data for any individual devices such as cpu, disk,
 network, nfs, lustre, process, slabs or tcp.  If you do select any one of them
 collectl will force --verbose format.
 
+<h3>Buddy (Memory Fragmentation) Data, <i>collectl -sB</i></h3>
+<p>
+This data does not appear on systems running 2.4 kernels and is an 11 character
+field, one character for each column of summary data.  The smaller the value
+the more accuracy as follows:
+<ul>
+<li>0-9 are represented by the digits 0 through 9</li>
+<li>10-99 by the letters a through i</li>
+<li>100-999 by the letters j through r</li>
+<li>>1000 by powers of 10, using s through z</li>
+</ul>
+
+Remember, the whole purpose of monitoring fragments in brief mode is to identify trends,
+particularly when there are a small number of them.
+
+<div class=terminal><pre>
+#<---Memory-->
+#   Fragments
+  smkj9576040
+</pre></div>
 <h3>CPU Data, <i>collectl -sc</i></h3>
 
 <div class=terminal>
@@ -247,17 +267,26 @@ if <i>--iosize</i> specified</td></tr>
 
 <p><h3>NFS</b>, <i>collectl -sf</i></h3>
 
+As of version 3.2.1 collectl now collects all types of nfs data, both clients and servers as well 
+as versions 2, 3 and 4. In brief format it therefore reports summaried data across all nfs types
+as shown below.  If <i>--nfsfilt</i> was included in the command to limit the types of data 
+reported, those values will be included in the header line as a reminder as shown in the second 
+form to the right, in which case only V3 server and V4 client data are being summarized.
+
 <div class=terminal>
 <pre>
-#<--NFS Svr Summary-->
-#  read  write  calls
+#<------NFS Totals------>            #<------NFS [s3,c4]----->
+# Reads Writes Meta Comm             # Reads Writes Meta Comm
 </pre>
 </div>
 
 <table>
-<tr><td><b>read</b></td><td>Total nfs reads/sec.</td></tr>
-<tr><td><b>write</b></td><td>Total nfs writes/sec.</td></tr>
-<tr><td><b>calls</b></td><td>Total nfs calls/sec.</td></tr>
+<tr><td><b>Reads</b></td><td>Total nfs reads/sec.</td></tr>
+<tr><td><b>Writes</b></td><td>Total nfs writes/sec.</td></tr>
+<tr valign=top><td><b>Meta</b></td><td>Total nfs meta data calls/sec, where meta data is considered to be
+any of: <i>lookup, access, getattr, setattr, readdir</i> and <i>readdirplus</i>, noting that
+not all types of nfs version report all as V3 clients/servers do.</td></tr>
+<tr><td><b>Comm</b></td><td>Total nfs commits/sec.</td></tr>
 </table>
 
 <p><h3>Slabs, <i>collectl -sy</i></h3>

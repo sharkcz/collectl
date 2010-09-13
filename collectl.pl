@@ -12,7 +12,7 @@
 #    8 - print lustre specific checks
 #   16 - print headers of each file processed
 #   32 - skip call to dataAnalyze during interactive processing
-#   64 - print raw data as processed in playback mode, with timestamps
+#   64 - socket processing
 #  128 - show collectl.conf processing
 #  256 - show detailed pid processing (this generates a LOT of output)
 #  512 - show more pid details, specificall hash contents
@@ -20,8 +20,8 @@
 #               and ### if from formatit.ph
 # 1024 - show list of SLABS to be monitored
 # 2048 - playback preprocessing analysis
-# 4096 - display config header (to be turned into a switch in newer version)
-# 8192 - show creation of RAW, PLOT and SEXPR files
+# 4096 - print raw data as processed in playback mode, with timestamps
+# 8192 - show creation of RAW, PLOT and EXPORT files
 
 # debug tricks
 # - use '-d36' to see each line of raw data as it would be logged but not 
@@ -64,6 +64,16 @@ use Time::Local;
 use IO::Socket;
 use IO::Select;
 
+$Passwd=       '/etc/passwd';
+$Cat=          '/bin/cat';
+$Grep=         '/bin/grep';
+$Egrep=        '/bin/egrep';
+$Ps=           '/bin/ps';
+$Rpm=          '/bin/rpm';
+$Ethtool=      '/sbin/ethtool';
+$Lspci=        '/sbin/lspci';
+$Lctl=         '/usr/sbin/lctl';
+
 # Constants and removing -w warnings
 $miniDateFlag=0;
 $kernel2_4=$kernel2_6=$PageSize=0;
@@ -72,19 +82,24 @@ $PerlVers=$Memory=$Swap=$Hyper=$Distro='';
 $CpuVendor=$CpuMHz=$CpuCores=$CpuSiblings='';
 $PQuery=$PCounter=$VStat=$VoltaireStats=$IBVersion=$HCALids=$OfedInfo='';
 $numBrwBuckets=$cfsVersion=$sfsVersion='';
+$Resize='';
 
 # Find out ASAP if we're linux or WNT based as well as whether or not XC based
 $PcFlag=($Config{"osname"}=~/MSWin32/) ? 1 : 0;
 $XCFlag=(!$PcFlag && -e '/etc/hptc-release') ? 1 : 0;
 
-if ($Config{'version'} lt '5.8.0')
+# Save architecture name as well as perl version, noting we want the perl version
+# reformatted to handle 2 digit mainor/patch numbers
+$SrcArch= $Config{"archname"};
+@perlVers=split(/\./, $Config{"version"});
+$PerlVers=sprintf("%d.%02d.%02d", $perlVers[0], $perlVers[1], $perlVers[2]);
+if ($PerlVers lt '5.08.00')
 {
   print "As of version 2.0, collectl requires perl version 5.8 or greater.\n";
   print "See /opt/hp/collectl/docs/FAQ-collectl.html for details.\n";
-#  exit;
 }
 
-$Version=  '2.5.1';
+$Version=  '2.6.2';
 $Copyright='Copyright 2003-2008 Hewlett-Packard Development Company, L.P.';
 $License=  "collectl may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
@@ -182,7 +197,7 @@ $LimIOS=       10;
 $LimLusKBS=   100;
 $LimLusReints=1000;
 $LimBool=       0;
-$Port=       1234;
+$Port=       2655;
 $Timeout=      10;
 $MaxZlibErrors=20;
 $LustreSvcLunMax=10;
@@ -192,16 +207,6 @@ $InterConnectInt=900;
 $HeaderRepeat=20;
 $DefNetSpeed=10000;
 $IbDupCheckFlag=1;
-
-$Passwd=       '/etc/passwd';
-$Cat=          '/bin/cat';
-$Grep=         '/bin/grep';
-$Egrep=        '/bin/egrep';
-$Ps=           '/bin/ps';
-$Rpm=          '/bin/rpm';
-$Ethtool=      '/sbin/ethtool';
-$Lspci=        '/sbin/lspci';
-$Lctl=         '/usr/sbin/lctl';
 
 # Standard locations
 $SysIB='/sys/class/infiniband';
@@ -239,9 +244,17 @@ $limLusKBS=$LimLusKBS;
 $limLusReints=$LimLusReints;
 $headerRepeat=$HeaderRepeat;
 
+# On LINUX and only if associated with a terminal and we can find 'resize', 
+# use the value of LINES to set header repeat.
+if (!$PcFlag && !$daemonFlag && $Resize ne '' && defined($ENV{TERM}) && $ENV{TERM}=~/xterm/)
+{
+  `$Resize`=~/LINES=(\d+)/m;
+  $headerRepeat=$1-2;  # least room for header
+}
+
 # let's also see if there is a terminal attached.  this is currently only 
-# an issue for -M1, but we may need to know some day for other reasons too.
-# but PCs can only run on a terminal...
+# an issue for 'brief mode', but we may need to know some day for other
+# reasons too.  but PCs can only run on a terminal...
 $termFlag=(open TMP, "</dev/tty") ? 1 : 0;
 $termFlag=0    if $daemonFlag;
 $termFlag=1    if $PcFlag;
@@ -249,14 +262,16 @@ close TMP;
 
 $count=-1;
 $numTop=0;
+$briefFlag=1;
 $showPHeaderFlag=$showMergedFlag=$showHeaderFlag=$showSlabAliasesFlag=$showRootSlabsFlag=0;
 $verboseFlag=$procmemFlag=$vmstatFlag=$alignFlag=0;
 $quietFlag=$utcFlag=$procioFlag=0;
 $address=$beginTime=$endTime=$filename=$flush='';
 $limits=$lustreSvcs=$procopts=$runTime=$subOpts=$playback=$playbackFile=$rollLog='';
-$groupFlag=$msgFlag=$niceFlag=$plotFlag=$sshFlag=$wideFlag=$rawFlag=$sexprFlag=0;
-$userOptions=$userInterval=$userSubsys=$slabopts=$custom=$sexprType=$sexprDir='';
-$rawtooFlag=$autoFlush=0;
+$groupFlag=$msgFlag=$niceFlag=$plotFlag=$sshFlag=$wideFlag=$rawFlag=0;
+$userOptions=$userInterval=$userSubsys=$slabopts='';
+$export=$expName=$expDir=$expOpts='';
+$rawtooFlag=$autoFlush=$allFlag=0;
 
 # Since --top has an optional argument, we need to see if it was specified without
 # one and stick in the default
@@ -334,8 +349,11 @@ GetOptions('align!'     => \$alignFlag,
 	   'procopts=s' => \$procopts,
 
            # New since V2.0.0
-           'custom=s'      => \$custom,
+           'all!'          => \$allFlag,
+           'export=s'      => \$export,
+           'expdir=s'      => \$expDir,
 	   'headerrepeat=i'=> \$headerRepeat,
+           'hr=i'          => \$headerRepeat,
            'procmem!'      => \$procmemFlag,
            'verbose!'      => \$verboseFlag,
            'vmstat!'       => \$vmstatFlag,
@@ -347,40 +365,64 @@ GetOptions('align!'     => \$alignFlag,
 	   'showslabaliases!' =>\$showSlabAliasesFlag,
 	   'showrootslabs!'   =>\$showRootSlabsFlag,
            'rawtoo!'       => \$rawtooFlag,
-           'sexpr=s'       => \$sexprType,
            'procio!'       => \$procioFlag,
            ) or error("type -h for help");
 
 #    O p e n    A    S o c k e t  ?
 
 # It's real important we do this as soon as possible because if someone runs
-# us in this mode, like 'colmux', and an error occurs the caller would still
-# be hanging around waiting for someone to connect to that socket!  This way
-# we connect, report the error and exit and the caller is able to detect it.
+# us in 'client' mode, and an error occurs the server would still be hanging
+# around waiting for someone to connect to that socket!  This way we connect,
+# report the error and exit and the caller is able to detect it.
 
-$addrFlag=0;
+$sockFlag=$clientFlag=$serverFlag=$connectedFlag=0;
 if ($address ne '')
 {
-  ($address,$port)=split(/:/, $address);
-  $port=$Port    if !defined($port);
+  $sockFlag=1;
+  if ($address=~/\./)
+  {
+    ($address,$port)=split(/:/, $address);
+    $port=$Port    if !defined($port);
 
-  $socket=new IO::Socket::INET(
-      PeerAddr => $address, 
-      PeerPort => $port, 
-      Proto    => 'tcp', 
-      Timeout  => $Timeout);
-  error("Could not create socket to $address:$port")
-      if !defined($socket);
-  print "Socket opened on $address:$port\n"    if $debug & 1;
-  $addrFlag=1;
+    $socket=new IO::Socket::INET(
+        PeerAddr => $address, 
+        PeerPort => $port, 
+        Proto    => 'tcp', 
+        Timeout  => $Timeout) or
+              error("Could not create socket to $address:$port")
+        if !defined($socket);
+    print "Socket opened on $address:$port\n"    if $debug & 64;
+    $clientFlag=$connectedFlag=1;   # clients are ALWAYS connected
+  }
+  elsif ($address=~/^server/i)
+  {
+    ($port, $port, $options)=split(/:/, $address, 3);
+    $port=$Port    if !defined($port);
+
+    # Note this socket uses a different variable because when we get
+    # a connection we use the SAME one to talk to client as we do in
+    # client mode.
+    $sockServer = new IO::Socket::INET(
+	Type=>SOCK_STREAM,
+        Reuse=>1, Listen => 1,
+        LocalPort => $port) ||
+             error("Could not create local socket on port $port");
+    print "Server socket opened on port $port\n"    if $debug & 64;
+    $select=new IO::Select($sockServer);
+    $serverFlag=1;
+  }
+  else
+  {
+    logmsg('F', 'Invalid -A option');
+  }
 }
 
-# We used to trap these before we opened the socket, but then we couldn't
+# If we used to trap these before we opened the socket, but then we couldn't
 # send the message back to the called cleanly!
-if ($addrFlag)
+if ($sockFlag)
 {
-  error("-p not allowed with -A")       if $playback ne '';
-  error("-D not allowed with -A")       if $daemonFlag;
+  error("-p not allowed with -A")           if $playback ne '';
+  error("-D not allowed with -A address")   if $daemonFlag && !$serverFlag;
 }
 
 # Since the output could be intended for a socket (called from colgui/colmux),
@@ -396,51 +438,38 @@ showSlabAliases($slabopts)  if $showSlabAliasesFlag || $showRootSlabsFlag;
 
 #    H a n d l e    V 2 . 0    R e m a p p i n g s    F i r s t
 
-if ($verboseFlag+$vmstatFlag+$procmemFlag+$procioFlag || $custom ne '')
+if ($vmstatFlag)
 {
-  $temp="--verbose, --vmstat, --procmem, --procio or --custom";
+  error("can't mix --vmstat with --export")    if $vmstatFlag && $export ne '';
+  error("can't mix --vmstat with --all")       if $vmstatFlag && $allFlag;
+  $export='vmstat';
+}
+
+if ($verboseFlag+$procmemFlag+$procioFlag)
+{
+  error("can't mix --export with any of --verbose, --procmem or procio")
+        if $export ne '' && ($verboseFlag+$procmemFlag+$procioFlag);
+
+  my $temp="--verbose, --procmem, --procio";
   error("can't use -P with $temp")    if $plotFlag;
   error("can't use -f with $temp")    if $filename ne '';
-  error("can't mix --custom with any of --verbose, --vmstat, --procmem or procio")
-      if $custom ne '' && ($verboseFlag+$vmstatFlag+$procmemFlag+$procioFlag);
 
-  # either custom or standard.  need to set verbose flag so we skip brief processing
-  # in printTerm()
+  # need to set verbose flag so we skip brief processing in printTerm()
   $verboseFlag=1;
-  if ($custom ne '')
-  {
-    # note - if subsys invalid, it will get caught later
-    ($miniName, $temp)=split(/:/, $custom);
-    $miniName.=".ph"    if $miniName!~/\./;
-
-    # this is getting very elaborate but I hate misleading error messages
-    $tempName=$miniName;
-    $miniName="$BinDir\$miniName"    if !-e $miniName;
-    if (!-e "$miniName")
-    {
-      $temp="can't find custom file '$tempName' in ./";
-      $temp.=" OR $BinDir/"    if $BinDir ne '.';
-      error($temp)             if !-e "$miniName";
-    }
-    require $miniName;
-
-    # the basename is the name of the function and also remove extension.
-    $miniName=basename($miniName);
-    $miniName=(split(/\./, $miniName))[0];
-  }
-  elsif ($vmstatFlag)
-  {
-    # When forcing a value for $subsys we also need to make it look like
-    # that's what the user specified.
-    error("no subsystems can be specified for --vmstat")    if $userSubsys ne '';
-    $subsys=$userSubsys="cm";
-  }
-  elsif ($procmemFlag || $procioFlag)
+  if ($procmemFlag || $procioFlag)
   {
     # Force -s to be Z
     error("-s not allowed with --procmem or --procio")      if $userSubsys ne '';
     $subsys=$userSubsys="Z";
   }
+}
+
+# --all is shortcut for all summary data except slabs
+if ($allFlag)
+{
+  error("can't mix -s with -all")    if $userSubsys ne '';
+  $userSubsys="$SubsysCore$SubsysExcore";
+  $userSubsys=~s/y//;
 }
 
 # As part of the conversion to getopt::long, we need to know the actual switch
@@ -455,42 +484,9 @@ $showHeaderFlag=1    if $debug & 4096;
 error("--showheader in collection mode only supported on linux")
     if $PcFlag && $playback eq '';
 
-#    S i m p l e    S w i t c h    C h e c k s
+#    S u b s y s  /  I n t e r v a l    R e s o l u t i o n
 
-$utcFlag=1    if $options=~/U/;
-
-# should I migrate a lot of other simple tests here?
-error("you can only specify -s with --top with -p")        if $numTop ne 0 && $userSubsys ne '' && $playback eq '';
-error("you cannot specify -f with --top")                  if $numTop ne 0 && $filename ne '';
-
-# NOTE - we can't do any $subsys tests here because we have not yet processed $userSubsys
-error("--sexpr does not work in playback mode")            if $sexprType ne '' && $playback ne '';
-error("--sexpr types are 'raw' and 'rate'")                if $sexprType ne '' && $sexprType!~/raw|rate/;
-error("--rawtoo does not work in playback mode")           if $rawtooFlag && $playback ne '';
-error("--rawtoo requires -f")                              if $rawtooFlag && $filename eq '';
-error("--rawtoo requires -P or --sexpr")                   if $rawtooFlag && !$plotFlag && $sexprType eq '';
-error("--rawtoo and -P requires -f")                       if $rawtooFlag && $plotFlag && $filename eq '';
-error("--rawtoo cannot be used with -p")                   if $rawtooFlag && $playback ne '';
-error("-ou/--utc only apply to -P format")                 if $utcFlag && !$plotFlag;
-error("can't mix -ou with other formats")                  if $utcFlag && $options=~/[dDT]/;
-error("-oz only applies to -P files")                      if $options=~/z/ && !$plotFlag;
-error("--sep cannot be a '%'")                             if defined($SEP) && $SEP eq '%';
-error("--sep only applied to plot format")                 if defined($SEP) && !$plotFlag;
-error("--sep much be 1 character or a number")             if defined($SEP) && length($SEP)>1 && $SEP!~/^\d+$/;
-
-error('--showheader not allowed with -f')                  if $filename ne '' && $showHeaderFlag;
-error('--showmergedheader not allowed with -f')            if $filename ne '' && $showMergedFlag;
-error('--showplotheader not allowed with -f')              if $filename ne '' && $showPHeaderFlag;
-
-error("--align require HiRes time module")                 if $alignFlag && !$hiResFlag;
-
-#    H a n d l e    D e f a u l t s
-
-# The separator is either a space if not defined or the character supplied if non-numeric.  If it
-# is numeric assume decimal and convert to the associated char code (eg 9=tab).
-$SEP=' '                    if !defined($SEP);
-$SEP=sprintf("%c", $SEP)    if $SEP=~/\d+/;
-
+# This needs to get done as soon a possible...
 # Set default interval and subsystems for interactive mode unless already
 # set, noting the default values above are for daemon mode.  To be consistent,
 # we also need to reset $Interval and $SubsysDef noting if one sets a
@@ -521,9 +517,32 @@ if ($numTop)
   if ($playback eq '')
   {
     $options.='t';
-    $subsys='Z';
+    $subsys=($userSubsys eq '') ? 'Z' : "${userSubsys}Z";
     $interval.=":$interval"    if $interval!~/:/;
   }
+}
+
+# This is tricky as the main logic for checking intervals lives further
+# down the code and says it needs to be there!  So, let's do a very 
+# minimal/temporary thing here, noting '$interval' is always defined but
+# not yet validated so it can still contain a ':'.  '$interval2' not
+# yet defined so we either use default or what's in '$interval'.
+if ($briefFlag)
+{
+  $temp1=$interval;
+  $temp2=$Interval2;    # default
+  if ($interval=~/:/)
+  {
+    @temp=split(/:/, $interval);
+    $temp1=($temp[0] eq '') ? $Interval : $temp[0];
+    $temp2=$temp[1]    if $temp[1] ne '';
+  }
+
+  # if more than one subsys and one of them is 'y', they MUST have same
+  # interval.
+
+  error("main and secondary intervals must match when -sy included OR use --verbose")
+      if length($subsys)>1 && $subsys=~/y/ && $temp1!=$temp2;
 }
 
 # subsystems  - must preceed +
@@ -554,35 +573,88 @@ if ($subsys=~/[+-]/)
   }
   $subsys=$temp;
 }
-
-# under some circumstances we need to set verbose mode, which may have
-# been cleared by setOutputFormat() as noted below, noting we end up calling
-# setOutputFormat() twice since some local switches come from command line
-# switches but in playback mode others come from file header.
 setOutputFormat();
-$verboseFlag=1    if $filename ne '' || $daemonFlag;
-$briefFlag=$verboseFlag ? 0 : 1;
-if ($briefFlag)
-{
-  # This is tricky as the main logic for checking intervals lives further
-  # down the code and says it needs to be there!  So, let's do a very 
-  # minimal/temporary thing here, noting '$interval' is always defined but
-  # not yet validated so it can still contain a ':'.  '$interval2' not
-  # yet defined so we either use default or what's in '$interval'.
-  $temp1=$interval;
-  $temp2=$Interval2;    # default
-  if ($interval=~/:/)
-  {
-    @temp=split(/:/, $interval);
-    $temp1=($temp[0] eq '') ? $Interval : $temp[0];
-    $temp2=$temp[1]    if $temp[1] ne '';
-  }
 
-  # if more than one subsys and one of them is 'y', they MUST have same
-  # interval.
-  error("main and secondary intervals must match when -sy included OR use --verbose")
-      if length($subsys)>1 && $subsys=~/y/ && $temp1!=$temp2;
+#    E x p o r t    M o d u l e s
+
+# since we might want to diddle with things like $subsys or fake out other
+# switches, we need to load/initialize things early.  We may also need a
+# call to a pre-execution init module later...
+
+if ($export ne '')
+{
+  error("--expdir requires --export")    if $expDir ne '' && $export eq '';
+  error("$expDir doesn't exist")         if $expDir ne '' && !-e $expDir;
+  error("--expdir conflicts with -A")    if $expDir ne '' && $address ne '';
+  error("--expdir and -f requires -P or --rawtoo")   
+      if $expDir ne '' && $filename ne '' && !$plotFlag && !$rawtooFlag;
+
+  # By design, if you specify --export and -f and have a socket open, the exported
+  # date goes over the socket and we write either a raw or plot file to the dir
+  # pointed to by -f.  If not -P, we always write a raw file
+  $rawtooFlag=1    if $sockFlag && $filename ne '' && !$plotFlag;
+
+  $verboseFlag=1;
+  ($expName, @expOpts)=split(/,/, $export);
+  $expName.=".ph"    if $expName!~/\./;
+
+  # --expdir names output directory only if specified
+  $expDir=(-d $filename) ? $filename : dirname($filename)
+	if $filename ne '' && $expDir eq '';
+
+  # If the export file itself doesn't exist in current directory, try $BinDir
+  my $tempName=$expName;
+  $expName="$BinDir/$expName"    if !-e $expName;
+  if (!-e "$expName")
+  {
+    my $temp="can't find export file '$tempName' in ./";
+    $temp.=" OR $BinDir/"    if $BinDir ne '.';
+    error($temp)             if !-e "$expName";
+  }
+  require $expName;
+
+  # the basename is the name of the function and also remove extension.
+  $expName=basename($expName);
+  $expName=(split(/\./, $expName))[0];
+
+  # Call REQUIRED initialization routine
+  my $initName="${expName}Init";
+  &$initName(@expOpts);
 }
+
+#    S i m p l e    S w i t c h    C h e c k s
+
+$utcFlag=1    if $options=~/U/;
+
+# should I migrate a lot of other simple tests here?
+error("you cannot specify -f with --top")                  if $numTop ne 0 && $filename ne '';
+
+error('--headerrepeat must be an integer')                 if $headerRepeat!~/^[\-]?\d+$/;
+error('--headerrepeat must be >= -1')                      if $headerRepeat<-1;
+
+error("--rawtoo does not work in playback mode")           if $rawtooFlag && $playback ne '';
+error("--rawtoo requires -f")                              if $rawtooFlag && $filename eq '';
+error("--rawtoo requires -P or --export")                  if $rawtooFlag && !$plotFlag && $export eq '';
+error("--rawtoo and -P requires -f")                       if $rawtooFlag && $plotFlag && $filename eq '';
+error("--rawtoo cannot be used with -p")                   if $rawtooFlag && $playback ne '';
+error("-ou/--utc only apply to -P format")                 if $utcFlag && !$plotFlag;
+error("can't mix -ou with other formats")                  if $utcFlag && $options=~/[dDT]/;
+error("-oz only applies to -P files")                      if $options=~/z/ && !$plotFlag;
+error("--sep cannot be a '%'")                             if defined($SEP) && $SEP eq '%';
+error("--sep only applies to plot format")                 if defined($SEP) && !$plotFlag;
+error("--sep much be 1 character or a number")             if defined($SEP) && length($SEP)>1 && $SEP!~/^\d+$/;
+
+error('--showheader not allowed with -f')                  if $filename ne '' && $showHeaderFlag;
+error('--showmergedheader not allowed with -f')            if $filename ne '' && $showMergedFlag;
+error('--showplotheader not allowed with -f')              if $filename ne '' && $showPHeaderFlag;
+
+error("--align require HiRes time module")                 if $alignFlag && !$hiResFlag;
+
+# The separator is either a space if not defined or the character supplied if 
+# non-numeric.  If it is numeric assume decimal and convert to the associated 
+# char code (eg 9=tab).
+$SEP=' '                    if !defined($SEP);
+$SEP=sprintf("%c", $SEP)    if $SEP=~/\d+/;
 
 #    L i n u x    S p e c i f i c
 
@@ -624,17 +696,16 @@ if (!$PcFlag)
 # We always want to flush terminal buffer in case we're using pipes.
 $|=1;
 
-# Save architecture name as well as perl version.
-$SrcArch= $Config{"archname"};
-$PerlVers=$Config{"version"};
-
-# If the user explicitly uses --rawtoo, we write to the raw file.
-# If the user specified -f but not in plot or sexpr format, we also write to raw
-# Finally, set a flag to indicate we're writing to rolling logs (unless just --sexpr)
+# We need to know where we're logging to so set a couple of flags
+$logToFileFlag=0;
 $rawFlag=$rawtooFlag;
-$rawFlag=1    if $filename ne '' && !$plotFlag && $sexprType eq '';
-$logToFileFlag=($filename ne '') ? 1 : 0;
-print "RawFlag: $rawFlag PlotFlag: $plotFlag  SexprType: $sexprType\n"    if $debug & 1;
+if ($filename ne '')
+{
+  $rawFlag=1          if !$plotFlag && $export eq '';
+  $logToFileFlag=1    if $rawFlag || $plotFlag;
+}
+printf "RawFlag: %d PlotFlag: %d Log2Flag: %d Export: %s\n", 
+    $rawFlag, $plotFlag, $logToFileFlag, $export    if $debug & 1;
 
 error("-G requires data collection to a file") 
     if $groupFlag && ($playback ne '' || $filename eq '');
@@ -704,7 +775,7 @@ if ($daemonFlag)
 {
   error("no debugging allowed with -D")      if $debug;
   error("-D can only be used by root")       if `whoami`!~/root/i;
-  error("-D requires -f")                    if $filename eq "";
+  error("-D requires -f OR -A server")       if $filename eq '' && !$serverFlag;
   error("-p not allowed with -D")            if $playback ne "";
 
   if (-e $PidFile)
@@ -751,7 +822,7 @@ if ($limits ne '')
 }
 
 # options
-error("invalid option")    if $options ne "" && $options!~/^[\^12aAcdDFGghHimnpPsStTuxXz]+$/g;
+error("invalid option")    if $options ne "" && $options!~/^[\^12aAcdDFGgHimnpPsStTuxXz]+$/g;
 error("-oi only supported interactively with -P to terminal")    
     if $options=~/i/ && ($playback ne '' || !$plotFlag || $filename ne '');
 $miniDateFlag=($options=~/d/i) ? 1 : 0;
@@ -761,9 +832,7 @@ error("use only 1 of -o dDT")
 error("-ot only applies to terminal output")
                              if $options=~/t/ && $filename ne "";
 error("-ot cannot be used with -A")
-                             if $options=~/t/ && $addrFlag;
-error("-o h/H conflicts with -f")
-                             if $options=~/h/i && $filename ne "";
+                             if $options=~/t/ && $sockFlag;
 error("option $1 only apply to -P")
                              if !$plotFlag && $options=~/([12ac])/;
 error("-oa conflicts with -oc") 
@@ -771,7 +840,6 @@ error("-oa conflicts with -oc")
 error("-oa conflicts with -ou") 
                              if $options=~/a/ && $options=~/u/;
 
-# Some -oh specifics
 if (!$hiResFlag && $options=~/m/)
 {
   print "need to install HiRes to report fractional time with -om, so ignoring\n";
@@ -967,6 +1035,7 @@ if ($sshFlag)
   error("-S doesn't apply to playback mode")    if $playback ne '';
   $stat=`cat /proc/$$/stat`;
   $myPpid=(split(/\s+/, $stat))[3];
+  logmsg('I', "Started by PID: $myPpid");
 }
 
 ###############################
@@ -1250,7 +1319,7 @@ if ($playback ne '')
         printMini1Counters('T');
       }
       $elapsedSecs=0;
-      resetMini1Counters();
+      resetBriefCounters();
     }
 
     # if a begin time, we start out in skip mode.
@@ -1314,6 +1383,7 @@ if ($playback ne '')
       # Skip redundant disk data in pre-1.3.0 raw file
       next    if $IgnoreDiskData && $line=~/^disk/;
       print $line    if $debug & 4;
+
       dataAnalyze($subsys, $line)  if !$newInterval;
 
       $newInterval=$firstTime=0;
@@ -1371,29 +1441,6 @@ if ($playback ne '')
 # Would be nice someday to migrate all record-specific checks here
 error("-T only applies to playback mode")    if defined($timeOffset);
 
-# This is really a compound switch
-if ($sexprType ne '')
-{
-  # If writing sexpr to a directory, we can override location.  If not writing
-  # to a directory '$sexprDir' needs to be ''.
-  ($sexprType, $sexprDir)=split(/,/, $sexprType);
-  if ($filename eq '')
-  {
-    error("use of a directory with --sexpr requires -f")    if defined($sexprDir);
-    $sexprDir='';
-  }
-  $sexprFlag=($sexprType eq 'raw') ? 1 : 2;
-
-  # If user in fact specified -f, figure out where to write 'S' file
-  if ($filename ne '')
-  {
-    $sexprDir=(-d $filename) ? $filename : dirname($filename)
-      if !defined($sexprDir);
-    error("the directory '$sexprDir' specified with --sexpr cannot be found")
-      if !-d $sexprDir;
-  }
-}
-
 # need to load even if interval is 0, but don't allow for -p mode
 error("threads only currently supported in 2.6 kernels")
     if $procopts=~/\+/ && !$kernel2_6;
@@ -1431,11 +1478,6 @@ checkSubOpts();
 
 #    L a s t    M i n u t e    V a l i d a t i o n
 
-# These don't exactly have to be last minute, but they do need to be done after
-# $userSubsys has been processed and $subsys generated...
-error("--sexpr does not support -sJ")                      if $sexprType ne '' && $subsys=~/J/;
-error("--sexpr with -sj also requires -sC")                if $sexprType ne '' && $subsys=~/j/ && $subsys!~/C/;
-
 # These can only be done after initRecord()
 error("-sL only applies to MDS services when used with -OD")
     if $subsys=~/L/ && $NumMds && $subOpts!~/D/;
@@ -1461,18 +1503,18 @@ if ($options=~/x/i)
 # last minute tests will need a home and this may prove to be it.
 
 # The purpose of this is that in verbose mode when a single type of data is being displayed
-# we'll have set $options to 'h' which means to only display headers periodically.  Now that
-# we know more about the lusre configuration we may have to clear that setting.
+# we'll have set $sameColsFlag, but now that we know more about the lusre configuration 
+# we may have to clear that setting.
 if ($subsys=~/l/i && $verboseFlag)
 {
-  $options=~s/h//    if $CltFlag+$OstFlag+$MdsFlag>1;
+  $sameColsFlag=0    if $CltFlag+$OstFlag+$MdsFlag>1;
 }
 
 # demonize if necessary
 if ($daemonFlag)
 {
   # We need to make sure no terminal I/O
-  open STDIN,  '/dev/null'     or logmsg("F", "Can't read /dev/null: $!");
+  open STDIN,  '/dev/null'   or logmsg("F", "Can't read /dev/null: $!");
   open STDOUT, '>/dev/null'  or logmsg("F", "Can't write to /dev/null: $!");
   open STDERR, '>/dev/null'  or logmsg("F", "Can't write to /dev/null: $!");
 
@@ -1658,6 +1700,57 @@ if ($options=~/i/)
 $doneFlag=0;
 for (; $count!=0 && !$doneFlag; $count--)
 {
+  # When in server mode we always need to check for readable socket
+  # since this is the way we can tell is it went away
+  if ($serverFlag)
+  {
+    print "Looking for connection...\n"    if $debug & 64;
+    # The assumption here is only one client can connect because our
+    # send logic assumes only one 
+    if ($newHandle=($select->can_read(0))[0])
+    {
+      print "Socket 'can read'\n"    if $debug & 64;
+      if ($newHandle==$sockServer)
+      {
+        $socket=$sockServer->accept() || logmsg('F', "Couldn't accept socket request");
+	$select->add($socket);
+	$connectedFlag=1;
+        my $client=inet_ntoa((sockaddr_in(getpeername($socket)))[1]);
+	logmsg('I', "New socket connection from $client");
+
+        # By close listening socket we don't have to worry about any stray
+        # connection attempts.
+	$select->remove($sockServer);
+	$sockServer->close();
+      }
+      else
+      {
+        my $message=<$socket>;
+        if (!defined($message))
+        {
+          logmsg('W', "Client closed socket");
+          $select->remove($socket);
+          $socket->close();
+          $connectedFlag=0;
+
+	  # Now that the client closed down, we can reopen the listener
+          $sockServer = new IO::Socket::INET(
+	      Type=>SOCK_STREAM,
+              Reuse=>1, Listen => 1,
+              LocalPort => $port) ||
+                   error("Could not create local socket on port $port");
+          print "Server socket re-opened on port $port\n"    if $debug & 64;
+	  $select=new IO::Select($sockServer);
+        }
+        else
+        {
+  	  print "Received: $message"    if $debug & 64;
+	  last   if $message=~/exit/i;
+        }
+      }
+    }
+  }
+
   # Use the same value for seconds for the entire cycle
   if ($hiResFlag)
   {
@@ -1861,8 +1954,9 @@ for (; $count!=0 && !$doneFlag; $count--)
     }
     else
     {
-      # In 2.6 kernels things are very different
-      getProc(0, "/proc/meminfo", "", undef, undef, '^Vmalloc');
+      # In 2.6 kernels just grab all of /proc/meminfo let's not even
+      # bother upgrading for 2.4
+      getProc(0, "/proc/meminfo", "");
       getProc(0, "/proc/vmstat",  "", 6, 4);
     }
   }
@@ -2088,7 +2182,7 @@ for (; $count!=0 && !$doneFlag; $count--)
 
   # if printing to terminal OR generating data in plot format (or both)
   # we need to wait until the end of the interval so complete data is in hand
-  if (!$logToFileFlag || $plotFlag || $sexprFlag)
+  if (!$logToFileFlag || $plotFlag || $export ne '')
   {
     $fullTime=sprintf("%d.%06d", $intSeconds, $intUsecs);
     intervalEnd(sprintf("%.3f", $fullTime))
@@ -2105,7 +2199,7 @@ for (; $count!=0 && !$doneFlag; $count--)
   # case we lose our wakeup signal, only sleep as long as requested noting
   # we SHOULD get woken up before this timer expires since we already used
   # up part of our interval with data collection
-  flushBuffers()                       if !$autoFlush && $flushTime && time>=$flushTime;
+  flushBuffers()    if !$autoFlush && $flushTime && time>=$flushTime;
   if ($interval!=0)
   {
     sleep $interval                    if !$hiResFlag;
@@ -2969,8 +3063,8 @@ sub record
   # When doing interative reporting OR generating plot data, we need to 
   # analyze each record as it goes by.  This means that in the case of '-P --rawtoo'
   # we write to the raw file AND generate the numbers.  Also remember that in the 
-  # case of --sexpr we may not end up writing anywhere other than the 'sexpr' itself
-  dataAnalyze($subsys, $data)   if $type==2 && (!$logToFileFlag || $plotFlag || $sexprFlag);
+  # case of --export we may not end up writing anywhere other than the exported file
+  dataAnalyze($subsys, $data)   if $type==2 && (!$logToFileFlag || $plotFlag || $export ne '');
 }
 
 sub newLog
@@ -3127,10 +3221,10 @@ sub newLog
 
   if ($rawFlag)
   {
-    # When using --rawtoo, the default filename only has a datestamp (unless -ou also
-    # specified and so we need to change it back!)
+    # In some cases, such as when using --rawtoo (and other situations as well),
+    # the default filename may only have a datestamp put time back in.
     my $rawFilename=$filename;
-    $rawFilename=~s/$dateonly/$datetime/    if $rawtooFlag && $options!~/u/;
+    $rawFilename=~s/$dateonly$/$datetime/;
     print "Create raw rile:   $rawFilename\n"    if $debug & 8192;
 
     # Unlike plot files, we ALWAYS compress when compression lib exists
@@ -3277,9 +3371,10 @@ sub newLog
       if (defined(fileno(OST)))   { select OST;  $|=1; }
       if (defined(fileno(NET)))   { select NET;  $|=1; }
       if (defined(fileno(NFS)))   { select NFS;  $|=1; }
-      if (defined(fileno(PRC)))  { select PRC;  $|=1; }
+      if (defined(fileno(PRC)))   { select PRC;  $|=1; }
       if (defined(fileno(SLB)))   { select SLB;  $|=1; }
       if (defined(fileno(TCP)))   { select TCP;  $|=1; }
+      select STDOUT; $|=1;
     }
   }
 
@@ -3426,47 +3521,37 @@ sub plotFileExists
 # it applies.
 sub setOutputFormat
 {
-  # By default, we want to be in brief mode, but there are several cases in 
-  # which we need to change the format to verbose, including --verbose 
-  # writing to a file or in daemon mode, all of which are handled above.  
-  $tempVerbose=0;
-  $tempVerbose=1       if ($verboseFlag) ||
-                           $subsys!~/^[$BriefSubsys]+$/ || 
-			   $subOpts=~/[BDM]/ || $plotFlag || $daemonFlag;
+  # By default, brief has been initialized to 1 and verbose to 0 but in these
+  # cases we switch to verbose automatically
+  $verboseFlag=1    if $subsys!~/^[$BriefSubsys]+$/ || $subOpts=~/[BDM]/;
 
-  # If doing a single subsystem to the terminal in verbose mode, use -oh
-  # we need the check for -oh because this gets called twice.  When subsys
-  # is '', that means --intstat must have been specified
-  $options.='h'    if $filename eq ''  && $tempVerbose && $options!~/h/ && 
-                      ($userOptions eq '' || $userOptions!~/h/) && 
-		      (length($subsys)==1 || $subsys=~/^[Cj]+$/);
+  # except as where noted below, columns in verbose mode are assumed different
+  $sameColsFlag=($verboseFlag) ? 0 : 1;
 
-  # just to keep it simple, when doing slabs or processes in verbose mode we DO want to print
-  # headers for each interval and rather than complicate the logic above, do it separately.
-  $options=~s/h//  if $verboseFlag && $subsys=~/[YZ]/;
+  # Now let's deal with a few special cases where we're in verbose but the cols 
+  # are the same after all, such as a single subsystem or '-sCj'
+  $sameColsFlag=1    if $verboseFlag && (length($subsys)==1 || $subsys=~/^[Cj]+$/);
 
   # As usual, lustre complicates things since we can get multiple lines of
   # output.  Therefore we need to see how many lustre options there actually
-  # are and remove -oh if more than 1.
+  # are and clear the flag if more than 1.
   my $numOpts=0;
   for (my $i=0; $subsys=~/l/i && $i<7; $i++)
   {
     my $char=substr('comBDMR', $i, 1);
     $numOpts++    if $subOpts=~/$char/;
   }
-  $options=~s/h//    if $numOpts>1;
+  $sameColsFlag=0    if $numOpts>1;
 
-   # time doesn't print in verbose display (unless of course -oh set too)
-   # Another exception is --vmstats and I may find others over time too
-  if (!$vmstatFlag && $tempVerbose && (!defined($options) || $options!~/h/))
+  # time doesn't print when not all columns the same AND not something that
+  # was exported since they's on their own for formatting
+  if (!$sameColsFlag && $export eq '')
   {
     $miniDateFlag=$miniTimeFlag=0;
     $miniDateTime=$miniFiller='';
   }
-
-  # These 2 are always complementary
-  $verboseFlag=$tempVerbose;
-  $briefFlag=($tempVerbose) ? 0 : 1;
+  $briefFlag=($verboseFlag) ? 0 : 1;
+  print "SET OUTPUT -- Verbose: $verboseFlag   SameCols: $sameColsFlag\n"    if $debug & 1;
 }
 
 # Control C Processing
@@ -3527,6 +3612,8 @@ sub sigPipe
 
 sub flushBuffers
 {
+  return    if !$logToFileFlag;
+
   # Remember, when $rawFlag set we flush everything including process/slab data.  But if
   # just $rawtooFlag set we those 2 other files aren't open and so we don't flush them.
   $flushTime=time+$flush     if $flushTime;
@@ -3789,7 +3876,7 @@ sub closeLogs
   else  # These must be opened in order to close them
   {
     $temp="$SubsysCore$SubsysExcore";
-    $ZLOG-> gzclose()     if $plotFlag && $subsys=~/$temp/;
+    $ZLOG-> gzclose()     if $plotFlag && $subsys=~/[$temp]+/;
     $ZBLK-> gzclose()     if ($LFlag || $LLFlag) && $plotFlag && $subOpts=~/D/;
     $ZCLT-> gzclose()     if ($LFlag || $LLFlag) && $plotFlag && CltFlag;
     $ZCPU-> gzclose()     if $CFlag && $plotFlag;
@@ -3809,6 +3896,7 @@ sub closeLogs
 
 sub loadConfig
 {
+  my $resizePath='';
   my ($line, $num, $param, $value, $switches, $file, $openedFlag, $lib);
 
   # If no specified config file, look in /etc and then BinDir and then MyDir
@@ -3933,6 +4021,7 @@ sub loadConfig
       $Ethtool=$value          if $param=~/^Ethtool/;
       $Lspci=$value            if $param=~/^Lspci/;
       $Lctl=$value             if $param=~/^Lctl/;
+      $resizePath=$value       if $param=~/^Resize/;
 
       # For Infiniband
       $PCounter=$value         if $param=~/^PCounter/;
@@ -3962,6 +4051,13 @@ sub loadConfig
     }
   }
   close CONFIG;
+
+  foreach my $bin (split/:/, $resizePath)
+  {
+    $Resize=$bin    if -e $bin;
+  }
+  logmsg('I', "Couldn't find 'resize' so assuming terminal height of 24")
+      if $Resize eq '';
 }
 
 sub loadSlabs
@@ -4549,8 +4645,8 @@ sub showSlabAliases
 sub showVersion
 {
   $temp='';
-  $temp.="zlib,"     if $zlibFlag;
-  $temp.="HiRes"     if $hiResFlag;
+  $temp.=sprintf("zlib:%s,", Compress::Zlib->VERSION)     if $zlibFlag;
+  $temp.=sprintf("HiRes:%s", Time::HiRes->VERSION)        if $hiResFlag;
   $temp=~s/,$//;
   $version=sprintf("collectl V$Version %s\n\n", $temp ne '' ? "($temp)" : '');
   $version.="$Copyright\n";
@@ -4584,8 +4680,13 @@ sub showDefaults
 sub error
 {
   my $text=shift;
+
   if (defined($text))
   {
+    # when runing as a server, we need to turn off sockFlag otherwise
+    # printText() will try to send error over socket and we want it local.
+    $sockFlag=0    if $serverFlag;
+
     printText("Error: $text\n");
     printText("type '$Program -h' for help\n");
     logmsg("F", "Error: $text")    if $daemonFlag;
@@ -4597,18 +4698,23 @@ These are a subset of the basic switches and even the descripions are abbreviate
 To see all type 'collectl --helpext'.  To get started just type 'collectl'
 
 usage: collectl [switches]
+      --all                   report summary data for ALL subsystems except slabs
   -c, --count      count      collect this number of samples and exit
   -f, --filename   file       name of directory/file to write to
   -i, --interval   int        collection interval in seconds [default=10]
   -o, --options    options    list of miscellaneous options to control output format
+                              see --showoptions for full list
                                 d|D - include date in output
                                   T - include time in output
+                                  z - turn off compression of plot files
   -O, --subopts    subopts    list of sub-options that get applied to subsystems
+                              see --showsubopts for full list
                                 NFS = [23C], Lustre = [BDMR], Processes = [P]
   -p, --playback   file       playback results from 'file'
   -P, --plot                  generate output in 'plot' format
   -s, --subsys     subsys     record/playback data from one or more subsystems
                                 values = [cdfilmnstxyCDEFLLNTXYZ] defaults = [$SubsysCore]
+                                also see --all above
   --verbose                   display output in verbose format (this mode can get automatically
                               selected in some cases where brief doesn't make sense)
 
@@ -4642,15 +4748,18 @@ These switches are for more advanced usage
   -b, --begin      time         in playback mode, don't start at this date/time
                                 time actually in '[date-]time' format
   -C, --config     file         use alternate collectl.conf file
-      --custom     ph-file      this file-root (no .ph) will in included in the collectl source and
-                                override the normal output pring routine
+      --custdir    directory    optional directory to write custom output to
+      --custom     file[,dir]   name output routine to be called and an optional directory
+                                for writing to.  can be used with -P, -f, --rawtoo and
+                                sockets if output done via printText() routine
   -d, --debug      debug        see source for details or try -d 1 to get started
   -D, --daemon                  run as a daemon
   -e, --end        time         in playback mode, don't process after this date/time
   -F, --flush      seconds      number of seconds between output buffer flushes
   -G, --group                   write process and slab data to separate, rawp file
   -h, --help                    print basic help
-      --headerrepeat num        repeat headers every 'num' lines of output
+      --hr,--headerrepeat num   repeat headers every 'num' lines of output, only once if 0
+                                  or never if -1
   -i, --interval   int[:pi:ei]] collection interval in seconds [default=10]
                                   pi is process interval [default=60]
                                   ei is environmental interval [defailt=300]
@@ -4670,6 +4779,7 @@ my $eof2a=<<EOF2a;
                                 [default days=7, minutes=1440 (once a day)]
   -R, --runtime    duration     time to run in <num><units> format where unit is w,d,h,m,s
       --sep        separator    specify an alternate plot format separator
+      --ssh                     started by ssh so disconnect if caller exits
 EOF2a
 printText($eof2a);
 showSubsys(1);
@@ -4677,6 +4787,7 @@ my $eof2b=<<EOF2b;
   -T, --timezone   hours        number of hours by which to offset times during playback
                                 or blank to print times in the timezone where recorded
   --top             [num]       show top 'num' consumers of cpu each interval (DEF: 10)
+                                  NOTE - you can mix with -s too!
   -w, --wide                    print wide field contents (don't use K/M/G)
   -Y, --slabopts   slabs        restricts which slabs are listed, where 'slab's is of the
                                 form: 'slab[,slab...].  if 'slab' is a filename (you CAN mix them), 
@@ -4709,7 +4820,8 @@ These are Alternate Display Formats
 
 Logging options
   --rawtoo                    used with -P, write raw data to a log as well
-  --sexpr {raw|rate}[,dir]    write data to an s-expression too (see man collectl-logging)
+  --export name[,options]     write data to an exported socket/file
+  --expdir                    option directory to write file (if any) to
 
 Various types of help
   -h, --help                  print this text
@@ -4782,9 +4894,7 @@ sub showOptions
                                   m - when reporting times, include milli-secs
 
                                 terminal output headers
-			              NOTE: change header repeat with --headerrepeat
-                                  h - do NOT print multiple headers to terminal in verbose mode
-                                  H - do NOT print any headers to terminal
+			          see --headerrepeat
                                   i - include file header in output
                                   t - start at top of page before printing interval headers
                                    

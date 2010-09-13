@@ -177,9 +177,10 @@ As you have seen, there is a wealth of data here and often you may not even know
 you want to look for.  When such is the case, just collect as much as you can and save
 it in a file.  Then you can play it back later and display it in multiple formats.
 <p>
-I just want to close with a real example which helps demonstrate the power of a tool
-like collectl which can show multple types of data at once because I know a lot of 
-people still may not be convinced.  Consider the following sample with was collected while
+I just want to close with an example of a problem with readaheads and Lustre 1.4
+which demonstrates the power of a tool
+like collectl that can show multiple types of data at once because I know a lot of 
+people may still not be convinced.  Consider the following sample which was collected while
 doing random 32KB reads of a large file.  See anything wrong?  Do you know why the
 network bandwidth is so much higher than the lustre client read rate?  How long would it
 have taken to even realize there is a problem?
@@ -195,13 +196,12 @@ $ collectl -snl -oT
 08:14:22   33777  22905    891   12191     58    232      0       0     35     23
 </pre></div>
 
-It turns out the problem is that Lustre is doing readahead and every 32KB read results in
-1MB being read over the network, loaded in to cache and then being discarded!  
-If you simply set the
-value of <i>max_read_ahead_mb</i> to 0 for the associated filesystem on <i>each</i>
-client involved, you see 2 things - the network rate drops to track the client read
-rate and the <i>misses</i> go to zero, presumably since we're no long doing readahead
-and lustre sees no need to track this.
+It turned out the old algorithm triggered a readahead after 2 consecutive pages were read
+and every 32KB read (which is 8 pages)
+resulted in 1MB being read over the network, loaded in to cache and was then discarded!  
+If the value of <i>max_read_ahead_mb</i> is set to 0 for the associated filesystem on
+<i>each</i> client involved, you see 2 things - the network rate drops to track the 
+client read rate and the <i>misses</i> goes to zero.
 
 <div class=terminal-wide14><pre>
 $ collectl -snl -oT
@@ -219,6 +219,10 @@ all readahead for </i>all readers<i> meaning any applications that do sequential
 reads could have significant performance problems.  In other words, this is <i>not</i> a
 recommendation to turn off readahead but rather to be aware of what it does and if you do
 choose to turn it off to be aware of the consequences</i>
+<p>
+<i><b>Note: This readahead algorithm has changed with V1.6 and lustre no longer triggers readahead
+on the third page read but rather on the third sequential read.</b></i>
+
 
 </body>
 </html>

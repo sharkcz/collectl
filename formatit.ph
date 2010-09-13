@@ -11,9 +11,6 @@ sub initRecord
   print "initRecord()\n"    if $debug & 1;
   initDay();
 
-  # we only write the sexpr header file once. 
-  $sexprHeaderWritten=0;
-
   # In some case, we need to know if we're root.
   $rootFlag=`whoami`;
   $rootFlag=($rootFlag=~/root/) ? 1 : 0;
@@ -30,10 +27,10 @@ sub initRecord
   $Distro=cat('/etc/SuSE-release')      if -e '/etc/SuSE-release';
   chomp $Distro;
 
-  # For -s p calculations, we need the HZ of the system
+  # For -sD calculations, we need the HZ of the system
   # Note the hack for perl 5.6 which doesn't support PAGESIZE
   $HZ=POSIX::sysconf(&POSIX::_SC_CLK_TCK);
-  if ($PerlVers!~/5\.6/)
+  if ($PerlVers!~/5\.06/)
   {
     $PageSize=POSIX::sysconf(_SC_PAGESIZE);
   }
@@ -191,7 +188,8 @@ sub initRecord
 
     if ($myrinetFlag+$quadricsFlag+$mellanoxFlag==0)
     {
-      logmsg("W", "-sx disabled because no interconnect hardware/drivers found");
+      # expectation with --all is you get everthing and this message shouldn't apply
+      logmsg("W", "-sx disabled because no interconnect hardware/drivers found")    if !$allFlag;
       $xFlag=$XFlag=0;
       $subsys=~s/x//ig;
     }
@@ -417,7 +415,7 @@ sub initRecord
      if (`ls /lib/modules/*/kernel/net/lustre 2>/dev/null|wc -l`==0)     
     {
       logmsg("W", "-sl data collection disabled because this system ".
-	          "does not have lustre modules installed");
+	          "does not have lustre modules installed")    if !$allFlag;
       $lFlag=$LFlag=$LLFlag=0;
       $subsys=~s/l//ig;
     }
@@ -587,6 +585,8 @@ sub initFormat
   my $playfile=shift;
   my ($day, $mon, $year, $i, $recsys, $host);
   my ($version, $datestamp, $timestamp, $interval);
+
+  $headersPrinted=0;
 
   $temp=(defined($playfile)) ? $playfile : '';
   print "initFormat($temp)\n"    if $debug & 1;
@@ -1340,6 +1340,7 @@ sub initLustre
       $lustreCltRANotCon[$i]=$lustreCltRAMisWin[$i]=$lustreCltRALckFail[$i]=0;
       $lustreCltRAReadDisc[$i]=$lustreCltRAZeroLen[$i]=$lustreCltRAZeroWin[$i]=0;
       $lustreCltRA2EofMax[$i]=$lustreCltRAHitMax[$i]=0;
+      $lustreCltRAFalGrab[$i]=$lustreCltRAWrong[$i]=0;
 
       $lustreCltDirtyHitsLast[$i]=$lustreCltDirtyMissLast[$i]=0;
       $lustreCltReadLast[$i]=$lustreCltReadKBLast[$i]=0;
@@ -1351,6 +1352,7 @@ sub initLustre
       $lustreCltRANotConLast[$i]=$lustreCltRAMisWinLast[$i]=$lustreCltRALckFailLast[$i]=0;
       $lustreCltRAReadDiscLast[$i]=$lustreCltRAZeroLenLast[$i]=$lustreCltRAZeroWinLast[$i]=0;
       $lustreCltRA2EofLast[$i]=$lustreCltRAHitMaxLast[$i]=0;
+      $lustreCltRAFalGrabLast[$i]=$lustreCltRAWrongLast[$i]=0;
     }
   }
   elsif ($type eq 'c2')
@@ -1448,9 +1450,11 @@ sub initInterval
   $lustreCltOpenTot=$lustreCltCloseTot=$lustreCltSeekTot=$lustreCltFsyncTot=0;
   $lustreCltSetattrTot=$lustreCltGetattrTot=0;
   $lustreCltRAPendingTot=$lustreCltRAHitsTot=$lustreCltRAMissesTot=0;
-  $lustreCltRANotConTot=$lustreCltRAMisWinTot=$lustreCltRALckFailTot=0;
+  $lustreCltRANotConTot=$lustreCltRAMisWinTot=0;
   $lustreCltRAReadDiscTot=$lustreCltRAZeroLenTot=$lustreCltRAZeroWinTot=0;
-  $lustreCltRA2EofTot=$lustreCltRAHitMaxTot=0;
+  $lustreCltRA2EofTot=$lustreCltRAHitMaxTot=$lustreCltRAFalGrabTot=0;
+  $lustreCltRALckFailTot=$lustreCltRAWrongTot=0;
+  
   for ($i=0; $i<$numBrwBuckets; $i++)
   {
     $lustreCltRpcReadTot[$i]=$lustreCltRpcWriteTot[$i]=0;
@@ -1880,7 +1884,7 @@ sub dataAnalyze
       $ops=$1;
       $lustreCltRANotCon[$fs]=fix($ops-$lustreCltRANotConLast[$fs]);
       $lustreCltRANotConLast[$fs]=$ops;
-      $lustreCltRANotCOnTot+=$lustreCltRANotCon[$fs];
+      $lustreCltRANotConTot+=$lustreCltRANotCon[$fs];
     }
     elsif ($data=~/^miss inside.* (\d+)/)
     {
@@ -1888,6 +1892,13 @@ sub dataAnalyze
       $lustreCltRAMisWin[$fs]=fix($ops-$lustreCltRAMisWinLast[$fs]);
       $lustreCltRAMisWinLast[$fs]=$ops;
       $lustreCltRAMisWinTot+=$lustreCltRAMisWin[$fs];
+    }
+    elsif ($data=~/^failed grab.* (\d+)/)
+    {
+      $ops=$1;
+      $lustreCltRAFalGrab[$fs]=fix($ops-$lustreCltRAFalGrabLast[$fs]);
+      $lustreCltRAFalGrabLast[$fs]=$ops;
+      $lustreCltRAFalGrabTot+=$lustreCltRAFalGrab[$fs];
     }
     elsif ($data=~/^failed lock.* (\d+)/)
     {
@@ -1930,6 +1941,13 @@ sub dataAnalyze
       $lustreCltRAHitMax[$fs]=fix($ops-$lustreCltRAHitMaxLast[$fs]);
       $lustreCltRAHitMaxLast[$fs]=$ops;
       $lustreCltRAHitMaxTot+=$lustreCltRAHitMax[$fs];
+    }
+    elsif ($data=~/^wrong.* (\d+)/)
+    {
+      $ops=$1;
+      $lustreCltRAWrong[$fs]=fix($ops-$lustreCltRAWrongLast[$fs]);
+      $lustreCltRAWrong[$fs]=$ops;
+      $lustreCltRAWrongTot+=$lustreCltRAWrong[$fs];
     }
   }
   elsif ($type=~/LLITE_RPC:(\d+):(\d+)/)
@@ -2766,12 +2784,12 @@ sub dataAnalyze
   elsif ($subsys=~/x/i && $type=~/^ib(\d+)/)
   {
     $i=$1;
-    ($port, @fieldsNow)=(split(/\s+/, $data))[0,4..19];
+    my ($port, @fieldsNow)=(split(/\s+/, $data))[0,4..19];
 
     # Only 1 of the two ports are actually active at any one time
     if ($HCAPorts[$i][$port])
     {
-      # Remember which port is active for sexpr.
+      # Remember which port is active.
       $HCAPortActive=$port;
 
       # Calculate values for each field based on 'last' values.
@@ -2964,8 +2982,8 @@ sub dataAnalyze
       ($procName[$i], $procState[$i], $procPpid[$i], 
        $procMinFltTot[$i], $procMajFltTot[$i], 
        $procUTimeTot[$i], $procSTimeTot[$i], 
-       $procCUTimeTot[$i], $procCSTimeTot[$i], $procPri[$i], $procNice[$i])=
-		(split(/ /, $data))[2,3,4,10,12,14,15,16,17,18,19];
+       $procCUTimeTot[$i], $procCSTimeTot[$i], $procPri[$i], $procNice[$i], $procCPU[$i])=
+		(split(/ /, $data))[2,3,4,10,12,14,15,16,17,18,19,39];
       return    if !defined($procSTimeTot[$i]);  # check for incomplete
 
       $procName[$i]=~s/[()]//g;  # proc names are wrapped in ()s
@@ -3039,7 +3057,6 @@ sub dataAnalyze
 sub printHeaders
 {
   my $i;
-  return    if $options=~/H/;
 
   ##############################
   #    Core Plot Format Headers
@@ -3061,7 +3078,7 @@ sub printHeaders
   {
     $headers.="[MEM]Tot${SEP}[MEM]Used${SEP}[MEM]Free${SEP}[MEM]Shared${SEP}[MEM]Buf${SEP}[MEM]Cached${SEP}";
     $headers.="[MEM]Slab${SEP}[MEM]Map${SEP}[MEM]Commit${SEP}";    # always from V1.7.5 forward
-    $headers.="[MEM]SwapTot${SEP}[MEM]SwapUsed${SEP}[MEM]SwapFree${SEP}";
+    $headers.="[MEM]SwapTot${SEP}[MEM]SwapUsed${SEP}[MEM]SwapFree${SEP}[MEM]SwapIn${SEP}[MEM]SwapOut${SEP}";
     $headers.="[MEM]Dirty${SEP}[MEM]Clean${SEP}[MEM]Laundry${SEP}[MEM]Inactive${SEP}[MEM]PageIn${SEP}[MEM]PageOut${SEP}";
   }
 
@@ -3135,7 +3152,7 @@ sub printHeaders
       $headers.="[CLT]Reads${SEP}[CLT]ReadKB${SEP}[CLT]Writes${SEP}[CLT]WriteKB${SEP}";
       $headers.="[CLTM]Open${SEP}[CLTM]Close${SEP}[CLTM]GAttr${SEP}[CLTM]SAttr${SEP}[CLTM]Seek${SEP}[CLTM]FSync${SEP}[CLTM]DrtHit${SEP}[CLTM]DrtMis${SEP}"
 		    if $subOpts=~/M/;
-      $headers.="[CLTR]Pend${SEP}[CLTR]Hits${SEP}[CLTR]Misses${SEP}[CLTR]NotCon${SEP}[CLTR]MisWin${SEP}[CLTR]LckFal${SEP}[CLTR]Discrd${SEP}[CLTR]ZFile${SEP}[CLTR]ZerWin${SEP}[CLTR]RA2Eof${SEP}[CLTR]HitMax${SEP}"
+      $headers.="[CLTR]Pend${SEP}[CLTR]Hits${SEP}[CLTR]Misses${SEP}[CLTR]NotCon${SEP}[CLTR]MisWin${SEP}[CLTR]FalGrab${SEP}[CLTR]LckFal${SEP}[CLTR]Discrd${SEP}[CLTR]ZFile${SEP}[CLTR]ZerWin${SEP}[CLTR]RA2Eof${SEP}[CLTR]HitMax${SEP}[CLTR]Wrong${SEP}"
 		    if $subOpts=~/R/;
       if ($subOpts=~/B/)
       {
@@ -3331,8 +3348,8 @@ sub printHeaders
         for ($i=0; $subOpts=~/R/ && $i<$NumLustreFS; $i++)
         {
           $inst=$lustreCltFS[$i];
-          $temp.="[CLTR:$inst]Pend${SEP}[CLTR:$inst]Hits${SEP}[CLTR:$inst]Misses${SEP}[CLTR:$inst]NotCon${SEP}[CLTR:$inst]MisWin${SEP}[CLTR:$inst]LckFal${SEP}";
-          $temp.="[CLTR:$inst]Discrd${SEP}[CLTR:$inst]ZFile${SEP}[CLTR:$inst]ZerWin${SEP}[CLTR:$inst]RA2Eof${SEP}[CLTR:$inst]HitMax${SEP}";
+          $temp.="[CLTR:$inst]Pend${SEP}[CLTR:$inst]Hits${SEP}[CLTR:$inst]Misses${SEP}[CLTR:$inst]NotCon${SEP}[CLTR:$inst]MisWin${SEP}[CLTR:$inst]FalGrab${SEP}[CLTR:$inst]LckFal${SEP}";
+          $temp.="[CLTR:$inst]Discrd${SEP}[CLTR:$inst]ZFile${SEP}[CLTR:$inst]ZerWin${SEP}[CLTR:$inst]RA2Eof${SEP}[CLTR:$inst]HitMax${SEP}[CLTR:$inst]WrongMax${SEP}";
 	}
       }
       $cltHeaders.=$temp;
@@ -3398,10 +3415,12 @@ sub printHeaders
   }
 
   # When going to the terminal OR socket we need a final call with no 'data' 
-  # to write.  Also note that there is a final separator that needs to be removed
+  # to write.  Also note that there is a final separator that needs to be removed.
+  # It also turns out if doing --export -P, THAT module is responsible for sending
+  # data over the socket and the plot data ONLY gets written locally.
   $headersAll=~s/$SEP$//;
   writeData(1, '', undef, $LOG, undef, undef, \$headersAll)
-	    if !$logToFileFlag || $addrFlag;
+	    if !$logToFileFlag || ($sockFlag && $export eq '');
 
   #################################
   #    Exception File Headers
@@ -3434,13 +3453,15 @@ sub intervalPrint
     $usecs=substr("${usecs}00", 0, 3);
     $seconds.=".$usecs";
   }
+
+  # This is causing confusion because this ALWAYS gets incremented even if no
+  # output, such as when we only interval2 data
   $totalCounter++;
   derived();    # some variables are derived from others before printing
 
-  printPlot($seconds, $usecs)     if  $plotFlag;
-  printTerm($seconds, $usecs)     if !$plotFlag && !$sexprFlag;
-  printSexprRaw()                 if  $sexprFlag==1;
-  printSexprRate()                if  $sexprFlag==2;
+  printPlot($seconds, $usecs)        if  $plotFlag;
+  printVerbose($seconds, $usecs)     if !$plotFlag && $expName eq '';
+  &$expName($expOpts)                if  $expName ne '';
 }
 
 # anything that needs to be derived should be done only once and this is the place
@@ -3493,9 +3514,8 @@ sub printPlot
     return    if $subsys=~/^[YZ]$/;    # we're done if ONLY printing slabs or processes
   }
 
-  printHeaders()
-        if !$headersPrinted ||
-           ($options!~/h/ && $filename eq '' && ($totalCounter % $headerRepeat)==0);
+  # Print one set of headers if $headerRepeat >= 0
+  printHeaders()    if $headerRepeat>-1 && !$headersPrinted;
 
   #######################
   #    C O R E    D A T A
@@ -3522,8 +3542,8 @@ sub printPlot
       $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
                 $memTot, $memUsed, $memFree, $memShared, $memBuf, $memCached); 
       $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS", $memSlab, $memMap, $memCommit);   # Always from V1.7.5 forward
-      $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
-                $swapTotal, $swapUsed, $swapFree,
+      $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
+                $swapTotal, $swapUsed, $swapFree, $swapin/$intSecs, $swapout/$intSecs,
                 $dirty, $clean, $laundry, $inactive,
                 $pagein/$intSecs, $pageout/$intSecs);
     }
@@ -3634,11 +3654,12 @@ sub printPlot
 	    $lustreCltSeekTot/$intSecs,      $lustreCltFsyncTot/$intSecs,  
             $lustreCltDirtyHitsTot/$intSecs, $lustreCltDirtyMissTot/$intSecs)
 		if $subOpts=~/M/;
-        $plot.=sprintf("$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d",
-            $lustreCltRAPendingTot,  $lustreCltRAHitsTot,    $lustreCltRAMissesTot,
-            $lustreCltRANotConTot,   $lustreCltRAMisWinTot,  $lustreCltRALckFailTot,
-            $lustreCltRAReadDiscTot, $lustreCltRAZeroLenTot, $lustreCltRAZeroWinTot,
-            $lustreCltRA2EofTot,     $lustreCltRAHitMaxTot)
+        $plot.=sprintf("$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d",
+            $lustreCltRAPendingTot,  $lustreCltRAHitsTot,     $lustreCltRAMissesTot, 
+            $lustreCltRANotConTot,   $lustreCltRAMisWinTot,   $lustreCltRAFalGrabTot,
+            $lustreCltRALckFailTot,  $lustreCltRAReadDiscTot, $lustreCltRAZeroLenTot, 
+            $lustreCltRAZeroWinTot,  $lustreCltRA2EofTot,     $lustreCltRAHitMaxTot,
+	    $lustreCltRAWrongTot)
 		if $subOpts=~/R/;
 
         if ($subOpts=~/B/) {
@@ -3873,11 +3894,12 @@ sub printPlot
 	}
         for ($i=0; $subOpts=~/R/ && $i<$NumLustreFS; $i++)
         {
-          $cltPlot.=sprintf("$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d",
-            $lustreCltRAPendingTot,  $lustreCltRAHitsTot,    $lustreCltRAMissesTot,
-            $lustreCltRANotConTot,   $lustreCltRAMisWinTot,  $lustreCltRALckFailTot,
-            $lustreCltRAReadDiscTot, $lustreCltRAZeroLenTot, $lustreCltRAZeroWinTot,
-            $lustreCltRA2EofTot,     $lustreCltRAHitMaxTot);
+          $cltPlot.=sprintf("$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d",
+            $lustreCltRAPendingTot,  $lustreCltRAHitsTot,     $lustreCltRAMissesTot, 
+            $lustreCltRANotConTot,   $lustreCltRAMisWinTot,   $lustreCltRAFalGrabTot,
+            $lustreCltRALckFailTot,  $lustreCltRAReadDiscTot, $lustreCltRAZeroLenTot, 
+            $lustreCltRAZeroWinTot,  $lustreCltRA2EofTot,     $lustreCltRAHitMaxTot,
+	    $lustreCltRAWrongTot);
         }
       }
       writeData(0, $datetime, \$cltPlot, CLT, $ZCLT, 'clt', \$oneline);
@@ -3996,7 +4018,7 @@ sub printPlot
 
   # This write is necessary to write complete record to terminal or socket.
   writeData(1, $datetime, undef, $LOG, undef, undef, \$oneline)
-      if !$logToFileFlag || $addrFlag;
+	if !$logToFileFlag || ($sockFlag && $export eq '');
 }
 
 # First and formost, this is ONLY used to plot data.  It will send it to the terminal,
@@ -4021,11 +4043,14 @@ sub writeData
   {
     # If writing to the terminal or a socket, just concatenate
     # the strings together until the last call.
-    if (!$logToFileFlag || $addrFlag)
+    if (!$logToFileFlag || $sockFlag)
     {
       $$strall.=$$string;
     }
-    elsif ($logToFileFlag)
+
+    # However, we might also be writing to a file as well as a socket
+    # and so need second test like this.
+    if ($logToFileFlag)
     {
       # Since we get called with !$eolFlag with partial lines, we always
       # have a separator at the end of the line, so remove it before write.
@@ -4044,28 +4069,37 @@ sub writeData
   # Final Write!!!
   # Doing these two writes this way will allow writing to the
   # terminal AND a socket if we ever want to.
-  if (!$addrFlag)
+  if (!$sockFlag)
   {
     # final write to terminal
     print "$datetime$$strall\n";
   }
 
-  if ($addrFlag)
+  if ($sockFlag && $connectedFlag)
   {
     # If a data line, preface with timestamp
     $$strall="$datetime$$strall"    if $strall!~/^#/;
 
-    # Now make sure each line begins with hostname and write to socket
-    $$strall=~s/^(.*)$/$Host $1/mg;
-    syswrite($socket, "$$strall\n");
+    # If we're not running a server, make sure each line begins 
+    # with hostname and write to socket
+    $$strall=~s/^(.*)$/$Host $1/mg    if !$serverFlag;
+
+    $$strall.="\n";
+    my $length=length($$strall);
+    for (my $offset=0; $offset<$length;)
+    {
+      my $bytes=syswrite($socket, $$strall, $length, $offset);
+      $offset+=$bytes;
+      $length-=$bytes;
+    }
   }
 }
 
 ###################################
-#    T e r m i n a l    F o r m a t
+#    V e r b o s e     F o r m a t
 ###################################
 
-sub printTerm
+sub printVerbose
 {
   local $seconds=shift;
   local $usecs=  shift;
@@ -4084,23 +4118,17 @@ sub printTerm
   }
 
   #############################
-  #    custom formats
+  #    non-verbose formats
   ############################
 
-  if (!$verboseFlag || $vmstatFlag || $procmemFlag || $procioFlag || $custom ne '')
+  if (!$verboseFlag || $vmstatFlag || $procmemFlag || $procioFlag)
   {
-    if ($custom ne '')
-    {
-      &$miniName;
-      return;
-    }
-
     #    B r i e f
 
     if ($briefFlag)
     {
       # too long to do inline...
-      $line=briefFormatit();
+      $line=printBrief();
     }
 
     ##########################
@@ -4109,7 +4137,7 @@ sub printTerm
 
     if ($vmstatFlag)
     {
-      if ($options!~/H/ && ($totalCounter % $headerRepeat)==1)
+      if (($headerRepeat==0 && !$headersPrinted) || ($headerRepeat>0 && ($totalCounter % $headerRepeat)==1))
       {
         $line= "${cls}#${miniBlanks}procs ---------------memory (KB)--------------- --swaps-- -----io---- --system-- ----cpu-----\n";
         $line.="#$miniDateTime r  b   swpd   free   buff  cache  inact active   si   so    bi    bo   in    cs us sy  id wa\n";
@@ -4136,8 +4164,8 @@ sub printTerm
     {
       # note that the first print interval has a counter of 2 and it's too
       # painful/not worth it to track down...
-      print $cls    if $options=~/t/;
-      if ($options!~/H/ && ($options=~/t/ || ($interval2Counter % $headerRepeat)==2))
+      print $cls    if $subsys eq 'Z' && $options=~/t/;
+      if (($headerRepeat==0 && !$headersPrinted) || ($headerRepeat>0 && (($interval2Counter-2) % $headerRepeat)==0))
       {
         $line="${cls}#${miniBlanks} PID  User     S VmSize  VmLck  VmRSS VmData  VmStk  VmExe  VmLib Command\n";
       }
@@ -4168,10 +4196,9 @@ sub printTerm
     # if we don't include $interval2Print, it'll print even when no data present
     if ($procioFlag && $interval2Print)
     {
-      # note that the first print interval has a counter of 2 and it's too
-      # painful/not worth it to track down...
-      print $cls    if $options=~/t/;
-      if ($options!~/H/ && ($options=~/t/ || ($interval2Counter % $headerRepeat)==2))
+      # note that the first print interval has a counter of 2
+      print $cls    if $subsys eq 'Z' && $options=~/t/;
+      if (($headerRepeat==0 && !$headersPrinted) || ($headerRepeat>0 && (($interval2Counter-2) % $headerRepeat)==0))
       {
         $line="${cls}#${miniBlanks} PID  User     S  SysT  UsrT   RKB   WKB  RKBC  WKBC  RSYS  WSYS  CNCL  Command\n";
       }
@@ -4200,6 +4227,7 @@ sub printTerm
     # This always goes to terminal or socket and is never compressed so we don't need
     # all the options of writeData() [yet].
     printText($line);
+    $headersPrinted=1;
     return;
   }
 
@@ -4207,13 +4235,8 @@ sub printTerm
   #    V e r b o s e
   ############################
 
-  # we want record breaks (with timestamps) when in verbose mode
-  printInterval($seconds, $usecs)    if $options!~/h/;
-
-  # see if we need to clear screen
-  print $cls    if $options=~/t/ &&
-	        ($options!~/h/ || $totalCounter==1 || ($totalCounter % $headerRepeat)==0);
-
+  # we want record breaks (with timestamps) when not all columns are the same
+  printInterval($seconds, $usecs)    if !$sameColsFlag;
   if ($subsys=~/c/)
   {
     $i=$NumCpus;
@@ -4800,18 +4823,19 @@ sub printTerm
 
       if ($subOpts=~/R/)
       {
-        printText("#$miniFiller Reads ReadKB  Writes WriteKB  Pend  Hits Misses NotCon MisWin LckFal  Discrd ZFile ZerWin RA2Eof HitMax\n")
+        printText("#$miniFiller Reads ReadKB  Writes WriteKB  Pend  Hits Misses NotCon MisWin FalGrb LckFal  Discrd ZFile ZerWin RA2Eof HitMax  Wrong\n")
 		if printHeader();
 
-        $line=sprintf("$datetime %6d %6d  %6d  %6d %5d %5d %6d %6d %6d %6d %6d %6d %6d %6d %6d\n",
+        $line=sprintf("$datetime %6d %6d  %6d  %6d %5d %5d %6d %6d %6d %6d %6d %6d %6d %6d %6d %6d %6d\n",
 	    $lustreCltReadTot/$intSecs,       $lustreCltReadKBTot/$intSecs,   
 	    $lustreCltWriteTot/$intSecs,      $lustreCltWriteKBTot/$intSecs,   
             $lustreCltRAPendingTot/$intSecs,  $lustreCltRAHitsTot/$intSecs,
             $lustreCltRAMissesTot/$intSecs,   $lustreCltRANotConTot/$intSecs,
-            $lustreCltRAMisWinTot/$intSecs,   $lustreCltRALckFailTot/$intSecs,
-            $lustreCltRAReadDiscTot/$intSecs, $lustreCltRAZeroLenTot/$intSecs,
-            $lustreCltRAZeroWinTot/$intSecs,  $lustreCltRA2EofTot/$intSecs,
-            $lustreCltRAHitMaxTot/$intSecs);
+            $lustreCltRAMisWinTot/$intSecs,   $lustreCltRAFalGrabTot/$intSecs,
+            $lustreCltRALckFailTot/$intSecs,  $lustreCltRAReadDiscTot/$intSecs, 
+            $lustreCltRAZeroLenTot/$intSecs,  $lustreCltRAZeroWinTot/$intSecs,  
+            $lustreCltRA2EofTot/$intSecs,     $lustreCltRAHitMaxTot/$intSecs,
+            $lustreCltRAWrongTot/$intSecs);
         printText($line);
       }
     }
@@ -4938,21 +4962,19 @@ sub printTerm
 
       if ($subOpts=~/R/)
       {
-        printText("$commonLine  Pend  Hits Misses NotCon MisWin LckFal  Discrd ZFile ZerWin RA2Eof HitMax\n")
+        printText("$commonLine  Pend  Hits Misses NotCon MisWin FalGrb LckFal  Discrd ZFile ZerWin RA2Eof HitMax  Wrong\n")
 		if printHeader();
         {
           for ($i=0; $i<$NumLustreFS; $i++)
           {
-            $line=sprintf("$datetime%-${FSWidth}s %6d %6d  %6d  %6d %5d %5d %6d %6d %6d %6d %6d %6d %6d %6d %6d\n",
+            $line=sprintf("$datetime%-${FSWidth}s %6d %6d  %6d  %6d %5d %5d %6d %6d %6d %6d %6d %6d %6d %6d %6d %6d %6d\n",
 	    $lustreCltFS[$i],
-	    $lustreCltReadTot/$intSecs,       $lustreCltReadKBTot/$intSecs,   
-	    $lustreCltWriteTot/$intSecs,      $lustreCltWriteKBTot/$intSecs,   
-            $lustreCltRAPendingTot/$intSecs,  $lustreCltRAHitsTot/$intSecs,
-            $lustreCltRAMissesTot/$intSecs,   $lustreCltRANotConTot/$intSecs,
-            $lustreCltRAMisWinTot/$intSecs,   $lustreCltRALckFailTot/$intSecs,
-            $lustreCltRAReadDiscTot/$intSecs, $lustreCltRAZeroLenTot/$intSecs,
-            $lustreCltRAZeroWinTot/$intSecs,  $lustreCltRA2EofTot/$intSecs,
-            $lustreCltRAHitMaxTot/$intSecs);
+	    $lustreCltReadTot/$intSecs,       $lustreCltReadKBTot/$intSecs,     $lustreCltWriteTot/$intSecs, 
+            $lustreCltWriteKBTot/$intSecs,    $lustreCltRAPendingTot/$intSecs,  $lustreCltRAHitsTot/$intSecs,
+            $lustreCltRAMissesTot/$intSecs,   $lustreCltRANotConTot/$intSecs,   $lustreCltRAMisWinTot/$intSecs, 
+            $lustreCltRAFalGrabTot/$intSecs,  $lustreCltRALckFailTot/$intSecs,  $lustreCltRAReadDiscTot/$intSecs,
+            $lustreCltRAZeroLenTot/$intSecs,  $lustreCltRAZeroWinTot/$intSecs,  $lustreCltRA2EofTot/$intSecs,
+            $lustreCltRAHitMaxTot/$intSecs,   $lustreCltRAWrongTot/$intSecs);
             printText($line);
           }
         }
@@ -5292,14 +5314,12 @@ sub printTerm
   # we only print if data collected this interval AND not first time.
   if ($subsys=~/Z/ && $interval2Print && $interval2Counter>1)
   {
-    # In --top mode, make sure we get a new header with each interval
-    $totalCounter=1    if $numTop;
     if (printHeader())
     {
       $temp2='';
       if ($numTop)
       {
-        print $cls;
+        print $cls    if $subsys eq 'Z';    # if other subsys, they handle cls
         $temp2= " ".(split(/\s+/,localtime($seconds)))[3];
         $temp2.=sprintf(".%03d", $usecs)    if $options=~/m/;
       }
@@ -5307,7 +5327,7 @@ sub printTerm
       $temp1=($options=~/F/) ? "(faults are cumulative)" : "(faults are $rate)";
       printText("# PROCESS SUMMARY $temp1$temp2\n");
 
-      $tempHdr= "#${miniFiller} PID  User     PR  PPID S   VSZ   RSS  SysT  UsrT Pct  AccuTime ";
+      $tempHdr= "#${miniFiller} PID  User     PR  PPID S   VSZ   RSS CP  SysT  UsrT Pct  AccuTime ";
       $tempHdr.=" RKB  WKB "    if $processIOFlag;
       $tempHdr.="MajF MinF Command\n";
       printText($tempHdr);
@@ -5356,12 +5376,13 @@ sub printTerm
 	$minFlt=$procMinFlt[$i]/$interval2Secs;
       }
 
-      $line=sprintf("$datetime%5d%s %-8s %2s %5d %1s %5s %5s %s %s %s %s ", 
+      $line=sprintf("$datetime%5d%s %-8s %2s %5d %1s %5s %5s %2d %s %s %s %s ", 
 		$procPid[$i],  $procThread[$i] ? '+' : ' ',
 		$procUser[$i], $procPri[$i],
 		$procPpid[$i], $procState[$i], 
 		defined($procVmSize[$i]) ? cvt($procVmSize[$i],4,1) : 0, 
 		defined($procVmRSS[$i])  ? cvt($procVmRSS[$i],4,1)  : 0,
+		$procCPU[$i],
 		cvtT1($procSTime[$i]), cvtT1($procUTime[$i]), 
 		cvtP($procSTime[$i]+$procUTime[$i]),
 		cvtT2($procSTimeTot[$i]+$procUTimeTot[$i]));
@@ -5374,6 +5395,10 @@ sub printTerm
       printText($line);
     }
   }
+
+  # We only want to clear the screen once, the first time through and
+  # then just overpaint.
+  $cls=sprintf("%c[H", 27);
 }
 
 # this routine detects and 'fixes' counters that have wrapped
@@ -5503,620 +5528,6 @@ sub cvtP
   return($percent);
 }
 
-#####################################################
-#    S - E x p r e s s i o n    S u p p o r t
-#####################################################
-
-sub printSexprRaw
-{
-  sexprHeader()    if !$sexprHeaderWritten;
-
-  # 1 extra level of indent (looks prettier) for XC
-  my $pad=$XCFlag ? '  ' : '';
-  my $sumFlag=$subsys=~/[cdfilmnstx]/ ? 1 : 0;
-  my $detFlag=$subsys=~/[CDN]/        ? 1 : 0;
-
-  my $cpuSumString=$cpuDetString='';
-  if ($subsys=~/c/i)
-  {
-    if ($subsys=~/c/)
-    {
-      my ($uTot, $nTot, $sTot, $iTot, $wTot, $irTot, $soTot, $stTot, $intTot)=(0,0,0,0,0,0,0,0);
-      for (my $i=0; $i<$NumCpus; $i++)
-      {
-        $uTot+=  $userLast[$i];
-        $nTot+=  $niceLast[$i];
-        $sTot+=  $sysLast[$i];
-        $iTot+=  $idleLast[$i];
-        $wTot+=  $waitLast[$i];
-        $irTot+= $irqLast[$i];
-        $soTot+= $softLast[$i];
-        $stTot+= $stealLast[$i];
-      }
-      $cpuSumString.="$pad(cputotals (user $uTot) (nice $nTot) (sys $sTot) (idle $iTot) (wait $wTot) ";
-      $cpuSumString.=               "(irq $irTot) (soft $soTot) (steal $stTot))\n";
-      $cpuSumString.="$pad(ctxint (ctx $ctxtLast) (int $intrptLast) (proc $procLast) (runq $loadQue))\n";
-    }
-
-    if ($subsys=~/C/)
-    {
-      my ($name, $userTot, $niceTot, $sysTot, $idleTot, $waitTot, $irqTot, $softTot, $stealTot, $intTot)=
-		('','','','','','','','','','');
-      for (my $i=0; $i<$NumCpus; $i++)
-      {
-        $name.=    "cpu$i ";
-        $userTot.= "$userLast[$i] ";
-        $niceTot.= "$userLast[$i] ";
-        $sysTot.=  "$userLast[$i] ";
-        $idleTot.= "$userLast[$i] ";
-        $waitTot.= "$userLast[$i] ";
-        $irqTot.=  "$irqLast[$i] ";
-        $softTot.= "$softLast[$i] ";
-        $stealTot.="$stealLast[$i] ";
-        $intTot.=  "0 ";    # raw has no meaning since INTs totalled over all line entries
-      }
-      $name=~s/ $//;       $userTot=~s/ $//;    $niceTot=~s/ $//;
-      $sysTot=~s/ $//;     $idleTot=~s/ $//;    $waitTot=~s/ $//;
-      $irqTot=~s/ $//;     $softTot=~s/ $//;    $stealTot=~s/ $//;
-      $irqTot=~s/ $//;
-
-      $cpuDetString.="$pad(cpuinfo\n";
-      $cpuDetString.="$pad  (name $name)\n";
-      $cpuDetString.="$pad  (user $userTot)\n";
-      $cpuDetString.="$pad  (nice $niceTot)\n";
-      $cpuDetString.="$pad  (sys $sysTot)\n";
-      $cpuDetString.="$pad  (idle $idleTot)\n";
-      $cpuDetString.="$pad  (wait $waitTot))\n";
-      $cpuDetString.="$pad  (irq $irqTot))\n";
-      $cpuDetString.="$pad  (soft $softTot))\n";
-      $cpuDetString.="$pad  (steal $stealTot))\n";
-      $cpuDetString.="$pad  (int $intTot))\n";
-    }
-  }
-
-  my $diskSumString=$diskDetString='';
-  if ($subsys=~/d/i)
-  {
-    if ($subsys=~/d/)
-    {
-      my ($dRTot, $dRkbTot, $dWTot, $dWkbTot)=(0,0,0,0);
-      for (my $i=0; $i<$NumDisks; $i++)
-      {
-        $dRTot+=   $dskFieldsLast[$i][0];
-        $dRkbTot+= $dskFieldsLast[$i][2];
-        $dWTot+=   $dskFieldsLast[$i][4];
-        $dWkbTot+= $dskFieldsLast[$i][6];
-      }
-      $diskSumString.="$pad(disktotals (reads $dRTot) (readkbs $dRkbTot) (writes $dWTot) (writekbs $dWkbTot))\n";
-    }
-
-    if ($subsys=~/D/)
-    {
-      my ($dName, $dRTot, $dRkbTot, $dWTot, $dWkbTot)=('','','','','');
-      for (my $i=0; $i<$NumDisks; $i++)
-      {
-        $dName.=   "$dskName[$i] ";
-        $dRTot.=   "$dskFieldsLast[$i][0] ";
-        $dRkbTot.= "$dskFieldsLast[$i][2] ";
-        $dWTot.=   "$dskFieldsLast[$i][4] ";
-        $dWkbTot.= "$dskFieldsLast[$i][6] ";
-      }
-      $dName=~s/ $//;
-      $dRTot=~s/ $//;  $dRkbTot=~s/ $//;
-      $dWTot=~s/ $//;  $dWkbTot=~s/ $//;
-      $diskDetString.="$pad(diskinfo\n";
-      $diskDetString.="$pad  (name $dName)\n";
-      $diskDetString.="$pad  (reads $dRTot)\n";
-      $diskDetString.="$pad  (readkbs $dRkbTot)\n";
-      $diskDetString.="$pad  (writes $dWTot)\n";
-      $diskDetString.="$pad  (writekbs $dWkbTot))\n";
-    }
-  }
-
-  my $nfsString='';
-  if ($subsys=~/f/)
-  {
-    $nfsString= "$pad(nfsinfo (read $nfsValuesLast[6]) (write $nfsValuesLast[7]) (calls $rpcCallsLast))\n";
-  }
-
-  my $inodeString='';
-  if ($subsys=~/i/)
-  {
-    $inodeString= "$pad(inodeinfo (unuseddcache $unusedDCache) (openfiles $openFiles) ";
-    $inodeString.="(inodeused $inodeUsed) (superuer $superUsed)(dquotused $dquotUsed))\n";
-  }
-
-  # No lustre details, at least not for now...
-  my $lusSumString='';
-  if ($subsys=~/l/)
-  {
-    if ($CltFlag)
-    {
-      my ($reads, $readKBs, $writes, $writeKBs)=(0,0,0,0);
-      for (my $i=0; $i<$NumLustreFS; $i++)
-      {
-        $reads+=   $lustreCltReadLast[$i];
-        $readKBs+= $lustreCltReadKBLast[$i];
-        $writes+=  $lustreCltWriteLast[$i];
-        $writeKBs+=$lustreCltWriteKBLast[$i];
-      }
-      $lusSumString.="$pad(lusclt (reads $reads) (readkbs $readKBs) (writes $writes) (writekbs $writeKBs))\n";
-    }
-
-    if ($OstFlag)
-    {
-      my ($reads, $readKBs, $writes, $writeKBs)=(0,0,0,0);
-      for (my $i=0; $i<$NumOst; $i++)
-      {
-        $reads+=   $lustreReadOpsLast[$i];
-        $readKBs+= $lustreReadKBytesLast[$i];
-        $writes+=  $lustreWriteOpsLast[$i];
-        $writeKBs+=$lustreWriteKBytesLast[$i];
-      }
-      $lusSumString.="$pad(lusoss (reads $reads) (readkbs $readKBs) (writes $writes) (writekbs $writeKBs))\n";
-    }
-
-    if ($MdsFlag)
-    {
-      $lusSumString.="$pad(lusmds (close $lustreMdsCloseLast) (getattr $lustreMdsGetattrLast) ";
-      $lusSumString.="(reint $lustreMdsReintLast) (sync $lustreMdsSyncLast))\n";
-    }
-  }
-
-  my $memString='';
-  if ($subsys=~/m/)
-  {
-    $memString= "$pad(meminfo (memtot $memTot) (memused $memUsed) (memfree $memFree) ";
-    $memString.="(memshared $memShared) (membuf $memBuf) (memcached $memCached) ";
-    $memString.="(memslab $memSlab) (memmap $memMap))\n";
-  }
-
-  my $netSumString=$netDetString='';
-  if ($subsys=~/n/i)
-  {
-    if ($subsys=~/n/)
-    {
-      my ($kbinT, $pktinT, $kboutT, $pktoutT)=(0,0,0,0);
-      for ($i=0; $i<$netIndex; $i++)
-      {
-        next    if $netName=~/lo|sit|bond/;  # also filters out 'ibbond'
-        $kbinT+=  $netRxKBLast[$i];
-        $pktinT+= $netRxPktLast[$i];
-        $kboutT+= $netTxKBLast[$i];
-        $pktoutT+=$netTxPktLast[$i];
-      }
-      $netSumString= "$pad(nettotals (netkbin $kbinT) (netpktin $pktinT) (netkbout $kboutT) (netpktout $pktoutT))\n";
-    }
-
-    if ($subsys=~/N/)
-    {
-      my ($name, $kbinT, $pktinT, $kboutT, $pktoutT)=('','','','','');
-      for ($i=0; $i<$netIndex; $i++)
-      {
-        next    if $netName[$i]=~/lo|sit/;
-        $name.=   "$netName[$i] ";
-        $kbinT.=  "$netRxKBLast[$i] ";
-        $pktinT.= "$netRxPktLast[$i] ";
-        $kboutT.= "$netTxKBLast[$i] ";
-        $pktoutT.="$netTxPktLast[$i] ";
-      }
-      $name=~s/ $|://g;    $kbinT=~s/ $//;    $pktinT=~s/ $//; 
-      $kboutT=~s/ $//;     $pktoutT=~s/ $//;
-      $netDetString= "$pad(netinfo\n";
-      $netDetString.="$pad  (name $name)\n";
-      $netDetString.="$pad  (netkbin $kbinT)\n";
-      $netDetString.="$pad  (netpktin $pktinT)\n";
-      $netDetString.="$pad  (netkbout $kboutT)\n";
-      $netDetString.="$pad  (netpktout $pktoutT))\n";
-    }
-  }
-
-  my $sockString='';
-  if ($subsys=~/s/)
-  {
-    $sockString= "$pad(sockinfo (sockused $sockUsed) (socktcp $sockTcp) (sockorphan $sockOrphan) (socktw $sockTw) (sockalloc $sockAlloc) (sockmem $sockMem)";
-    $sockString.="(sockudp $sockUdp) (sockraw $sockRaw) (sockfrag $sockFrag) (sockfragm $sockFragM))\n";
-  }
-
-  my $tcpString='';
-  if ($subsys=~/t/)
-  {
-    $tcpString="$pad(tcpinfo (tcppureack $tcpLast[27]) (tcphpack $tcpLast[28]) (tcploss $tcpLast[40]) (tcpftrans $tcpLast[45]))\n";
-  }
-
-  my $intString='';
-  if ($subsys=~/x/i)
-  {
-    my ($kbInT, $pktInT, $kbOutT, $pktOutT)=(0,0,0,0);
-    for (my $i=0; $i<$NumXRails; $i++)
-    {
-      $kbInT+=  $elanRxMBLast[$i]*1024;
-      $pktInT+= $elanRxLast[$i];
-      $kbOutT+= $elanTxMBLast[$i]*1024;
-      $pktOutT+=$elanTxLast[$i];
-    }
-
-    $port=$HCAPortActive;
-    for (my $i=0; $i<$NumHCAs; $i++)
-    {
-      $kbInT+=  $ibFieldsLast[$i][$port][13];
-      $pktInT+= $ibFieldsLast[$i][$port][15];
-      $kbOutT+= $ibFieldsLast[$i][$port][12];
-      $pktOutT+=$ibFieldsLast[$i][$port][14];
-    }
-    $intString="$pad(iconnect (intkbin $kbInT) (intpktin $pktInT) (intkbout $kbOutT) (intpktout $pktOutT))\n";
-  }
-
-  # Build up as a single string
-  $sexprRec='';
-  $sexprRec.="(collectl_summary\n"    if $XCFlag && $sumFlag;
-  $sexprRec.="$pad(sample (time $lastSecs))\n"    if $sumFlag;
-  $sexprRec.="$cpuSumString$diskSumString$nfsString$inodeString$memString$netSumString";
-  $sexprRec.="$lusSumString$sockString$tcpString$intString";
-  $sexprRec.=")\n"                    if $XCFlag && $sumFlag;
-
-  $sexprRec.="(collectl_detail\n"     if $XCFlag && $detFlag;
-  $sexprRec.="$pad(sample (time $lastSecs))\n"    if !$sumFlag;
-  $sexprRec.="$cpuDetString$diskDetString$netDetString";
-  $sexprRec.=")\n"                    if $XCFlag && $detFlag;
-
-  # if a file was specified, write the data to it
-  if ($sexprDir ne '')
-  {
-    open  SEXPR, ">$sexprDir/S" or logmsg("F", "Couldn't create '$sexprDir/S'");
-    print SEXPR  $sexprRec;
-    close SEXPR;
-  }
-
-  if ($addrFlag || $sexprDir eq '')
-  {
-    printText($sexprRec);
-  }
-}
-
-sub printSexprRate
-{
-  sexprHeader()    if !$sexprHeaderWritten;
-
-  # 1 extra level of indent (looks prettier) for XC
-  my $pad=$XCFlag ? '  ' : '';
-  my $sumFlag=$subsys=~/[cdfilmnstx]/ ? 1 : 0;
-  my $detFlag=$subsys=~/[CDN]/        ? 1 : 0;
-
-  my $cpuSumString=$cpuDetString='';
-  if ($subsys=~/c/i)
-  {
-    if ($subsys=~/c/)
-    {
-      # CPU utilization is a % and we don't want to report fractions
-      my $i=$NumCpus;
-      $cpuSumString.=sprintf("$pad(cputotals (user %d) (nice %d) (sys %d) (wait %d) (irq %d) (soft %d) (steal %d) (idle %d))\n",
-		$userP[$i], $niceP[$i], $sysP[$i], $waitP[$i], $irqP[$i], $softP[$i], $stealP[$i], $idleP[$i]);
-      $cpuSumString.=sprintf("$pad(ctxint (ctx %d) (int %d) (proc %d) (runq $loadQue))\n",
-		$ctxt/$intSecs, $intrpt/$intSecs, $proc/$intSecs);
-    }
-
-    if ($subsys=~/C/)
-    {
-      my ($name, $userTot, $niceTot, $sysTot, $waitTot, $irqTot, $softT, $stealTot, $idleTot, $intTot)=
-		('','','','','','','','','','');
-      for (my $i=0; $i<$NumCpus; $i++)
-      {
-        $name.=    "cpu$i ";
-        $userTot.= "$userP[$i] ";
-        $niceTot.= "$niceP[$i] ";
-        $sysTot.=  "$sysP[$i] ";
-        $waitTot.= "$waitP[$i] ";
-	$irqTot.=  "$irqP[$i] ";
-	$softTot.= "$softP[$i] ";
-	$stealTot.="$stealP[$i] ";
-        $idleTot.= "$idleP[$i] ";
-        $intTot.=  "$intrptTot[$i] ";
-      }
-      $name=~s/ $//;       $userTot=~s/ $//;    $niceTot=~s/ $//;
-      $sysTot=~s/ $//;     $waitTot=~s/ $//;    $irqTot=~s/ $//;
-      $softTot=~s/ $//;    $stealTot=~s/ $//;   $idleTot=~s/ $//;
-      $intTot=~s/ $//;
-
-      $cpuDetString.="$pad(cpuinfo\n";
-      $cpuDetString.="$pad  (name $name)\n";
-      $cpuDetString.="$pad  (user $userTot)\n";
-      $cpuDetString.="$pad  (nice $niceTot)\n";
-      $cpuDetString.="$pad  (sys $sysTot)\n";
-      $cpuDetString.="$pad  (wait $waitTot))\n";
-      $cpuDetString.="$pad  (irq $irqTot)\n";
-      $cpuDetString.="$pad  (soft $softTot)\n";
-      $cpuDetString.="$pad  (steal $stealTot)\n";
-      $cpuDetString.="$pad  (idle $idleTot)\n";
-      $cpuDetString.="$pad  (int $intTot)\n";
-    }
-  }
-
-  my $diskSumString=$diskDetString='';
-  if ($subsys=~/d/i)
-  {
-    if ($subsys=~/d/)
-    {
-      $diskSumString.=sprintf("$pad(disktotals (reads %d)) (readkbs %d) (writes %d) (writekbs %d))\n", 
-		$dskReadTot/$intSecs,  $dskReadKBTot/$intSecs, 
-		$dskWriteTot/$intSecs, $dskWriteKBTot/$intSecs);
-    }
-
-    if ($subsys=~/D/)
-    {
-      my ($dName, $dRTot, $dRkbTot, $dWTot, $dWkbTot)=('','','','','');
-      for (my $i=0; $i<$NumDisks; $i++)
-      {
-        $dName.=   "$dskName[$i] ";
-        $dRTot.=   sprintf("%d ", $dskRead[$i]/$intSecs);
-        $dRkbTot.= sprintf("%d ", $dskReadKB[$i]/$intSecs);
-        $dWTot.=   sprintf("%d ", $dskWrite[$i]/$intSecs);
-        $dWkbTot.= sprintf("%d ", $dskWriteKB[$i]/$intSecs);
-      }
-      $dName=~s/ $//;
-      $dRTot=~s/ $//;  $dRkbTot=~s/ $//;
-      $dWTot=~s/ $//;  $dWkbTot=~s/ $//;
-      $diskDetString.="$pad(diskinfo\n";
-      $diskDetString.="$pad  (name $dName)\n";
-      $diskDetString.="$pad  (reads $dRTot)\n";
-      $diskDetString.="$pad  (readkbs $dRkbTot)\n";
-      $diskDetString.="$pad  (writes $dWTot)\n";
-      $diskDetString.="$pad  (writekbs $dWkbTot))\n";
-    }
-  }
-
-  my $nfsString='';
-  if ($subsys=~/f/)
-  {
-    $nfsString=sprintf("$pad(nfsinfo (read %d) (write %d) (calls %d))\n", 
-	$nfsRead/$intSecs, $nfsWrite/$intSecs, $rpcCalls/$intSecs);
-  }
-
-  my $inodeString='';
-  if ($subsys=~/i/)
-  {
-    $inodeString= "$pad(inodeinfo (unuseddcache $unusedDCache) (openfiles $openFiles) ";
-    $inodeString.="(inodeused $inodeUsed) (superuer $superUsed)(dquotused $dquotUsed))\n";
-  }
-
-  # No lustre details, at least not for now...
-  my $lusSumString='';
-  if ($subsys=~/l/)
-  {
-    if ($CltFlag)
-    {
-      $lusSumString.=sprintf("$pad(lusclt (reads %d) (readkbs %d) (writes %d) (writekbs %d))\n",
-            $lustreCltReadTot/$intSecs,      $lustreCltReadKBTot/$intSecs,
-            $lustreCltWriteTot/$intSecs,     $lustreCltWriteKBTot/$intSecs);
-    }
-
-    if ($OstFlag)
-    {
-      $lusSumString.=sprintf("$pad(lusoss (reads %d) (readkbs %d) (writes %d) (writekbs %d))\n", 
-		$lustreReadOpsTot/$intSecs,  $lustreReadKBytesTot/$intSecs, 
-		$lustreWriteOpsTot/$intSecs, $lustreWriteKBytesTot/$intSecs);
-    }
-
-    if ($MdsFlag)
-    {
-      $lusSumString.=sprintf("$pad(lusmds (close %d) (getattr %d) (reint %d) (sync %d)\n", 
-		$lustreMdsClose/$intSecs, $lustreMdsGetattr/$intSecs, 
-		$lustreMdsReint/$intSecs, $lustreMdsSync/$intSecs);
-    }
-  }
-
-  my $memString='';
-  if ($subsys=~/m/)
-  {
-    $memString= "$pad(meminfo (memtot $memTot) (memused $memUsed) (memfree $memFree) ";
-    $memString.="(memshared $memShared) (membuf $memBuf) (memcached $memCached) ";
-    $memString.="(memslab $memSlab) (memmap $memMap))\n";
-  }
-
-  my $netSumString=$netDetString='';
-  if ($subsys=~/n/i)
-  {
-    if ($subsys=~/n/)
-    {
-      $netSumString=sprintf("$pad(nettotals (netkbin %d) (netpktin %d) (netkbout %d) (netpktout %d))\n",
-                $netRxKBTot/$intSecs, $netRxPktTot/$intSecs,
-		$netTxKBTot/$intSecs, $netTxPktTot/$intSecs);
-    }
-
-    if ($subsys=~/N/)
-    {
-      my ($name, $kbinT, $pktinT, $kboutT, $pktoutT)=('', '','','','');
-      for ($i=0; $i<$netIndex; $i++)
-      {
-        next    if $netName[$i]=~/lo|sit/;
-        $name.=  "$netName[$i] ";
-        $kbinT.=  sprintf("%d ", $netRxKB[$i]/$intSecs);
-        $pktinT.= sprintf("%d ", $netRxPkt[$i]/$intSecs);
-        $kboutT.= sprintf("%d ", $netTxKB[$i]/$intSecs);
-        $pktoutT.=sprintf("%d ", $netTxPkt[$i]/$intSecs);
-      }
-      $name=~s/ $|://g;    $kbinT=~s/ $//;    $pktinT=~s/ $//; 
-      $kboutT=~s/ $//;     $pktoutT=~s/ $//;
-      $netDetString= "$pad(netinfo\n";
-      $netDetString.="$pad  (name $name)\n";
-      $netDetString.="$pad  (netkbin $kbinT)\n";
-      $netDetString.="$pad  (netpktin $pktinT)\n";
-      $netDetString.="$pad  (netkbout $kboutT)\n";
-      $netDetString.="$pad  (netpktout $pktoutT))\n";
-    }
-  }
-
-  my $sockString='';
-  if ($subsys=~/s/)
-  {
-    $sockString= "$pad(sockinfo (sockused $sockUsed) (socktcp $sockTcp) (sockorphan $sockOrphan) (socktw $sockTw) (sockalloc $sockAlloc) (sockmem $sockMem)";
-    $sockString.="(sockudp $sockUdp) (sockraw $sockRaw) (sockfrag $sockFrag) (sockfragm $sockFragM))\n";
-  }
-
-  my $tcpString='';
-  if ($subsys=~/t/)
-  {
-    $tcpString=sprintf("$pad(tcpinfo (tcppureack %d) (tcphpack %d) (tcploss %d) (tcpftrans %d))\n",
-	        $tcpValue[27]/$intSecs,  $tcpValue[28]/$intSecs,
-        	$tcpValue[40]/$intSecs,  $tcpValue[45]/$intSecs);
-  }
-
-  my $intString='';
-  if ($subsys=~/x/i)
-  {
-    if ($NumXRails)
-    {
-      $kbInT=  $elanRxKBTot;
-      $pktInT= $elanRxTot;
-      $kbOutT= $elanTxKBTot;
-      $pktOutT=$elanTxTot;
-    }
-
-    if ($NumHCAs)
-    {
-      $kbInT=  $ibRxKBTot;
-      $pktInT= $ibRxTot;
-      $kbOutT= $ibTxKBTot;
-      $pktOutT=$ibTxTot;
-    }
-    $intString=sprintf("$pad(iconnect (intkbin %d) (intpktin %d) (intkbout %d) (intpktout %d))\n", 
-	$kbInT/$intSecs, $pktInT/$intSecs, $kbOutT/$intSecs, $pktOutT/$intSecs);
-  }
-
-  $sexprRec='';
-  $sexprRec.="(collectl_summary\n"    if $XCFlag && $sumFlag;
-  $sexprRec.="$pad(sample (time $lastSecs))\n"    if $sumFlag;
-  $sexprRec.="$cpuSumString$diskSumString$nfsString$inodeString$memString$netSumString";
-  $sexprRec.="$lusSumString$sockString$tcpString$intString";
-  $sexprRec.=")\n"                    if $XCFlag && $sumFlag;
-
-  $sexprRec.="(collectl_detail\n"     if $XCFlag && $detFlag;
-  $sexprRec.="$pad(sample (time $lastSecs))\n"    if !$sumFlag;
-  $sexprRec.="$cpuDetString$diskDetString$netDetString";
-  $sexprRec.=")\n"                    if $XCFlag && $detFlag;
-
-  if ($sexprDir ne '')
-  {
-    open  SEXPR, ">$sexprDir/S" or logmsg("F", "Couldn't create '$sexprDir/S'");
-    print SEXPR  $sexprRec;
-    close SEXPR;
-  }
-
-  if ($addrFlag || $sexprDir eq '')
-  {
-    printText($sexprRec);
-  }
-}
-
-sub sexprHeader
-{
-  # 1 extra level of indent (looks prettier) for XC
-  my $pad=$XCFlag ? '  ' : '';
-  my $sumFlag=$subsys=~/[cdfilmnstx]/ ? 1 : 0;
-  my $detFlag=$subsys=~/[CDN]/        ? 1 : 0;
-
-  print "Create sexpr header file: $sexprDir/S\n"    if $debug & 8192;
-  $sexprHeaderWritten=1;
-
-  $sexprHdr='';
-  $sexprHdr.="(collect_summary\n"    if $XCFlag && $sumFlag;
-  $sexprHdr.="$pad(sample (time var))\n";
-  $sexprHdr.="$pad(cputotals (user val) (nice val) (sys val) (idle val) (wait val) (irq val) (soft val) (steal val))\n"
-	if $subsys=~/c/;
-  $sexprHdr.="$pad(ctxint (ctx val) (int val) (proc val) (runq val))\n"
-	if $subsys=~/c/;
-  $sexprHdr.="$pad(disktotals (reads val) (readkbs val) (writes val) (writekbs val))\n"
-	if $subsys=~/d/;
-  $sexprHdr.="$pad(nfsinfo (read val) (write val) (calls val))\n"
-        if $subsys=~/f/;
-  $sexprHdr.="$pad(inodeinfo (unuseddcache val) (openfiles val) (inodeused val) (superuer val)(dquotused val))\n"
-	if $subsys=~/i/;
-  $sexprHdr.="$pad(lusclt (reads val) (readkbs val) (writes val) (writekbs al))\n"
-	if $subsys=~/l/ && $CltFlag;
-  $sexprHdr.="$pad(lusmds (close val) (getattr val) (reint val) (sync val))\n"
-	if $subsys=~/l/ && $MdsFlag;
-  $sexprHdr.="$pad(lusoss (reads val) (readkbs val) (writes val) (writekbs val))\n"
-	if $subsys=~/l/ && $OstFlag;
-  $sexprHdr.="$pad(meminfo (memtot val) (memused val) (memfree val) (memshared val) (membuf val) (memcached val) (memslab val) (memmap val))\n"
-        if $subsys=~/m/;
-  $sexprHdr.="$pad(nettotals (netkbin val) (netpktin val) (netkbout val) (netpktout val))\n"
-        if $subsys=~/n/;
-  $sexprHdr.="$pad(sockinfo (sockused val) (socktcp val) (sockorphan val) (socktw val) (sockalloc val) (sockmem val)(sockudp val) (sockraw val) (sockfrag val) (sockfragm val))\n"
-        if $subsys=~/s/;
-  $sexprHdr.="$pad(tcpinfo (tcppureack val) (tcphpack val) (tcploss val) (tcpftrans val))\n"
-        if $subsys=~/t/;
-  $sexprHdr.="$pad(iconnect (intkbin val) (intpktin val) (intkbout val) (intpktout val))\n"
-        if $subsys=~/x/;
-  $sexprHdr.=")\n"    if $XCFlag && $sumFlag;
-
-  $sexprHdr.="(collect_detail \n"    if $XCFlag && $subsys=~/[CDN]/;
-  if ($subsys=~/C/)
-  {
-    my $names='';
-    $sexprHdr.="$pad(cpuinfo\n";
-    for (my $i=0; $i<$NumCpus; $i++)
-    {
-      $names.="cpu$i ";
-    }
-    $sexprHdr.="$pad  (name $names)\n";
-    $sexprHdr.="$pad  (user $names)\n";
-    $sexprHdr.="$pad  (nice $names)\n";
-    $sexprHdr.="$pad  (sys $names)\n";
-    $sexprHdr.="$pad  (idle $names)\n";
-    $sexprHdr.="$pad  (wait $names)\n";
-    $sexprHdr.="$pad  (irq $names)\n";
-    $sexprHdr.="$pad  (soft $names)\n";
-    $sexprHdr.="$pad  (steal $names)\n";
-    $sexprHdr.="$pad  (int $names)\n";
-  }
-
-  if ($subsys=~/D/)
-  {
-    my $names='';
-    $sexprHdr.="$pad(diskinfo\n";
-    for (my $i=0; $i<$NumDisks; $i++)
-    {
-      $names.="$dskName[$i] ";
-    }
-    $sexprHdr.="$pad  (name $names)\n";
-    $sexprHdr.="$pad  (reads $names)\n";
-    $sexprHdr.="$pad  (readkbs $names)\n";
-    $sexprHdr.="$pad  (writes $names)\n";
-    $sexprHdr.="$pad  (writekbs $names)\n";
-  }
-
-  if ($subsys=~/N/)
-  {
-    my $names='';
-    $sexprHdr.="$pad(netinfo\n";
-    for (my $i=0; $i<$NumNets; $i++)
-    {
-      next    if $netName[$i]=~/lo|sit/;
-      $names.="$netName[$i] ";
-    }
-    $names=~s/://g;
-    $sexprHdr.="$pad  (name $names)\n";
-    $sexprHdr.="$pad  (netkbin $names)\n";
-    $sexprHdr.="$pad  (netpktin $names)\n";
-    $sexprHdr.="$pad  (netkbout $names)\n";
-    $sexprHdr.="$pad  (netpktout $names)\n";
-  }
-  $sexprHdr.=")\n"    if $detFlag && $XCFlag;
-
-  if ($sexprDir ne '')
-  {
-    open  SEXPR, ">$sexprDir/#" or logmsg("F", "Couldn't create '$sexprDir/#'");
-    print SEXPR  $sexprHdr;
-    close SEXPR;
-  }
-
-  if ($addrFlag || $sexprDir eq '')
-  {
-    printText($sexprHdr);
-  }
-
-}
-
 sub printInterval
 {
   my $seconds=shift;
@@ -6129,12 +5540,12 @@ sub printInterval
     $date="$dow $mon $day $time.$usecs $year";
   }
 
-  # Since we're passing 2 lines to printText(), when $addrFlag set we need to
+  # Since we're passing 2 lines to printText(), when $sockFlag set we need to
   # plug in the host name otherwise that line will come out without one.
   # Remember that -A with logging never write to terminals.
   my $temp=sprintf("%s", $options=~/t/ ? $cls : "\n");
   $temp.=sprintf("%s### RECORD %4d >>> $HostLC <<< ($seconds) ($date) ###\n",
-	 $addrFlag ? "$Host " : '', $totalCounter, $lastSecs);
+	 $sockFlag ? "$Host " : '', $totalCounter, $lastSecs);
 
   printText($temp);
 }
@@ -6144,21 +5555,37 @@ sub printInterval
 sub printText
 {
   my $text=shift;
-  print $text    if !$addrFlag;
+  my $eol= shift;
+  print $text    if !$sockFlag;
 
-  # just like in writeData, we need to make sure each line preceed with host name.
-  if ($addrFlag)
+  # just like in writeData, we need to make sure each line preceed
+  # with host name if not in server mode.
+  if ($sockFlag && $connectedFlag)
   {
-    $text=~s/^(.*)$/$Host $1/mg;
-    print $socket $text;
+    $text=~s/^(.*)$/$Host $1/mg    if !$serverFlag;
+
+    $text.=">>><<<\n"    if defined($eol);
+    my $length=length($text);
+    for (my $offset=0; $offset<$length;)
+    {
+      my $bytes=syswrite($socket, $text, $length, $offset);
+      $offset+=$bytes;
+      $length-=$bytes;
+    }
   }
 }
 
 # see if time to print header
 sub printHeader
 {
-  return $options!~/H/ && 
-	($options!~/h/ || $totalCounter==1 || ($totalCounter % $headerRepeat)==0) ? 1 : 0;
+  # I fear this will become more complicted over time, so let's do it this way
+  # In the first case there is so much process of slab data when not filtering or using
+  # -oS we want a header every pass.
+  return(1)    if $subsys=~/[YZ]/ && $procopts eq '' && $slabopts eq '' && $options!~/S/;
+  return(1)    if$headerRepeat>-1 && 
+	               (!$sameColsFlag || $totalCounter==1 || 
+                       ($headerRepeat>0 && ($totalCounter % $headerRepeat)==1));
+  return(0);
 }
 
 sub getHeader
@@ -6228,7 +5655,7 @@ sub getTime
 #      Brief Mode is VERY Special
 ########################################
 
-sub briefFormatit
+sub printBrief
 {
   my ($command, $pad, $i);
   my $line='';
@@ -6236,7 +5663,7 @@ sub briefFormatit
   # We want to track elapsed time.  This is only looked at in interactive mode.
   $miniStart=$seconds    if !defined($miniStart) || $miniStart==0;
 
-  if ($options!~/H/ && ($totalCounter % $headerRepeat)==1)
+  if (($headerRepeat==0 && !$headersPrinted) || ($headerRepeat>0 && ($totalCounter % $headerRepeat)==1))
   {
     $pad=' ' x length($miniDateTime);
     $fill1=($Hyper eq '') ? "----" : "";
@@ -6300,6 +5727,7 @@ sub briefFormatit
       $line.="   Hits Misses"    if $subOpts=~/R/;
     }
     $line.="\n";
+    $headersPrinted=1;
   }
 
   # leading space not needed for date/time
@@ -6443,7 +5871,7 @@ sub briefFormatit
   if ($termFlag && !defined($mini1select))
   {
     $mini1select=new IO::Select(STDIN);
-    resetMini1Counters();
+    resetBriefCounters();
     `stty -echo`    if !$PcFlag;
   }
 
@@ -6455,20 +5883,20 @@ sub briefFormatit
     $command=<STDIN>;
     $resetType='T';
     $resetType=$command    if $command=~/a|t|z/i;
-    printMini1Counters($resetType);
-    resetMini1Counters()    if $resetType=~/Z/i;
+    printBriefCounters($resetType);
+    resetBriefCounters()    if $resetType=~/Z/i;
   }
 
   # This is a little weird.  Since we return the output line and don't actually 
   # print it yet, we don't want to include this interval's numbers in the
   # subtotal which actually prints BEFORE this intervald does.  So count them now.
   $miniInstances++;
-  countMini1Counters();
+  countBriefCounters();
 
   return($line);
 }
 
-sub resetMini1Counters
+sub resetBriefCounters
 {
   # talk about a mouthful!
   $miniStart=0;
@@ -6493,7 +5921,7 @@ sub resetMini1Counters
   { $intrptTOT[$i]=0; }
 }
 
-sub countMini1Counters
+sub countBriefCounters
 {
   my $i=$NumCpus;
   $cpuTOT+=   $userP[$i]+$niceP[$i]+$sysP[$i];
@@ -6582,7 +6010,7 @@ sub countMini1Counters
   }
 }
 
-sub printMini1Counters
+sub printBriefCounters
 {
   my $type=shift;
   my $i;
@@ -6776,7 +6204,7 @@ sub printPlotProc
     $procHeaders.=(!$utcFlag) ? "#Date${SEP}Time" : '#UTC';;
     $procHeaders.="${SEP}PID${SEP}User${SEP}PR${SEP}PPID${SEP}S${SEP}VmSize${SEP}";
     $procHeaders.="VmLck${SEP}VmRSS${SEP}VmData${SEP}VmStk${SEP}VmExe${SEP}VmLib${SEP}";
-    $procHeaders.="SysT${SEP}UsrT${SEP}AccumT${SEP}";
+    $procHeaders.="CPU${SEP}SysT${SEP}UsrT${SEP}AccumT${SEP}";
     $procHeaders.="RKB${SEP}WKB${SEP}RKBC${SEP}WKBC${SEP}RSYS${SEP}WSYS${SEP}CNCL${SEP}";
     $procHeaders.="MajF${SEP}MinF${SEP}Command\n";
     $headersPrintedProc=1;
@@ -6804,7 +6232,7 @@ sub printPlotProc
     $datetime.=".$usecs"    if $options=~/m/;
 
     # Username comes from translation hash OR we just print the UID
-    $procPlot.=sprintf("%s${SEP}%d${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%d${SEP}%d${SEP}%d${SEP}%d${SEP}%d${SEP}%d${SEP}%d${SEP}%s${SEP}%s${SEP}%s",
+    $procPlot.=sprintf("%s${SEP}%d${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%d${SEP}%d${SEP}%d${SEP}%d${SEP}%d${SEP}%d${SEP}%d${SEP}%s${SEP}%s${SEP}%s",
           $datetime, $procPid[$i], $procUser[$i],  $procPri[$i], 
 	  $procPpid[$i],  $procState[$i],  
 	  defined($procVmSize[$i]) ? $procVmSize[$i] : 0, 
@@ -6814,6 +6242,7 @@ sub printPlotProc
 	  defined($procVmStk[$i])  ? $procVmStk[$i]  : 0,  
 	  defined($procVmExe[$i])  ? $procVmExe[$i]  : 0,
 	  defined($procVmLib[$i])  ? $procVmLib[$i]  : 0,
+	  $procCPU[$i],
 	  cvtT1($procSTime[$i],1), cvtT1($procUTime[$i],1), 
 	  cvtT2($procSTimeTot[$i]+$procUTimeTot[$i],1),
 	  defined($procRKB[$i])    ? $procRKB[$i]/$interval2Secs  : 0,
@@ -6835,7 +6264,7 @@ sub printPlotProc
     $oneline='';
     writeData(0, '', \$procPlot, PRC, $ZPRC, 'proc', \$oneline);
     writeData(1, '', undef, $LOG, undef, undef, \$oneline)
-        if !$logToFileFlag || $addrFlag;
+        if !$logToFileFlag || ($sockFlag && $export eq '');
     $procPlot='';
   }
 }
@@ -6923,7 +6352,7 @@ sub printPlotSlab
     $slabPlot=~s/\n$//;
     writeData(0, '', \$slabPlot, SLB, $ZSLB, 'slb', \$oneline);
     writeData(1, '', undef, $LOG, undef, undef, \$oneline)
-        if !$logToFileFlag || $addrFlag;
+        if !$logToFileFlag || ($sockFlag && $export eq '');
   }
 }
 

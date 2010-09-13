@@ -35,17 +35,35 @@ monitoring, those samples will also be taken at the top of the minute and so can
 delay the start of sampling up to 2 full process monitoring intervals.
 .RE
 
-.B "-A, --address address[:port]"
+.B "--all"
 .RS
-Write all output to a socket at the named address and port.  The default port 
-is set at 1234 but can be changed - see collectl.conf.  
-All output is prefaced by the name of the host writing to the socket.
+Collect summary data for ALL subsystems except slabs, since slab monitoring requires
+a different monitoring interval.  You can use this switch anywhere -s can be used
+but not both together.  If the system supports lustre and/or interconnect monitoring
+those statistics will be provided but the warnings produced when they are not 
+available you try to select them with -s will not be displayed.
+.RE
 
-One can additionally request local data logging by specifying a combination of 
--P and -f.  See
+.B "-A, --address address[:port] | server[:port]"
+.RS
+In the first form, one species an address or hostname and optional port.
+All data is then written to that socket prefaced with the current host
+name at the named address and port until
+the socket is closed, at which time collectl will exit.
+
+In the second form one enters the text 'server' and optional port.  
+In this form, collectl runs as a server, waiting for a connection and 
+once established writes data on that socket.  The key difference here is
+if the client exists collectl keeps running and will again look for a
+new connection, allowing it to survive client restarts or crashes.
+If collectl receives the text 'exit' from the client, it will shut down.
+
+The default port is set at 1234 but can be changed - see collectl.conf.  
+
+In both forms, one can additionally request local data logging by 
+specifying a combination of -P and -f.  See
 .B "man collectl-logging"
-for more detail.
-
+for more details.
 .RE
 
 .B "-c, --count Samples"
@@ -76,6 +94,27 @@ Run
 .BR collectl
 as a daemon, primarily used when starting as a service.  One
 caveat about this mode is you can only run one copy.
+.RE
+
+.B "--expdir directory"
+.RS
+This names the directory to write exported output to when writing
+to a local file, such as lexpr/sexpr do when then write the L/S files.  
+Note that it is up to the script to decide if it chooses to use this 
+switch as not all may choose to write to a file.  The default is to
+use the directory specified by -f.
+.RE
+
+.B "--export file[,options]"
+.RS
+This requests that collectl does not print anything on the terminal (or
+send it to a socket) using the standard brief/verbose/plot formats.
+Instead it executes a perl 'require' on the named file, using an extension of 
+ph if not specified.  It first looks in the current directory and if not
+there the directory the executable is in.  It then calls the
+function 'file'Init(options) towards the beginning of collectl and again as 
+simply  'file'(@options) to generate the exported formatted output.  See the document
+sections on Exporting Custom Output and Logging for more details.
 .RE
 
 .B "-f, --filename Filename"
@@ -178,18 +217,6 @@ character to a colon and "--sep 9" sets it to a horizontal tab.  "--sep 58" woul
 set it to a colon.
 .RE
 
-.B --sexpr {raw|rate}[,dir]
-.RS
-This switch is only available when requesting collectl to write data to a file,
-whether a raw or plottable one, by including -f in the command string.  
-If 'raw' is specified in the switch, it will cause a snapshot of the latest
-counters to be
-written as an s-expression to the files named # and S in the logging directory.
-If 'rates' is chosen the current rates will be written to S.  One can override
-the logging directory for the # and S files to 'dir'.  Specifying this switch
-also sets -F0.
-.RE
-
 .B -S, --ssh
 .RS
 This is typically used when starting collectl on another system via ssh or
@@ -268,6 +295,13 @@ see the source code.
 .B -h, --help, -x, --helpext
 .RS
 Display a standard or extended help message.
+.RE
+
+.B --hr, --headerrepeat num
+.RS
+Sets the number of intervals to display data for before repeating the header.
+A value -1 will prevent any headers from being displayed and a value of 0
+will cause only a single header to be displayed and never repeated.
 .RE
 
 .B -l, --limits limit
@@ -400,31 +434,6 @@ rather than the trailing 'G'.
 .RS
 For use with terminal output and brief mode.  This is similar to 'g' but preserves
 the trailing 'G' by sacrificing a digit of granularity.
-.RE
-
-.B h
-.RS
-The actual operation of this options depends on the format of the data being
-displayed, but the thing to keep in mind is it reduces the number of headers
-being printed.
-
-If the default (non-plot) display format is in effect a separate header is
-printed for every line of output, which can be very verbose.  Chosing this 
-option will cause the headers to only be displayed every 20 lines.
-
-When displaying data on the terminal in
-.BR plot
-format, a new header
-line is already generated every 20 lines of data.  Selecting this output will
-cause the header line to only be displayed once.
-
-There are occasions where collectl will automatically set this mode.  To disable
-it specify it as -o-h.
-.RE
-
-.B H
-.RS
-Eliminate ALL headers from the display
 .RE
 
 .B m

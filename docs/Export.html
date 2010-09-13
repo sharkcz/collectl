@@ -1,0 +1,132 @@
+<html>
+<head>
+<link rel=stylesheet href="style.css" type="text/css">
+<title>Exporting Custom Output</title>
+</head>
+
+<body>
+<center><h1>Exporting Custom Output</h1></center>
+<p>
+<h3>Introduction</h3>
+With Version 2.6.0 comes a redesign of the mechanism for producing custom
+output through the use of <i>--export</i>.  In fact enough flexibility has 
+been added that code for producing <i>s-expressions</i> as well as 
+<i>vmstat</i> output have now been moved to 2 external files named 
+<i>sexpr.ph</i> and <i>vmstat.ph</i> both of which can now be found in
+<i>/opt/hp/collectl</i> along with a new format called <i>list-oriented</i> 
+which can be delivered via <i>lexpr.ph</i>.  The reason anyone should care 
+is that now if you want to produce your own exportable form of output and 
+be able to print it locally, make it available to another program over a
+socket or even write to a local file and still be able to log to <i>raw</i>
+and/or <i>plot</i> formats, you get that all that functionality for free.
+<p>
+<h3>How It Works</h3>
+The interface to all this is really quite simple.  At the command line the user
+types <i>collectl --export name[,options] [--expdir dirname]</i> where:
+
+<ul>
+<li><b>name</b> both names a file to be <i>required</i> by collectl as well as
+the name of the entry points to both an initialization routine as well as one
+that produces the output</li>
+<li><b>options</b> specifies an optional list of arguments that are passed to both
+routines to do with whatever they wish</li>
+<li><b>dirname</b> is available for specifying an alternative to the directory 
+specified by -f</li>
+</ul>
+
+Perhaps the best way to see how all this works is with a simple example and
+it turns out that <i>vmstat.ph</i> is small enough to meet that need.  You
+can also refer to the others as well.
+<p>
+This first section gets called almost immediately by collectl after reading
+in the various user switches.  This is the place to catch switch errors
+and since this routine always requires <i>-scm</i> we'll just hardcode it 
+to that and reject any user entered ones.  It is named for out module followed
+by <i>Init</i>.
+<div class=terminal-wide14>
+<pre>
+sub vmstatInit
+{
+  error("'vmstat' doesn't support --expdir")     if $expDir ne '';
+  error("-s not allowed with 'vmstat'")          if $userSubsys ne '';
+  error("-f requires either --rawtoo or -P")     if $filename ne '' && !$rawtooFlag && !$plotFlag;
+  error("-P or --rawtoo require -f")             if $filename eq '' && ($rawtooFlag || $plotFlag);
+  $subsys=$userSubsys='cm';
+}
+</pre></div>
+
+Next we define the output routine, with the same base name as that
+of our included file.
+<p>
+The <i>if statement</i> uses collectl's standard idiom for printing headers
+based on the number of lines printed and whether or not the user wants only a
+singleheader, no header or even to clear the screen between headers.  If you
+do not want/need all these features it's perfectly fine to use a more simplifed
+header printing mechanism, such as the one is <i>sexpr.ph</i>.
+
+<div class=terminal-wide14>
+<pre>
+sub vmstat
+{
+  my $line;
+  if (($headerRepeat==0 && !$headersPrinted) || ($headerRepeat>0 && ($totalCounter % $headerRepeat)==1))
+  {
+    $line= "${cls}#${miniBlanks}procs ---------------memory (KB)--------------- --swaps-- -----io---- --system-- ----cpu-----\n";
+    $line.="#$miniDateTime r  b   swpd   free   buff  cache  inact active   si   so    bi    bo   in    cs us sy  id wa\n";
+  }
+</pre></div>
+
+Next comes the handling of optional date/time prefixes that I stole from
+printTerm() in formatit.ph which can be controlled
+by various switch options.  Again, if you have no intent of supporting these
+you can even put in error handling in your <i>initialization routine</i>
+or simply ignore the switches.
+
+<div class=terminal>
+<pre>
+  my $datetime='';
+  if ($options=~/[dDTm]/)
+  {
+    ($ss, $mm, $hh, $mday, $mon, $year)=localtime($lastSecs);
+    $datetime=sprintf("%02d:%02d:%02d", $hh, $mm, $ss);
+    $datetime=sprintf("%02d/%02d %s", $mon+1, $mday, $datetime)                  if $options=~/d/;
+    $datetime=sprintf("%04d%02d%02d %s", $year+1900, $mon+1, $mday, $datetime)   if $options=~/D/;
+    $datetime.=".$usecs"                                                         if ($options=~/m/);
+    $datetime.=" ";
+  }
+</pre></div>
+
+Here we build the actual output, noting that we're not really printing
+anything yet, but rather building up a string (which may contain the header) 
+that we will print in one shot.
+<div class=terminal-wide14>
+<pre>
+  my $i=$NumCpus;
+  my $usr=$userP[$i]+$niceP[$i];
+  my $sys=$sysP[$i]+$irqP[$i]+$softP[$i]+$stealP[$i];
+  $line.=sprintf("%s %2d %2d %6s %6s %6s %6s %6s %6s %4d %4d %5d %5d %4d %5d %2d %2d %3d %2d\n",
+                $datetime, $procsRun, $procsBlock,
+                cvt($swapUsed,6,1,1),  cvt($memFree,6,1,1),  cvt($memBuf,6,1,1),
+                cvt($memCached,6,1,1), cvt($inactive,6,1,1), cvt($active,6,1,1),
+                $swapin/$intSecs, $swapout/$intSecs, $pagein/$intSecs, $pageout/$intSecs,
+                $intrpt/$intSecs, $ctxt/$intSecs,
+                $usr, $sys, $idleP[$i], $waitP[$i]);
+</pre></div>
+
+Finally comes the output.  There is actually a lot of latitude here and in this case
+we're caling <i>printText()</i> which will send the output to the terminal or over a
+socket.  It will not write to a local file as does <i>sexpr or lexpr</i>, but if you
+want to see how to do that, refer to them.  As with all perl require files, they must
+return <i>true</i> and therefore the final statement that consists of the digit 1.
+<div class=terminal-wide14>
+<pre>
+  printText($line);
+}
+1;
+</pre></div>
+
+Try running it and you'll see all the pagination and time formats work just as they
+do with standard output formats.
+
+</body>
+</html>

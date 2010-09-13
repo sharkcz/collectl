@@ -182,16 +182,21 @@ not necessarily from the lustre storage servers.</td></tr>
 <tr><td><b>Writes</b></td><td>Writes/sec delievered to the storage servers.</td></tr>
 <tr><td><b>WriteKB</b></td><td>KB Writes/sec delievered to the storage servers.</td></tr>
 <tr><td><b>Pend</b></td><td>Pending issued pages</td></tr>
-<tr><td><b>Hits</b></td><td>Cache hits</td></tr>
-<tr><td><b>Misses</b></td><td>Cache misses</td></tr>
-<tr><td><b>NotCon</b></td><td>Read page not consecutive</td></tr>
-<tr><td><b>MisWin</b></td><td>Miss iniside window</td></tr>
-<tr><td><b>LckFal</b></td><td>Failed grab_cache_page</td></tr>
-<tr><td><b>Discrd</b></td><td>Read but discarded</td></tr>
-<tr><td><b>ZFile</b></td><td>Zero length file</td></tr>
-<tr><td><b>ZerWin</b></td><td>Zero size window</td></tr>
+<tr><td><b>Hits</b></td><td>prefetch cache hits</td></tr>
+<tr><td><b>Misses</b></td><td>prefetch cache misses</td></tr>
+<tr><td><b>NotCon</b></td><td>The current pages read that were not consecutive with the previous ones./td></tr>
+<tr><td><b>MisWin</b></td><td>Miss inside window.  The pages that were expected to be in the 
+                              prefetch cache but weren't.  They were probably
+                              reclaimed due to memory pressure</td></tr>
+<tr><td><b>LckFal</b></td><td>Failed grab_cache_pages.  Tried to prefetch page but it was locked.</td></tr>
+<tr><td><b>Discrd</b></td><td>Read but discarded.  Prefetched pages (but not read by applicatin)
+                              have been discarded either becuase of memory pressure or lock
+                              revocation.</td></tr>
+<tr><td><b>ZFile</b></td><td>Zero length file.</td></tr>
+<tr><td><b>ZerWin</b></td><td>Zero size window.</td></tr>
 <tr><td><b>RA2Eof</b></td><td>Read ahead to end of file</td></tr>
-<tr><td><b>HitMax</b></td><td>Hit maximum readahead issue</td></tr>
+<tr><td><b>HitMax</b></td><td>Hit maximum readahead issue.  The read-ahead window has grown to the
+                              maximum specified by <i>max_read_ahead_mb</i></td></tr>
 </table>
 
 <div class=terminal-wide14>

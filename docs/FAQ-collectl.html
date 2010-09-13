@@ -1,4 +1,4 @@
-FAQ-collectl.html<html>
+<html>
 <title>collectl Freuqently Asked Questions</title>
 <body>
 
@@ -12,6 +12,7 @@ FAQ-collectl.html<html>
   <li><a href="#gen5">Why doesn't <i>--top</i> show as much data as the <i>top</i> command?</a></li>
   <li><a href="#gen6">What does <i>collectl</i> stand for?</a></li>
   <li><a href="#gen7">How do you pronounce <i>collectl</i></a></li>
+  <li><a href="#gen8">Why is the default socket port 2655?</a></li>
 </ul>
 <h2>Running collectl</h2></ul>
 <ul>
@@ -48,6 +49,8 @@ FAQ-collectl.html<html>
   <li><a href="#ops9">I'm seeing a bogus data point!</a></li>
   <li><a href="#ops10">What does the error <i>-sj or -sJ with -P also requires CPU details so add C or remove J.</i> mean?</a></li>
   <li><a href="#ops11">Why can't I see Process I/O statistics?</a></li>
+  <li><a href="#ops12">I'm getting an error that <i>formatit.ph</i> can't be found</a></li>
+  <li><a href="#ops13">When I use an interval >4 seconds I'm getting non-uniform sample times</li>
 </ul>
 
 <h1>General Questions</h1>
@@ -121,6 +124,10 @@ was distributed as with DEC's Tru64 Unix Operating System and therefore stands f
 <a name="gen7"></a>
 <h2>How do you pronounce <i>collectl</i>?</h2>
 It rhymes with pterodactyl.
+
+<a name="gen8"></a>
+<h2>Why is the default socket port 2655??</h2>
+Those are the first 4 digits of <i>collectl</i> on a telephone numeric key pad.
 
 <h1>Running collectl</h1>
 
@@ -431,6 +438,24 @@ exists.  If not, you don't have them enabled and will need to rebuild your kerne
 instructions for doing so are beyong the scope of this FAQ.  If you do rebuild, make sure
 you have the following symbols enabled: <i>CONFIG_TASKSTATS, CONFIG_TASK_XACCT</i> and
 <i>CONFIG_TASK_IO_ACCOUNTING</i>.
+
+<a name="ops12"></a>
+<h2>I'm getting an error that <i>formatit.ph</i> can't be found</h2>
+This component of collectl must be in the same directory as collectl itself.  On startup
+collectl looks at the command used to start it and from there determines its location by
+following as many links as may be associated with that command.  It then extracts its 
+directory name from the last link (if any) in the chain.  If one has set up a set of links
+such that the last one uses a relative path, when collectl prepends that path to formatit.ph
+it's likely not to find it and hence this message.  To fix the problem
+simply specify the complete path in the final link.
+
+<a name="ops13"></a>
+<h2>When I use an interval >4 seconds I'm getting non-uniform sample times</h2>
+Awhile back I found a problem on a SuSE 10 system that was running with a new version
+of glibc that changed the granularity of timers from micro-seconds to nanoseconds and
+therefore went from 32 to 64 bits.  Guess what, 4.3 seconds is > 32 bits!  Once I
+reported this to the author of HiRes he immediately (whithin hours) release version
+1.91 which addressed the problem.  A newer version of HiRes should be the remedy.
 
 </body>
 </html>

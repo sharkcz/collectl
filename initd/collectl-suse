@@ -28,7 +28,7 @@ if [ ! -f $COLLECTL ]; then
 fi
 
 # see if collectl is running
-pid="`ps ax opid,cmd | grep \"$COMMAND\" | grep -v grep | cut -f1 -d' '`"
+pid="`ps auxww | grep \"$COMMAND\" | grep -v grep | awk '{print $2}'`"
  
 case "$1" in
    start)

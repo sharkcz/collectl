@@ -103,7 +103,8 @@ the size of the compressed raw file becomes even less significant.
 <p>
 We can now extend our table to include logging while communicating over a socket
 as well as logging to both raw and plot files at the same time noting if you don't
-inclue <i>-f</i> no local storage is involved.
+inclue <i>-f</i> no local storage is involved.  <i>Note that when you include -f
+and -P, the plot data will get sent over the pipe and also be logged locally</i>.
 <p>
 <table border="1" width=50%>
 <tr><td>&nbsp;</td><td><b>Raw</b></td><td><b>Plot</b></td></tr>
@@ -112,10 +113,13 @@ inclue <i>-f</i> no local storage is involved.
 <tr><td><b>Socket</b></td><td>-A [-f]<br>terminal</td><td>-A -P [-f [--rawtoo]]<br>plot</td></tr>
 </table>
 <p>
-<h3>S-expressions, the 3rd type of file</h3>
+<h3>Exported output, the 3rd type of file</h3>
 We finally come to a third type of output, intended primarily for feeding
-collectl data to other local programs, and that is the 
-<a href=http://en.wikipedia.org/wiki/S-expression>s-expression</a>.
+collectl data to other programs, and that is <i>exported</i> ouput.  There are
+currently 3 types exported output delivered with collectl though the only two
+actually generate data files and are therefore applicable to this section.
+<p>
+The first is the <a href=http://en.wikipedia.org/wiki/S-expression>s-expression</a>.
 S-expressions have been around for many years having their earliest roots in
 programming languages such as Lisp and Scheme, as described in the Wikipedia
 and offer a semi-structured mechanism for the representation of data.  One such
@@ -127,47 +131,40 @@ tools that might wish to consume it in close to real-time.
 The actual contents of the s-expressions will be driven by the subsystems for which
 data is being collected.
 <p>
-There are actually 2 types of values collectl can write into the s-expressions,
-the first simply being the raw data values as read from /proc which one can
-request by specifying <i>--sexpr raw</i>.  With this form,
-the consumer of the data must perform the necessary calculations to compute
-the differences between samples and if a rate is desired, to divide by the
-number of seconds between samples.
-On the other hand if one simply wishes to look at the current rates for the
-various counters the second form, which is requested by specifying <i>--sexpr rate</i>.
+The second type is the <i>L-expression</i> which is something that has been
+invented purely for collectl as an alternative form of output which in some
+environments can be easier to parse than the more complex <i>s-sepression</i>.
 <p>
 When used without any logging switches (-f, -P and/or --rawtoo), the resultant
-s-expression is written to the terminal, more for consistency with the general
-output model than anything else.
+output from both expressions is written to the terminal, more for consistency 
+with the general output model than anything else.  If can also be helpful as
+a debugging aide to see exactly what would be delivered over a socket or written
+to a file.
 <p>
-The more typical use of S-expressions requires that collectl be in
+The more typical use of these expressions requires that collectl be in
 logging mode, that is one has specified a destination with -f.
 The directory associated with this destination then becomes the default location
-for the s-expression file.  If one wishes to change that directory one can
-include the new destination with --sexpr.  See the man page for details.
-Alternatively, one can send the s-expression over a socket by using -A instead of -f.
+for their output files.  If one wishes to change that directory one can
+include the new destination with --expdir.  Alternatively, one can alsoe send the
+data over a socket by using -A instead of -f.
 <p>
 For consistency with the general logging model, one can choose to include
-additional logging switches so one may choose to send an s-expression
-over a socket and log to a local raw or plot file at the same time.  
-In fact, one can even log to
-a local raw or plot file at the same time writing the s-expression to a
-local file.  This allows us to extend our summary table to its complete form:
+additional logging switches so one may choose to send the expression
+over a socket and also log to a local raw or plot file at the same time.  
+<i>Note that when you send an expression over a socket and specify -f,
+the data logged locally is the <i>raw</i> data</i>.
 <p>
 <table border="1" width=75%>
-<tr><td>&nbsp;</td><td><b>Raw</b></td><td><b>Plot</b></td><td><b>S-Expression</b></td></tr>
-<tr><td><b>Terminal</b></td><td>no switches<br>terminal</td><td>-P<br>plot</td><td>--sexpr<br>sexpr</td></tr>
-<tr><td><b>File</b></td><td>-f<br>raw</td><td>-P -f [--rawtoo]<br>plot</td><td>--sexpr -f [-P][--rawtoo]<br>sexpr</td></tr>
-<tr><td><b>Socket</b></td><td>-A [-f]<br>terminal*</td><td>-A -P [-f [--rawtoo]]<br>plot</td><td>--sexpr -A [-f [-P][--rawtoo]]<br>sexpr</td></tr>
+<tr><td>&nbsp;</td><td><b>Raw</b></td><td><b>Plot</b></td><td><b>Exported</b></td></tr>
+<tr><td><b>Terminal</b></td><td>no switches<br>terminal</td><td>-P<br>plot</td><td>--export<br>expression</td></tr>
+<tr><td><b>File</b></td><td>-f<br>raw</td><td>-P -f [--rawtoo]<br>plot</td><td>--export -f [-P][--rawtoo]<br>expression</td></tr>
+<tr><td><b>Socket</b></td><td>-A [-f]<br>terminal*</td><td>-A -P [-f [--rawtoo]]<br>plot</td><td>--export -A [-f [-P][--rawtoo]]<br>expression</td></tr>
 </table>
 * remember, logging does not apply to terminal based output
 <p>
 There are a couple of additional caveats you should be aware of.  When you specify
--A, --sexpr, -P and -f at the same time the s-expression goes over the socket
-and the plot data gets logged locally.  Furthermore, this will also
-cause the s-expressdion data to be logged locally
-as well.  In other words, when you specify -f with socket I/O, the type of data
-written over the socket is always locally logged.
+-A, --export, P and -f at the same time the exported data goes over the socket
+and the plot data gets logged locally.
 <p>
 If you are still confused, try experimenting with various combinations of switches
 and see which files get genereated.

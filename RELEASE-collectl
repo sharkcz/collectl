@@ -36,20 +36,77 @@ For Debian
 
 KNOWN PROBLEMS/RESTRICTIONS
 
-  - playback mode on PCs gives incorrect warnings about uninitialized variables
-    when -b/-e used.  these can safely be ignored.
   - in playback mode, make sure to deselect -O if recorded subsys not specified
     or else will trip error checks in checkSubOpts()
   - this version may generate errors "Ignoring '!' modifier for short options
     with older versions of perl OR at least older version of the 'getopts'
     module.
-  - when showing process command, only show command portion.  the args will 
-    still be saved when using -P
+  - when showing process command, only shows command portion since args can be 
+    quite long.  the args will still be saved in .pcr file when using -P
   - if run as a non-privileged users, network speeds will NOT be recorded in
     in file headers and the default speed specified by DefNetSpeed in the conf
     file will be used to determine if any network stats are bogus
   - if system time is changed by more then the log rolling frequency after collectl
     starts, multiple log files will be created during the next polling cycle(s)
+  - if a symlink is used to point to the executable, it MUST contain the full path
+    or collectl will not be able to find 'formatit.ph'
+
+2.6.2 Apr 29, 2008
+  - forgot to rename call to resetMini1Counters() in collectl.pl
+  - do NOT clear $miniDateTime when --export
+  - added swapin/sec and swapout/sec to [MEM] data in tab file
+
+2.6.1 Apr 24, 2008
+  - for perl version checks, use 2 digit minor/patch levels (thanks devzero)
+  - report zlib and HiRes vesions in collectl -v output
+  - grab ALL of /proc/meminfo for non-2.4 kernels even thought we're not processing 
+    all of it
+  - added the number of active lustre file systems seen by the client for lexpr/sexpr
+  - was incorrectly restricting -A to -P or --export and that was wrong
+  - allow --export in playback mode, making it possible to use --vmstat as wellx
+  - extended --top to allow -s to be included along with proc stats.  not that pretty
+    but very useful
+  - renamed printTerm() to printVerbose(), briefFormat() to printBrief() and other
+    associated printMin1 routines
+  - when changed syswrite() in writeData in last version, lost trailing /n and
+    so put it back
+  - ibcheck was redefining global $port so reopening socket in 'server' mode failed!
+  - when --export added forgot to handle writeData() conditional correctly for
+    process and slab data
+
+2.6.0 Apr 03, 2008
+  - lustre
+    - typo for lustre readahead 'not consecutive' variable!
+    - added 2 new readahead variables for 'failed grab...' and 'wrong page...'
+  - extended meaning of --headerrepeat and added a synonym of --hr for it
+    a value of -1 means never display a header and 0 means only display it once,
+    eliminating the need for -oH and -oh which are still supported but not shown
+    in help.  They will be eliminated in a future release.
+  - bug in regx prevented gzclose on zipped tab file
+  - cleaned up code (finally) that deals with displaying headers such as how often
+    and when to skip entirely.  this included dropping the -oh option which
+    predates --verbose mode
+  - if we can find 'resize', use it to get number of lines in display and use for
+    default.  This can still be overriden in collectl.conf
+  - slight change to -ot behavior.  only erase screen one time and then just
+    overwrite what's there as it's softer on the eyes
+  - fixed format error in 's-expr rate' for disk summary stats
+  - modification to the way --custom is used to make it work with -f, -P, sockets
+    and --rawtoo just like --sexpr.  In fact, sexpr and vmstat code has been 
+    removed from formatit.ph and are now standalone include file named sexpr.ph
+    and vmstat.ph respectively.  See documentation for more details.
+  - renamed --custom and --custdir to --export and --expdir to better reflect
+    that the main purpose of these is to export data to a file or over a socket
+  - had to move subsys/interval initialization code around to happen before
+    calling --export
+  - changed init.d file for SuSE as it couldn't detect collectl running 
+    when pids was 5 digits
+  - added code to handle write of partial data over socket
+  - based on popular demand, --all has been provided to show all summary stats.
+    be sure to try it with -ot
+  - added CPU number to process detail report.  since this data has actually been
+    collected all along, you can play back older raw file and now get them
+  - changed default socket port to 2655
 
 2.5.1 Mar 21, 2008
   - added OFED 1.3 location for perfquery to collectl.conf

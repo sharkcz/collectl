@@ -12,7 +12,7 @@ sub vmstat
   my $line;
   if (($headerRepeat==0 && !$headersPrinted) || ($headerRepeat>0 && ($totalCounter % $headerRepeat)==1))
   {
-    $line= "${cls}#${miniBlanks}procs ---------------memory (KB)--------------- --swaps-- -----io---- --system-- ----cpu-----\n";
+    $line= "${clscr}#${miniBlanks}procs ---------------memory (KB)--------------- --swaps-- -----io---- --system-- ----cpu-----\n";
     $line.="#$miniDateTime r  b   swpd   free   buff  cache  inact active   si   so    bi    bo   in    cs us sy  id wa\n";
   }
 

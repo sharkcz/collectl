@@ -58,8 +58,8 @@ will be included which is the aggregate number of interrupts for each CPU.
 <p>
 <div class=terminal-wide14><pre>
 # DISK STATISTICS (/sec)
-#          <-------reads--------><-------writes------><----------averages---------->  Percent
-#Name        Ops  Merged  KBytes   Ops  Merged  KBytes  Request  QueLen   Wait SvcTim    Util
+#           <---------reads---------><---------writes---------><--------averages--------> Pct
+#Name        Ops Merged KBytes  Size   Ops Merged KBytes  Size  RWSize  QLen  Wait SvcTim Util
 </pre></div>
 
 <table>
@@ -77,6 +77,9 @@ only record disk statistics in /proc/stat.</td></tr>
 <tr><td><b>KBytes<b></td>
 <td>KB read/sec</td></tr>
 
+<tr><td><b>Size<b></td>
+<td>Average read I/O size in KBytes</td></tr>
+
 <tr><td><b>Ops</b></td>
 <td>Number of writes/sec</td></tr>
 
@@ -86,17 +89,22 @@ only record disk statistics in /proc/stat.</td></tr>
 <tr><td><b>KBytes<b></td>
 <td>KB written/sec</td></tr>
 
-<tr><td><b>Request</b></td>
-<td>Average I/O request size in KB</td></tr>
+<tr><td><b>Size<b></td>
+<td>Average write I/O size in KBytes</td></tr>
 
-<tr><td><b>QueLen</b></td>
+<tr><td><b>RWSize<b></td>
+<td>Average combined read and write I/O size in KBytes.  This is <i>not</i> the average
+of the read and write sizes but rather the sum of the reads/write divided by the number
+of I/Os</td></tr>
+
+<tr><td><b>QLen</b></td>
 <td>Average number of requests queued</td></tr>
 
 <tr><td><b>Wait</b></td>
-<td>Average time a request has been waiting in the queue</td></tr>
+<td>Average time in msec for a request has been waiting in the queue</td></tr>
 
 <tr><td><b>SvcTim</b></td>
-<td>Average time for a reuest to be serviced by the device</td></tr>
+<td>Average time in msev for a request to be serviced by the device</td></tr>
 
 <tr><td><b>Util</b></td>
 <td>Percentage of CPU time during which I/O requests were issued</td></tr>
@@ -106,8 +114,7 @@ only record disk statistics in /proc/stat.</td></tr>
 <p>
 <div class=terminal><pre>
 # INFINIBAND STATISTICS (/sec)
-#HCA    OpsIn  OpsOut   KB-In  KB-Out  Errors
-   0        0       0       0       0       0
+#HCA    OpsIn  OpsOut   KB-In  KB-Out  IOSizeI IOSizeO  Errors
 </pre></div>
 
 <table>
@@ -116,6 +123,8 @@ only record disk statistics in /proc/stat.</td></tr>
 <tr><td><b>OpsOut</b></td><td>Transmitted packets/sec.</td></tr>
 <tr><td><b>KB-In</b></td><td>KB received/sec.</td></tr>
 <tr><td><b>KB-Out</b></td><td>KB transmitted/sec.</td></tr>
+<tr><td><b>IOSizeI</b></td><td>Average incoming packet size in KB</td></tr>
+<tr><td><b>IOSizeO</b></td><td>Average outgoing packet size in KB</td></tr>
 <tr valign=top><td><b>Errs</b></td><td>Count of current errors.  Since these are typically infrequent, it
 is felt that reporting them as a rate would result in either not seeing them OR
 round-off hiding their values.</td></tr>
@@ -301,7 +310,7 @@ Note that this report is only available for HP's SFS.
 <p>
 <div class=terminal-wide14><pre>
 # NETWORK STATISTICS (/sec)
-#Num    Name  InPck  InErr OutPck OutErr   Mult   ICmp   OCmp    IKB    OKB
+#Num    Name  InPck  InErr OutPck OutErr   Mult   ICmp   OCmp    IKB    OKB  ISize  OSize
 </pre></div>
 <p>
 <table>
@@ -337,6 +346,12 @@ Note that this report is only available for HP's SFS.
 
 <tr><td><b>OKB</b></td>
 <td>Outgoing KB/sec</td></tr>
+
+<tr><td><b>ISize</b></td>
+<td>Average incoming packet size in bytes</td></tr>
+
+<tr><td><b>OSize</b></td>
+<td>Average outgoing packet size in bytes</td></tr>
 </table>
 <p>
 <h3>NFS Data, <i>collectl -sF</i></h3>
@@ -379,7 +394,7 @@ these fields.
 <p>
 <div class=terminal-wide14><pre>
 # PROCESS SUMMARY (faults are /sec)
-# PID  User     PR  PPID S   VSZ   RSS  SysT  UsrT Pct  AccuTime  RKB  WKB MajF MinF Command
+# PID  User     PR  PPID S   VSZ   RSS  CP  SysT  UsrT Pct  AccuTime  RKB  WKB MajF MinF Command
 </pre></div>
 
 <table>
@@ -402,10 +417,13 @@ Otherwise the UID will be reported instead.</td></tr>
 <td>Process State: S - Sleeping, D - Uninterruptable Sleep, R - Running, Z - Zombie or T - Stopped/Traced</td></tr>
 
 <tr valign=top><td><b>VSZ<b></td>
-<td>This is the amount of VS memory used by this process.</td></tr>
+<td>This is the amount of VS memory used by this process</td></tr>
 
 <tr valign=top><td><b>RSS<b></td>
-<td>This is the amount of RSS memory used by this process.</td></tr>
+<td>This is the amount of RSS memory used by this process</td></tr>
+
+<tr valign=top><td><b>CP<b></td>
+<td>CPU number this process is currently running on</td></tr>
 
 <tr valign=top><td><b>SysT<b></td>
 <td>The amount of System Time this process used during this interval</td></tr>
@@ -435,11 +453,70 @@ monitoring enabled which is not the default as of 2.6.23.</td></tr>
 <td>Minor Page Faults per second</td></tr>
 
 <tr valign=top><td><b>Command<b></td>
-<td>Command that is running.  Path and command line options are NOT included</td></tr>
+<td>Command that is running.  Path and command line options are NOT included
+unless <i>--procopts w</i></td></tr>
 </table>
-
+<p>
+<h3>Process I/O Data, <i>collectl --procopts i</i></h3>
 <div class=terminal-wide14><pre>
-# PID  User     S VmSize  VmLck  VmRSS VmData  VmStk  VmExe  VmLib Command
+# PID  User     S  SysT  UsrT   RKB   WKB  RKBC  WKBC  RSys  WSys  Cncl  Command
+</pre></div>
+
+<table>
+<tr valign=top><td><b>PID<b></td>
+<td>Pid of the process</td></tr>
+
+<tr valign=top><td><b>User<b></td>
+<td>Name of user which this process is running under.  In playback mode on a
+different machine, use -oP to direct collectl to use the password file named in
+collectl.conf (default is /etc/passwd) to lookup the corresponding username.
+Otherwise the UID will be reported instead.</td></tr>
+
+<tr valign=top><td><b>S<b></td>
+<td>Process State: S - Sleeping, D - Uninterruptable Sleep, R - Running, Z - Zombie or T - Stopped/Traced</td></tr>
+
+<tr valign=top><td><b>SysT<b></td>
+<td>The amount of System Time this process used during this interval</td></tr>
+
+<tr valign=top><td><b>UsrT<b></td>
+<td>The amount of User Time this process used during this interval</td></tr>
+
+<tr valign=top><td><b>RKB<b></td>
+<td>Attempt to count the number of bytes which this process really did cause to
+be fetched from the storage layer by doing calls to <i>read_bytes</i>. 
+This is done at the submit_bio() level, so it is accurate for block-backed 
+filesystems.</td></tr>
+
+<tr valign=top><td><b>WKB<b></td>
+<td>Attempt to count the number of bytes which this process caused to be sent to
+the storage layer by doing calls to <i>write_bytes</i>. 
+This is done at page-dirtying time.</td></tr>
+
+<tr valign=top><td><b>RKBC<b></td>
+<td>Number of bytes which were read via read, readv, pread and sendfile.  Since
+these requests are satisfied from kernel pagecache they won't be accounted for
+by RKB, because they didn't require any I/O.</td></tr>
+
+<tr valign=top><td><b>WKBC<b></td>
+<td>Number of bytes which were written via write, writev, pwrite and sendfile.
+Like RKBC, since the I/O uses the pagecache these values won't be accounted
+for by WKB.
+</td></tr>
+
+<tr valign=top><td><b>RSys<b></td>
+<td>Number of read syscalls, specifically: read, pread, readv and sendfile</td></tr>
+
+<tr valign=top><td><b>WSys<b></td>
+<td>Number of write syscalls, specifically: write, pwrite, writev and sendfile</td></tr>
+
+<tr valign=top><td><b>Cncl<b></td>
+<td>Number of cancelled write bytes.</td></tr>
+
+</table>
+<p>
+<h3>Process Memory Data, <i>collectl --procmem</i></h3>
+<div class=terminal-wide14><pre>
+# PID  User     S VmSize  VmLck  VmRSS VmData  VmStk  VmExe  VmLib MajF MinF Command
 </pre></div>
 
 <table>
@@ -476,8 +553,14 @@ Otherwise the UID will be reported instead.</td></tr>
 <tr valign=top><td><b>VmLib<b></td>
 <td>Size of Virtual Memory used for dynamically linked libraries</td></tr>
 
+<tr valign=top><td><b>MajF<b></td>
+<td>Major Page Faults per second</td></tr>
+
+<tr valign=top><td><b>MinF<b></td>
+<td>Minor Page Faults per second</td></tr>
+
 <tr valign=top><td><b>Command<b></td>
-<td>Command that is running.  Path and command line options are NOT included</td></tr>
+<td>Command that is running.  Path and command line options are NOT included unless <i>--procopt w</i></td></tr>
 </table>
 <p>
 <h3>Slab Data, <i>collectl -sY</i></h3>

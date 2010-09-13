@@ -51,6 +51,54 @@ KNOWN PROBLEMS/RESTRICTIONS
   - if a symlink is used to point to the executable, it MUST contain the full path
     or collectl will not be able to find 'formatit.ph'
 
+2.6.4 June 11, 2008
+  - fixed references to gzerror() to be in string context and so error text correct
+  - miscellaneous documentation changes, mainly to support code changes
+  - do not report /proc/pid open failures since they happen often enough to be
+    a nuisance
+  - changed order of options for --top to be type,num and if no num use the screen
+    size
+  - dropped --procio and --procmem replacing them with --procopts i and m
+  - new options for --procopts: r and z
+  - broke --vmstat when changed $cls to $clscr
+  - removed inline code for vmstats since now down via vmstat.ph
+  - collectl --top generating uninitialized variable message when blank line in
+    /etc/passwd was fixed
+  - wasn't honoring -ot for a single subsystem in --verbose mode (sheesh) and now it is
+  - remove special code that removes collectl from --top display unless explictly 
+    requested.  this will help make users more aware of collectl overhead
+  - found at least one system that returned different format from 'resize' and so
+    changed pattern match to make it more general
+
+2.6.3 May 12, 2008
+  - added a README, INSTALL and UNINSTALL to the tarball to aid in manual 
+    installation and removal
+  - changed --procopts to --procfilt and --slabopt to --slabfilt because I want
+    to differentiate between options and filters.
+  - enhanced socket error handling
+  - new I/O output data for disks, networks and interconnect
+    - i/o sizes will always be included in verbose output
+    - new switch --iosize will add to brief displays
+    - NOTE this data is not written to tab file since it can be derived
+  - changes to -si (inode data)
+    - removed info from header and will get it from proc instead
+    - changed what is reported as some fields no longer valid and added 'number' of
+      dentry noting that the values for 'unused', which increase as files are 
+      created makes no sense to me.  also including file handles and inode counts 
+      in brief format.
+  - as a result of adding -si to brief format, --all results in brief output for
+    everything and so you'll need to include ---verbose to see verbose form
+  - several new options for --procopts (thanks for the push Matt)
+      s: will add read/write system calls to process stats
+      t: will force collectl to look/display threads for ALL processes
+         note that this can be a lot of overhead if there are a lot of threads on 
+ 	 your system.  All you threads can also be seen via 'ps -eLf'
+      w: will make display wider by including arguments to process names
+  - you can now request what to sort on for --top (cpu, io or page faults)
+  - you can now include --procfilt with --top and it will only consider
+    those processes that match for display
+  - you can now use --top in playback mode
+
 2.6.2 Apr 29, 2008
   - forgot to rename call to resetMini1Counters() in collectl.pl
   - do NOT clear $miniDateTime when --export
@@ -59,8 +107,8 @@ KNOWN PROBLEMS/RESTRICTIONS
 2.6.1 Apr 24, 2008
   - for perl version checks, use 2 digit minor/patch levels (thanks devzero)
   - report zlib and HiRes vesions in collectl -v output
-  - grab ALL of /proc/meminfo for non-2.4 kernels even thought we're not processing 
-    all of it
+  - grab ALL of /proc/meminfo for non-2.4 kernels even though we're not
+    processing all of it
   - added the number of active lustre file systems seen by the client for lexpr/sexpr
   - was incorrectly restricting -A to -P or --export and that was wrong
   - allow --export in playback mode, making it possible to use --vmstat as wellx

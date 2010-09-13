@@ -69,7 +69,7 @@ This next set of fields apply to processes
 <div class=terminal>
 <pre>
 # DISK SUMMARY (/sec)
-#Reads  R-Merged  R-KBytes   Writes  W-Merged  W-KBytes
+#Reads  R-Merged  R-KBytes  SizeKB  Writes  W-Merged  W-KBytes  SizeKB
 </div></pre>
 
 <table>
@@ -79,48 +79,50 @@ This next set of fields apply to processes
 These statistics are not available in older kernels which 
 only record disk statistics in /proc/stat.</td></tr>
 <tr><td><b>R-KBytes</b></td><td>KB read/sec</td></tr>
+<tr><td><b>SizeKB</b></td><td>Average read size in KB</td></tr>
 <tr><td><b>Writes</b></td><td>Number of writes/sec</td></tr>
 <tr valign=top><td><b>W-Merged</b></td>
 <td>Write requests merged per second when being dequeued.</tr></tr>
 <tr><td><b>W-KBytes<b></td><td>KB written/sec</td></tr>
+<tr><td><b>SizeKB</b></td><td>Average write size in KB</td></tr>
 </table>
 
-<p><h3>Inoodes/Filesystem, <i>collectl -si</i></h3>
+<p><h3>Inodes/Filesystem, <i>collectl -si</i></h3>
 
 <div class=terminal>
 <pre>
 # INODE SUMMARY
-#DCache  ---OpenFiles---           -----SBlock-----   ----DQuot----
-# Unusd  Handles   % Max    Inode  Handles    % Max   Entry   % Max
+#    Dentries      File Handles    Inodes
+# Number  Unused   Alloc   % Max   Number
+   40585   39442     576    0.17    38348
 </pre></div>
 
 <table>
 <tr><td colspan=2>DCache</td></tr>
-<tr><td><b>Unusd</b></td><td>Number of unused entries in directory cache</td</tr>
-<tr><td colspan=2>Open Files</td></tr>
-<tr><td><b>Handles</b></td><td>Number of open file handles</td></tr>
+<tr><td><b>Number</b></td><td>Number of entries in directory cache</td</tr>
+<tr><td><b>Unused</b></td><td>Number of unused entries in directory cache</td</tr>
+<tr><td><b>Handles</b></td><td>Number of allocated file handles</td></tr>
 <tr><td><b>% Max</b></td><td>Percentage of maximum available file handles</td></tr>
-<tr><td><b>Inode</b></td><td>Number of user inode handles</td></tr>
-<tr><td colspan=2>SBlock</td></tr>
-<tr><td><b>Handles</b></td><td>Number of allocated Super Blocks handlers</td></tr>
-<tr><td><b>% Max</b></td><td>Percentage of maximum allowed</li>
-<tr><td colspan=2>DQuot</td></tr>
-<tr><td><b>Entry</b></td><td>Number of allocated Disk Quota Entries</td></tr>
-<tr><td><b>% Max</b></td><td>Percentage of maximum allowed</td></tr>
+<tr><td><b>Inode</b></td><td>Number of used inode handles</td></tr>
 </table>
+
+<i>NOTE - as of this writing I'm baffled by the dentry unused field.  No matter how 
+many files and/or directories I create, this number goes up!  Sholdn't it go down?</i>
 
 <p><h3>Infiniband, <i>collectl -sx</i></h3>
 
 <div class=terminal>
 <pre>
 # INFINIBAND SUMMARY (/sec)
-# OpsIn  OpsOut   KB-In  KB-Out  Errors
+# OpsIn  OpsOut   KB-In  KB-Out  IOSizeI IOSizeO  Errors
 </pre></div>
 <table>
 <tr><td><b>OpsIn</b></td><td>Packets received/sec.</td></tr>
 <tr><td><b>OpsOut</b></td><td>Packets transmitted/sec.</td></tr>
 <tr><td><b>KB-In</b></td><td>KB received/sec.</td></tr>
 <tr><td><b>KB-Out</b></td><td>KB transmitted/sec.</td></tr>
+<tr><td><b>IOSizeI</b></td><td>Average incoming packet size in KB</td></tr>
+<tr><td><b>IOSizeO</b></td><td>Average outgoing packet size in KB</td></tr>
 <tr valign=top><td><b>Errs</b></td><td>Count of current errors.  Since these
 are typically infrequent, it is felt that reporting them as a rate would result
 in either not seeing them OR round-off hiding their values.</td></tr>
@@ -353,7 +355,7 @@ Receive errors are broken out for errors, dropped, fifo and fragments.
 <div class=terminal>
 <pre>
 # NETWORK SUMMARY (/sec)
-#InPck  InErr OutPck OutErr   Mult   ICmp   OCmp    IKB    OKB
+#InPck  InErr OutPck OutErr   Mult   ICmp   OCmp    IKB    OKB  ISize  OSize
 </pre></div>
 
 <table>
@@ -383,6 +385,12 @@ Receive errors are broken out for errors, dropped, fifo and fragments.
 
 <tr><td><b>OKB</b></td>
 <td>Outgoing KB/sec</td></tr>
+
+<tr><td><b>ISize</b></td>
+<td>Average incoming packet size in bytes</td></tr>
+
+<tr><td><b>OSize</b></td>
+<td>Average outgoing packet size in bytes</td></tr>
 </table>
 
 <p><h3>NFS, <i>collectl -sf</i></h3>

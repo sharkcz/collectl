@@ -1,0 +1,14 @@
+#!/bin/bash
+
+BINDIR=/opt/hp/collectl
+
+rm -fr $BINDIR
+
+rm -f /usr/bin/collectl
+rm -f /usr/sbin/collectl
+rm -f /etc/collectl.conf
+rm -f /etc/init.d/collectl
+rm -f /usr/share/man/man1/collectl.1.gz
+
+rm -f /etc/init.d/rc*.d/*collectl
+rm -f /etc/rc.d/rc*.d/*collectl

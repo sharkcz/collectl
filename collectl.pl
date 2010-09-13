@@ -99,7 +99,7 @@ if ($PerlVers lt '5.08.00')
   print "See /opt/hp/collectl/docs/FAQ-collectl.html for details.\n";
 }
 
-$Version=  '2.6.2';
+$Version=  '2.6.4';
 $Copyright='Copyright 2003-2008 Hewlett-Packard Development Company, L.P.';
 $License=  "collectl may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
@@ -169,9 +169,10 @@ $wideFlag=$coreFlag=$newRawFlag=0;
 $totalCounter=0;
 $NumCpus=$NumDisks=$NumNets=$DiskNames=$NetNames=$HZ='';
 $NumOst=$NumFans=$NumPwrs=$NumTemps=0;
-$OFMax=$SBMax=$DQMax=$FS=$ScsiInfo=$cls=$HCAPortStates='';
+$OFMax=$SBMax=$DQMax=$FS=$ScsiInfo=$HCAPortStates='';
 $SlabVersion=$XType=$XVersion='';
-$dentryFlag=$inodeFlag=$filenrFlag=$supernrFlag=$dquotnrFlag=0;
+$dentryFlag=$inodeFlag=$filenrFlag=$allThreadFlag=0;
+$clr=$clscr=$cleol=$home='';
 
 # This tells us we have not yet made our first pass through the data
 # collection loop and gets reset to 0 at the bottom.
@@ -183,7 +184,7 @@ $cmdSwitches=preprocSwitches();
 
 # These are the defaults for interactive and daemon subsystems
 $SubsysDefInt='cdn';
-$SubsysDefDaemon='cdjlmnstx';
+$SubsysDefDaemon='cdijlmnstx';
 
 # We want to load any default settings so that user can selectively 
 # override them.  We're giving these starting values in case not
@@ -214,10 +215,10 @@ $SysIB='/sys/class/infiniband';
 # These aren't user settable but are needed to build the list of ALL valid
 # subsystems
 $SubsysDet=   "CDEFJLNTXYZ";
-$SubsysExcore="fiy";
+$SubsysExcore="y";
 
 # These are the subsystems allowed in brief mode
-$BriefSubsys="cdfFjlmnstxy";    # note - use of y requires SAME intervals!
+$BriefSubsys="cdfFijlmnstxy";    # note - use of y requires SAME intervals!
 
 $configFile='';
 $ConfigFile='collectl.conf';
@@ -248,8 +249,8 @@ $headerRepeat=$HeaderRepeat;
 # use the value of LINES to set header repeat.
 if (!$PcFlag && !$daemonFlag && $Resize ne '' && defined($ENV{TERM}) && $ENV{TERM}=~/xterm/)
 {
-  `$Resize`=~/LINES=(\d+)/m;
-  $headerRepeat=$1-2;  # least room for header
+  `$Resize`=~/LINES.*?(\d+)/m;
+  $headerRepeat=$1-2;  # leave room for header
 }
 
 # let's also see if there is a terminal attached.  this is currently only 
@@ -264,22 +265,24 @@ $count=-1;
 $numTop=0;
 $briefFlag=1;
 $showPHeaderFlag=$showMergedFlag=$showHeaderFlag=$showSlabAliasesFlag=$showRootSlabsFlag=0;
-$verboseFlag=$procmemFlag=$vmstatFlag=$alignFlag=0;
-$quietFlag=$utcFlag=$procioFlag=0;
+$verboseFlag=$vmstatFlag=$alignFlag=0;
+$quietFlag=$utcFlag=0;
 $address=$beginTime=$endTime=$filename=$flush='';
-$limits=$lustreSvcs=$procopts=$runTime=$subOpts=$playback=$playbackFile=$rollLog='';
-$groupFlag=$msgFlag=$niceFlag=$plotFlag=$sshFlag=$wideFlag=$rawFlag=0;
-$userOptions=$userInterval=$userSubsys=$slabopts='';
-$export=$expName=$expDir=$expOpts='';
+$limits=$lustreSvcs=$runTime=$subOpts=$playback=$playbackFile=$rollLog='';
+$groupFlag=$msgFlag=$niceFlag=$plotFlag=$sshFlag=$wideFlag=$rawFlag=$ioSizeFlag=0;
+$userOptions=$userInterval=$userSubsys='';
+$export=$expName=$expDir=$expOpts=$topOpts=$topType='';
 $rawtooFlag=$autoFlush=$allFlag=0;
+$procOpts=$slabOpts='';
+$procFilt=$slabFilt='';
 
-# Since --top has an optional argument, we need to see if it was specified without
-# one and stick in the default
+# Since --top has optionals arguments, we need to see if it was specified without
+# one and stick in the defaults noting -1 means to use the window size for size
 for (my $i=0; $i<scalar(@ARGV); $i++)
 {
   if ($ARGV[$i]=~/--to/)
   {
-    splice(@ARGV, $i+1, 0, 10)    if $i==(scalar(@ARGV)-1) || $ARGV[$i+1]=~/^-/;
+    splice(@ARGV, $i+1, 0, 'time,-1')    if $i==(scalar(@ARGV)-1) || $ARGV[$i+1]=~/^-/;
     last;
   }
 }
@@ -306,6 +309,7 @@ GetOptions('align!'     => \$alignFlag,
            'interval=s' => \$userInterval,
 	   'h!'         => \$hSwitch,
            'help!'      => \$hSwitch,
+           'iosize!'    => \$ioSizeFlag,
            'l=s'        => \$limits,
            'limits=s'   => \$limits,
 	   'L=s'        => \$lustreSvcs,
@@ -332,7 +336,7 @@ GetOptions('align!'     => \$alignFlag,
            'subsys=s'   => \$userSubsys,
 	   'S!'         => \$sshFlag,
            'ssh!'       => \$sshFlag,
-	   'top=i'      => \$numTop,
+	   'top=s'      => \$topOpts,
            'T=s'        => \$timeOffset,
            'timezone=s' => \$timeOffset,
            'utc!'       => \$utcFlag,
@@ -343,18 +347,16 @@ GetOptions('align!'     => \$alignFlag,
 	   'w!'         => \$wideFlag,
            'x!'         => \$xSwitch,
            'helpextend!'=> \$xSwitch,
-	   'Y=s'        => \$slabopts,
-           'slabopts=s' => \$slabopts,
-	   'Z=s'        => \$procopts,
-	   'procopts=s' => \$procopts,
+	   'Y=s'        => \$slabFilt,
+	   'slabfilt=s' => \$slabFilt,
+	   'Z=s'        => \$procFilt,
+	   'procfilt=s' => \$procFilt,
 
-           # New since V2.0.0
            'all!'          => \$allFlag,
            'export=s'      => \$export,
            'expdir=s'      => \$expDir,
 	   'headerrepeat=i'=> \$headerRepeat,
            'hr=i'          => \$headerRepeat,
-           'procmem!'      => \$procmemFlag,
            'verbose!'      => \$verboseFlag,
            'vmstat!'       => \$vmstatFlag,
            'showsubsys!'   => \$showSubsysFlag,
@@ -365,7 +367,8 @@ GetOptions('align!'     => \$alignFlag,
 	   'showslabaliases!' =>\$showSlabAliasesFlag,
 	   'showrootslabs!'   =>\$showRootSlabsFlag,
            'rawtoo!'       => \$rawtooFlag,
-           'procio!'       => \$procioFlag,
+	   'procopts=s'    => \$procOpts,
+	   'slabopts=s'    => \$slabOpts,
            ) or error("type -h for help");
 
 #    O p e n    A    S o c k e t  ?
@@ -434,7 +437,7 @@ extendHelp()       if $xSwitch;
 showSubsys()       if $showSubsysFlag;
 showOptions()      if $showOptionsFlag;
 showSubopts()      if $showSuboptsFlag;
-showSlabAliases($slabopts)  if $showSlabAliasesFlag || $showRootSlabsFlag;
+showSlabAliases($slabFilt)  if $showSlabAliasesFlag || $showRootSlabsFlag;
 
 #    H a n d l e    V 2 . 0    R e m a p p i n g s    F i r s t
 
@@ -445,24 +448,9 @@ if ($vmstatFlag)
   $export='vmstat';
 }
 
-if ($verboseFlag+$procmemFlag+$procioFlag)
-{
-  error("can't mix --export with any of --verbose, --procmem or procio")
-        if $export ne '' && ($verboseFlag+$procmemFlag+$procioFlag);
-
-  my $temp="--verbose, --procmem, --procio";
-  error("can't use -P with $temp")    if $plotFlag;
-  error("can't use -f with $temp")    if $filename ne '';
-
-  # need to set verbose flag so we skip brief processing in printTerm()
-  $verboseFlag=1;
-  if ($procmemFlag || $procioFlag)
-  {
-    # Force -s to be Z
-    error("-s not allowed with --procmem or --procio")      if $userSubsys ne '';
-    $subsys=$userSubsys="Z";
-  }
-}
+error("can't use --export with --verbose")    if $verboseFlag && $export ne '';
+error("can't use -P with --verbose")          if $verboseFlag && $plotFlag;
+error("can't use -f with --verbose")          if $verboseFlag && $filename ne '';
 
 # --all is shortcut for all summary data except slabs
 if ($allFlag)
@@ -511,9 +499,24 @@ if (!$daemonFlag)
 }
 
 # --top forces -ot if not in playback mode.  if no process interval
-# specified set it to the monitoring on
-if ($numTop)
+# specified set it to the monitoring on.  also note at this point
+# $headerRepeat has been set to the terminal height -2.  Also note if
+# the user specified -s, we need to leave to use part of the screen
+# height for it BUT is also specified a size with --top, THAT piece
+# is not used for -s.
+if ($topOpts ne '')
 {
+  ($topType, $numTop)=split(/,/, $topOpts);
+  $topType='time'          if $topType eq '';
+  $subsysSize=($userSubsys ne '') ? length($userSubsys)*3+1 : 0;
+  $numTop=$headerRepeat-$subsysSize    if !defined($numTop) || $numTop==-1;
+  error("only --top flt make sense with --procopt m")
+      if $topType ne 'flt' && $procOpts=~/m/;
+  error("--top flt does not make sense with --procopt i")
+      if $topType eq 'flt' && $procOpts=~/i/;
+  error("only valid types for --top are flt, io, ioc, ioall and time")
+      if $topType!~/^time$|^io$|^ioc$|^ioall$|^flt$/;
+
   if ($playback eq '')
   {
     $options.='t';
@@ -627,7 +630,9 @@ if ($export ne '')
 $utcFlag=1    if $options=~/U/;
 
 # should I migrate a lot of other simple tests here?
-error("you cannot specify -f with --top")                  if $numTop ne 0 && $filename ne '';
+error("you cannot specify -f with --top")                  if $topOpts ne '' && $filename ne '';
+
+error('-OT only makes sense with --top or -sZ')            if $subOpts=~/W/ && $subsys!~/Z/ && !$topType;
 
 error('--headerrepeat must be an integer')                 if $headerRepeat!~/^[\-]?\d+$/;
 error('--headerrepeat must be >= -1')                      if $headerRepeat<-1;
@@ -650,6 +655,8 @@ error('--showplotheader not allowed with -f')              if $filename ne '' &&
 
 error("--align require HiRes time module")                 if $alignFlag && !$hiResFlag;
 
+$allThreadFlag=($procOpts=~/t/) ? 1 : 0;
+
 # The separator is either a space if not defined or the character supplied if 
 # non-numeric.  If it is numeric assume decimal and convert to the associated 
 # char code (eg 9=tab).
@@ -668,14 +675,14 @@ if (!$PcFlag)
   $LocalTimeZone=`date +%z`;
   chomp $LocalTimeZone;
 
-  # Some distros put lspci in /usr/sbin, so take one last look there before
-  # complaining, but only if in record mode AND if looking at interconnects
+  # Some distros put lspci in /usr/sbin and others in /usr/bin, so take one last look in
+  # those before complaining, but only if in record mode AND if looking at interconnects
   if (!-e $Lspci && $playback eq '' && $subsys=~/x/)
   {
-    error("can't find '$Lspci' or '/usr/sbin/lspci' which is require for -sx\n".
+    error("can't find 'lspci' in $Lspci or '/usr/sbin' or '/usr/bin' which is require for -sx\n".
 	"If somewhere else, move it or define in collectl.conf")
-            if (!-e "/usr/sbin/lspci");
-    $Lspci='/usr/sbin/lspci';    # Looks like it's here
+            if (!-e "/usr/sbin/lspci" && !-e "/usr/bin/lspci");
+    $Lspci=(-e '/usr/sbin/lspci') ? '/usr/sbin/lspci' : '/usr/bin/lspci'
   }
 
   # Do something similar with 'ethtool' or but if not there disable it!
@@ -752,8 +759,8 @@ if ($playback ne "")
   $yesterday=sprintf("%d%02d%02d", $year+1900, $mon+1, $day);
   $playback=~s/YESTERDAY/$yesterday/;
 
-  error("sorry, but -Z not allowed in -p mode.  consider grep")
-      if $procopts ne '';
+  error("sorry, but --procfilt not allowed in -p mode.  consider grep")
+      if $procFilt ne '';
 }
 
 # linux box?
@@ -822,7 +829,7 @@ if ($limits ne '')
 }
 
 # options
-error("invalid option")    if $options ne "" && $options!~/^[\^12aAcdDFGgHimnpPsStTuxXz]+$/g;
+error("invalid option")    if $options ne "" && $options!~/^[\^12aAcdDFGgHimnpPtTuxXz]+$/g;
 error("-oi only supported interactively with -P to terminal")    
     if $options=~/i/ && ($playback ne '' || !$plotFlag || $filename ne '');
 $miniDateFlag=($options=~/d/i) ? 1 : 0;
@@ -846,7 +853,7 @@ if (!$hiResFlag && $options=~/m/)
   $options=~s/m//;
 }
 
-$pidOnlyFlag=($subOpts=~/P/) ? 1 : 0;
+$pidOnlyFlag=($procOpts=~/p/) ? 1 : 0;
 
 # We always compress files unless zlib not there or explicity turned off
 $zFlag=($options=~/z/ || $filename eq "") ? 0 : 1;
@@ -1015,8 +1022,14 @@ if ($rollLog ne '')
   logmsg("I", "First log rollover will be: $rollFirst");
 }
 
-# for option 't' we do HOME ERASE, which only works on ascii terminals
-$cls=sprintf("%c[H%c[J", 27, 27)   if $options=~/t/;
+# for option 't' we do some vt100 cursor control
+if ($options=~/t/)
+{
+  $home=sprintf("%c[H", 27);     # top of display
+  $clr=sprintf("%c[J", 27);      # clear to end of display
+  $clscr="$home$clr";            # clear screen
+  $cleol=sprintf("%c[K", 27);    # clear to end of line
+}
 
 # if -N, set priority to 20
 `renice 20 $$`    if $niceFlag;
@@ -1103,6 +1116,8 @@ if ($playback ne '')
     # We can only do this test after figuring out what's in the header.
     error("-sj or -sJ with -P also requires CPU details so add C or remove J.")
 	if $subsys=~/j/i && $subsys!~/C/ && $plotFlag;
+
+    error("this data file does not contain 'io' data")    if $topType eq 'io' && !$processIOFlag;
 
     # Need to reset the globals for the intervals that gets recorded in the header.
     # Note the conditional on the assignments for i2 and i3.  This is because they SHOULD be
@@ -1443,8 +1458,8 @@ error("-T only applies to playback mode")    if defined($timeOffset);
 
 # need to load even if interval is 0, but don't allow for -p mode
 error("threads only currently supported in 2.6 kernels")
-    if $procopts=~/\+/ && !$kernel2_6;
-loadPids($procopts)     if $subsys=~/Z/;
+    if ($procFilt=~/\+/ || $allThreadFlag) && !$kernel2_6;
+loadPids($procFilt)     if $subsys=~/Z/;
 
 # In case running on a cluster, record the name of the host we're running on.
 # Track in collecl's log as well as syslog
@@ -1456,7 +1471,9 @@ logsys($message);
 # on this platform, initRecord() will have deselected them!
 initRecord();
 error("no subsystems selected")    if $subsys eq '';
-error("--procio features not enabled in this kernel")      if $procioFlag && !$processIOFlag;
+error("you cannot use '--top io' with this kernel")            if $topType eq 'io' && !$processIOFlag;
+error("process I/O features not enabled in this kernel")       if $procOpts=~/i/   && !$processIOFlag;
+error("process I/O statistics not available in this kernel")   if $procOpts=~/[s]/ && !$processIOFlag;
 
 if ($subsys=~/y/i && !$slabinfoFlag && !$slubinfoFlag)
 {
@@ -1466,7 +1483,7 @@ if ($subsys=~/y/i && !$slabinfoFlag && !$slubinfoFlag)
 }
 
 # We can't do this until we know if the data structures exist.
-loadSlabs($slabopts)    if $subsys=~/y/i;
+loadSlabs($slabFilt)    if $subsys=~/y/i;
 
 # In case displaying output.  We also need the recorded version to match ours.
 initFormat();
@@ -1849,11 +1866,9 @@ for (; $count!=0 && !$doneFlag; $count--)
 
   if ($iFlag)
   {
-    getProc(0, "/proc/sys/fs/dentry-state", "fs-ds")      if $dentryFlag;
-    getProc(0, "/proc/sys/fs/inode-state",  "fs-is")      if $inodeFlag;
-    getProc(0, "/proc/sys/fs/file-nr",      "fs-fnr")     if $filenrFlag;
-    getProc(0, "/proc/sys/fs/super-nr",     "fs-snr")     if $supernrFlag;
-    getProc(0, "/proc/sys/fs/dquot-nr",     "fs-dqnr")    if $dquotnrFlag;
+    getProc(0, "/proc/sys/fs/dentry-state", "fs-ds")    if $dentryFlag;
+    getProc(0, "/proc/sys/fs/inode-nr", "fs-is")        if $inodeFlag;
+    getProc(0, "/proc/sys/fs/file-nr", "fs-fnr")        if $filenrFlag;
   }
 
   if ($lFlag || $LFlag || $LLFlag)
@@ -2058,11 +2073,11 @@ for (; $count!=0 && !$doneFlag; $count--)
         while ($slab=readdir SLUBDIR)
 	{
 	  next    if $slab=~/^\./;
-	  next    if $slabopts ne '' && !defined($slabdata{$slab});
+	  next    if $slabFilt ne '' && !defined($slabdata{$slab});
 	  next    if defined($slabskip{$slab});
 
 	  # See if a new slab appeared, noting this doesn't apply when using
-          # -Y because of the optimization 'next' for '$slabopts' above
+          # -Y because of the optimization 'next' for '$slabFilt' above
 	  # also remember since we're only looking at root slabs, we'll never
           # discover 'linked' ones
 	  if (!defined($slabdata{$slab}))
@@ -2084,33 +2099,39 @@ for (; $count!=0 && !$doneFlag; $count--)
 
     if ($ZFlag)
     {
-      # if user chose -OP or -Z with only specific pids, we're only going 
-      # to process contents of %pidProc and nothing more so we don't have 
-      # to read /proc and we'll save a lot of time.  Also note the pid
-      # might have gone away!
+      # Process Monitoring RULES
+      # if --procopt p OR --procfilt p and only pids
+      # - only look at pids in %pidProc and nothing more
+      #   - if + and no --procopt t, never look for new threads
+      #   - if --procopt t, always look for new threads whether + or not
+      # else always look for new processes
+      # - if --procopt p look for threads for each pid
       undef %pidSeen;
       if ($pidOnlyFlag)
       {
         foreach $pid (keys %pidProc)
         {
           # When looking at threads, we read ALL data from /proc/pid/task/pid
-          # rather than /proc/pid so we can be assured we only seeing runtimes
+          # rather than /proc/pid so we can be assured we only seeing stats
           # for the main process.  Later on too...
-          $task=($ThreadFlag) ? "$pid/task/" : '';
+          # But also note earliest kernels only support process io under /proc/pid
+          $task=$taskio=($allThreadFlag || $oneThreadFlag) ? "$pid/task/" : '';
+          $taskio=''    if !-e "/proc/$pid/task/$pid/io";
 
           # note that not everyone has 'Vm' fields in status so we need
 	  # special checks.  Also note both here and below whenever we process a pid
-          # and not -OP (we could have gotten here via -Zp...) and we're doing threads
-	  # on this pid, see if any new threads showed up.  If this gets much more
-          # involved it should probably become a sub since we do it below too.
+          # and not --procopt p (we could have gotten here via --procfilt p...) and 
+          # we're doing threads on this pid, see if any new threads showed up.  If 
+          # this gets much more involved it should probably become a sub since we do 
+          # it below too.
 	  $pidSeen{$pid}=getProc(17, "/proc/$task/$pid/stat",    "proc:$pid stat", undef, 1);
 	  $pidSeen{$pid}=getProc(13, "/proc/$task/$pid/status",  "proc:$pid")
 	      if $pidSeen{$pid}==1;
 	  $pidSeen{$pid}=getProc(16, "/proc/$task/$pid/cmdline", "proc:$pid cmd", undef, 1)
 	      if $pidSeen{$pid}==1;
-	  $pidSeen{$pid}=getProc(17, "/proc/$task/$pid/io", "proc:$pid io")
+	  $pidSeen{$pid}=getProc(17, "/proc/$taskio/$pid/io", "proc:$pid io")
 	      if $pidSeen{$pid}==1 && $processIOFlag;
-	  findThreads($pid)    if $ThreadFlag && $subOpts!~/P/ && $pidThreads{$pid};
+	  findThreads($pid)    if $allThreadFlag || ($oneThreadFlag && $procOpts!~/p/ && $pidThreads{$pid});
         }
       }
       else
@@ -2124,7 +2145,8 @@ for (; $count!=0 && !$doneFlag; $count--)
 	  next    if !defined($pidProc{$pid}) && pidNew($pid)==0;
 
           # see comment in previous block
-          $task=($ThreadFlag) ? "$pid/task/" : '';
+          $task=$taskio=($allThreadFlag || $oneThreadFlag) ? "$pid/task/" : '';
+          $taskio=''    if !-e "/proc/$pid/task/$pid/io";
 
   	  print "%%% READPID $pid\n"    if $debug & 256;
           $pidSeen{$pid}=getProc(17, "/proc/$task/$pid/stat",    "proc:$pid stat", undef, 1);
@@ -2132,24 +2154,26 @@ for (; $count!=0 && !$doneFlag; $count--)
 	      if $pidSeen{$pid}==1;
 	  $pidSeen{$pid}=getProc(16, "/proc/$task/$pid/cmdline", "proc:$pid cmd", undef, 1)
 	      if $pidSeen{$pid}==1;
-	  $pidSeen{$pid}=getProc(17, "/proc/$task/$pid/io", "proc:$pid io")
+	  $pidSeen{$pid}=getProc(17, "/proc/$taskio/$pid/io", "proc:$pid io")
 	      if $pidSeen{$pid}==1 && $processIOFlag;
-	  findThreads($pid)    if $ThreadFlag && $subOpts!~/P/ && $pidThreads{$pid};
+	  findThreads($pid)    if $allThreadFlag || ($oneThreadFlag && $procOpts!~/p/ && $pidThreads{$pid});
         }
       }
 
-      if ($ThreadFlag)
+      # if --procopts t OR '+' with --procfilt
+      if ($allThreadFlag || $oneThreadFlag)
       {
         foreach $pid (keys %tpidProc)
         {
-	  # Location of thread stats is below parent
-	  $task="$tpidProc{$pid}/task";
+	  # Location of thread stats is below parent, but I/O only there when kernel patched!
+          $task=$taskio=($allThreadFlag || $oneThreadFlag) ? "$pid/task/" : '';
+          $taskio=''    if !-e "/proc/$pid/task/$pid/io";
 
 	  # The 'T' lets the processing code know it's a thread for formatting purposes
   	  $tpidSeen{$pid}=getProc(17, "/proc/$task/$pid/stat",   "procT:$pid stat", undef, 1);
 	  $tpidSeen{$pid}=getProc(13, "/proc/$task/$pid/status", "procT:$pid")
 	      if $tpidSeen{$pid}==1; 
-	  $tpidSeen{$pid}=getProc(17, "/proc/$task/$pid/io", "procT:$pid io")
+	  $tpidSeen{$pid}=getProc(17, "/proc/$taskio/$pid/io", "procT:$pid io")
 	      if $tpidSeen{$pid}==1 && $processIOFlag;
         }
       }
@@ -2328,11 +2352,11 @@ sub preprocessPlayback
     $header=~/Interval:\s+(\S+)/;
     $thisInterval=$1;
 
-    # If user specified --procio and file doesn't have data, we can't process it
+    # If user specified '--procopts i' and file doesn't have data, we can't process it
     $flags=($header=~/Flags:\s+(\S+)/) ? $1 : '';
-    if ($procioFlag && $flags!~/i/)
+    if ($procOpts=~/i/ && $flags!~/i/)
     {
-      $preprocErrors{$file}="E:--procio requested but data not present in file";
+      $preprocErrors{$file}="E:--procopts i requested but data not present in file";
       next;
     }
 
@@ -2547,10 +2571,18 @@ sub checkSubSys
 sub checkSubOpts
 {
   # sub-options
-  error("invalid sub-option")                     if $subOpts ne '' && $subOpts!~/[23BCDMLPRcom]/;
-  error("-O$1 only applies to slabs")             if $subOpts=~/([sS])/ && $subsys!~/Y/i;
+  error("invalid sub-option")                     if $subOpts ne '' && $subOpts!~/[23BCDMLRcom]/;
+  error("invalid slab option '$slabOpts'")        if $slabOpts ne '' && $slabOpts!~/^[sS]/;
+
   error("-OP only applies to processes")          if $subOpts=~/P/ && $subsys!~/Z/;
   error("-OC only supported with -s f/F")         if $subOpts=~/C/ && $subsys!~/f/i;
+
+  if ($procOpts ne '')
+  {
+    error("invalid process option '$procOpts'")                if $procOpts!~/^[imprtwz]+$/;
+    error("process options i and m are mutually exclusive")    if $procOpts=~/i/ && $procOpts=~/m/;
+    error("--procopts z can only be used with --top")          if !$numTop;
+  }
 
   # it's possible this is not recognized as running a particular type of service
   # from the 'flag's if that service is isn't yet started and so we need
@@ -2726,8 +2758,8 @@ sub getProc
   if (!open PROC, "<$proc")
   {
     # but just report it once
-    logmsg("E", "Couldn't open '$proc'")
-	if !defined($notOpened{$proc});
+    logmsg("W", "Couldn't open '$proc'")
+	if !defined($notOpened{$proc}) && $type!=13 && $type!=16 && $type!=17;
     $notOpened{$proc}=1;
     return(0);
   }
@@ -3043,7 +3075,7 @@ sub record
       {
         $zlibErrors++;
 	$temp=$recMode ? 'F' : 'E';
-	logmsg($temp, "Error writing to raw.gz file: $rawComp->gzerror()");
+	logmsg($temp, "Error writing to raw.gz file: ".$rawComp->gzerror());
         logmsg("F", "Max Zlib error count exceeded")    if $zlibErrors>$MaxZlibErrors;
 	newLog($filename, "", "", "", "", "", 1);
         record(1, sprintf(">>> %.3f <<<\n", $fullTime))               if $recFlag0;
@@ -3679,7 +3711,7 @@ sub writeError
   # just print the error and reopen ALL files (since it should be rare)
   # we also don't need to set '$recMode' in newLog() since not recursive.
   $zlibErrors++;
-  logmsg("E", "Write error - File: $file Reason: $desc->gzerror()");
+  logmsg("E", "Write error - File: $file Reason: ".$desc->gzerror());
   logmsg("F", "Max Zlib error count exceeded")    if $zlibErrors>$MaxZlibErrors;
   $headersPrinted=0;
   newLog($filename, "", "", "", "", "");
@@ -3693,7 +3725,7 @@ sub flushError
   # just print the error and reopen ALL files (since it should be rare)
   # we also don't need to set '$recMode' in newLog() since not recursive.
   $zlibErrors++;
-  logmsg("E", "Flush error - File: $file Reason: $desc->gzerror()");
+  logmsg("E", "Flush error - File: $file Reason: ".$desc->gzerror());
   logmsg("F", "Max Zlib error count exceeded")    if $zlibErrors>$MaxZlibErrors;
   $headersPrinted=0;
   newLog($filename, "", "", "", "", "");
@@ -4062,7 +4094,7 @@ sub loadConfig
 
 sub loadSlabs
 {
-  my $slabopts= shift;
+  my $slabFilt= shift;
   my ($line, $name, $slab, %slabsKnown);
 
   if ($slabinfoFlag)
@@ -4081,10 +4113,10 @@ sub loadSlabs
       $slabsKnown{$slab}=1;
     }
 
-    # only if user specified -Y
-    if ($slabopts ne '')
+    # only if user specified filters
+    if ($slabFilt ne '')
     {
-      foreach $name (split(/,/, $slabopts))
+      foreach $name (split(/,/, $slabFilt))
       {
 	if (-e $name)
         {
@@ -4139,7 +4171,7 @@ sub loadSlabs
       if (-l $dirname)
       {
         # If filtering, only keep those aliases that match
-        next    if $slabopts ne '' && !passSlabFilter($slabopts, $slab);
+        next    if $slabFilt ne '' && !passSlabFilter($slabFilt, $slab);
 
         # get the name of the slab this link points to
         my $linkname=readlink($dirname);
@@ -4162,7 +4194,7 @@ sub loadSlabs
     #    secondary filter scan
     ##########################################
 
-    if ($slabopts ne '')
+    if ($slabFilt ne '')
     {
       # Note, at this point we only have aliases that pass the filter and so we need
       # to keep the entries OR we have entries with no aliases that might still pass 
@@ -4170,7 +4202,7 @@ sub loadSlabs
       foreach my $slab (keys %slabdata)
       {
         delete $slabdata{$slab}
-	    if !defined($slabdata{$slab}->{aliases}) && !passSlabFilter($slabopts, $slab)
+	    if !defined($slabdata{$slab}->{aliases}) && !passSlabFilter($slabFilt, $slab)
       }
     }
 
@@ -4219,7 +4251,7 @@ sub passSlabFilter
 }
 
 # This needs some explaining...  When doing processes, we build a list of all the pids that
-# match the -Z selection.  However, over time a selected command could exist and restart again
+# match the --procfilt selection.  However, over time a selected command could exist and restart again
 # under a different pid and we WANT to pick that up too.  So, everytime we check the processes
 # and a non-pid selector has been specified we will have to recheck ALL pids to see in any new
 # ones show up.  Naturally we can skip those in @skipPids and if the flag $pidsOnlyFlag is set
@@ -4229,16 +4261,16 @@ sub loadPids
 {
   my $procs=shift;
   my ($process, $pid, $ppid, $user, $uid, $cmd, $line, $file, $temp);
-  my ($type, $value, @ps, $selector, $pidOnly, $keepMe);
+  my ($type, $value, @ps, $selector, $pidOnly);
 
   # Step 0 - an enhancement!  If the process list string is actually a 
-  # filename turn entries into one long string as if entered with -Z.
-  # This makes it possible to have a constant -Z parameter yet change
+  # filename turn entries into one long string as if entered with --procfilt.
+  # This makes it possible to have a constant --procfilt parameter yet change
   # the process list dynamically, before starting collectl.
   if (-e $procs)
   {
     $temp='';
-    open TEMP, "<$procs" or logmsg("F", "Couldn't open -Z file");
+    open TEMP, "<$procs" or logmsg("F", "Couldn't open --procfilt file");
     while ($line=<TEMP>)
     {
       chomp $line;
@@ -4253,8 +4285,7 @@ sub loadPids
   # this is pretty brute force, but we're only doing it at startup
   # Step 1 - validate list for invalid types OR non-numeric pids
   #          assume including collectl
-  $keepMe=1;
-  $ThreadFlag=($procs=~/\+/) ? 1 : 0;    # handy flag to optimize non-thread cases
+  $oneThreadFlag=($procs=~/\+/) ? 1 : 0;    # handy flag to optimize non-thread cases
   foreach $task (split(/,/, $procs))
   {
     # for now, we don't do too much validation, but be sure to note
@@ -4265,32 +4296,19 @@ sub loadPids
       $value=$2;
 
       # if we ever do allow this in playback we can't handle 'f'
-      error("-Zf not allowed in playback mode")    if $type eq 'f' && $playback ne '';
+      error("--procfilt f not allowed in playback mode")    if $type eq 'f' && $playback ne '';
 
-      # pids must be numeric, but first replace '%' with our own pid
-      if ($type=~/p/i)
-      {
-        if ($value eq '%')
-        {
-	  $keepMe=2;              # to signify '%p' used
-	  $value=$$;
-	  $pidThreads{$value}=0;  # never do threads for collectl
-        }
-        error("pid $value not numeric in -Z")    if $value!~/^\d+$/;
-      }
+      # pids must be numeric
+      error("pid $value not numeric in --procfilt")    if $type=~/p/i && $value!~/^\d+$/;
 
       # when dealing with embedded string in command line, note that spaces
       # are converted to NULs, so do it to our match string so it only happens
       # once and also be sure to quote any meta charaters the user may have
-      # in mind to use.  Since the contents of the 'f' option is in the
-      # command line, we'd always include collectl as a match, so explicitly
-      # remove it from the matching list by clearing the 'keepMe' flag.  However, if
-      # 'collectl' itself has been specified by 'p%', we DO include it.
+      # in mind to use.
       if ($type eq 'f')
       {
         $task=~s/ /\000/g;
 	$task=quotemeta($task);
-	$keepMe=0    if $keepMe!=2;    # in case 'p%' preceeded this
       }
 
       push @TaskSelectors, $task;
@@ -4298,7 +4316,7 @@ sub loadPids
     }
     else
     {
-      error("invalid task selection in -Z: $task");
+      error("invalid task selection in --procfilt: $task");
     }
   }
 
@@ -4334,16 +4352,6 @@ sub loadPids
       next;
     }
 
-    # If our pid we decide to keep it based only on '$keepMe' flag
-    if ($pid==$$)
-    {
-      if ($keepMe!=2)
-      { $pidSkip{$pid}=1; }
-      else
-      { $pidProc{$pid}=1; }
-      next;
-    }
-
     # select based on criteria, but assume we're not getting a match
     $pidOnly=1;
     $keepPid=0;
@@ -4362,7 +4370,7 @@ sub loadPids
 	# However, since it's extra overhead to maintain %pidThreads, we only set it
         # when there are threads to deal with.
 	$pidThreads{$pid}=(substr($selector, 1, 1) eq '+') ? 1 : 0
-	    if $ThreadFlag;
+	    if $oneThreadFlag;
 
 	$keepPid=1;
 	last;
@@ -4397,7 +4405,7 @@ sub loadPids
       print "$pid ";
     }
     print "\n";
-    if ($ThreadFlag)
+    if ($oneThreadFlag)
     {
       print "TPIDS Selected: ";
       foreach $pid (sort keys %tpidProc)
@@ -4423,7 +4431,7 @@ sub loadUids
   @passwd=`$Cat $passwd`;
   foreach $line (@passwd)
   {
-    next    if $line=~/^\+/;    # ignore '+' lines...
+    next    if $line=~/^\+|^\s*$/;    # ignore '+' and blank lines
 
     ($user, $uid)=(split(/:/, $line))[0,2];
     $UidSelector{$uid}=$user;
@@ -4447,14 +4455,14 @@ sub pidNew
 
   return(0)    if !-e "/proc/$pid/stat";
 
-  $match=($procopts ne '') ? 0 : $pid;
+  $match=($procFilt ne '') ? 0 : $pid;
   foreach $selector (@TaskSelectors)
   {
     $type=substr($selector, 0, 1);
     next              if  $type eq 'p';    # if a pid, can't be a new one
 
     $param=substr($selector, 1);
-    if ($ThreadFlag)
+    if ($oneThreadFlag)
     {
       $param=~s/(\+)//;
       $pidThreads{$pid}=($1 eq '+') ? 1 : 0;
@@ -4501,7 +4509,7 @@ sub pidNew
   print "%%% Discovered new pid for monitoring: $pid\n"
       if $match && ($debug & 256);
   $pidProc{$match}=1     if $match!=0;
-  findThreads($match)    if $match && $ThreadFlag && $pidThreads{$pid};
+  findThreads($match)    if $match && $oneThreadFlag && $pidThreads{$pid};
   return($match);
 }
 
@@ -4567,7 +4575,7 @@ sub cleanStalePids
 
       # If working with threads, we also need to purge the flag array that tells
       # us whether or not to look for thread pids
-      $tpidTemp{$pid}=$pidThreads{$pid}    if $ThreadFlag;      
+      $tpidTemp{$pid}=$pidThreads{$pid}    if $oneThreadFlag;      
     }
     else
     {
@@ -4591,7 +4599,7 @@ sub cleanStalePids
     foreach $x (sort keys %pidProc)
     { print "%%% pidProc{}: $x = $pidProc{$x}\n"; }
   }
-  return    unless $ThreadFlag;
+  return    unless $oneThreadFlag;
   
   # Do it again for threads...
   $removeFlag=0;
@@ -4624,13 +4632,13 @@ sub cleanStalePids
 
 sub showSlabAliases
 {
-  my $slabopts=shift;
+  my $slabFilt=shift;
 
   # by setting the slub flag and calling the 'load' routine, we'll get the header
   # built
   $slubinfoFlag= (-e '/sys/slab') ? 1 : 0;
   error("this kernel does not support 'slub-based' slabs")    if !$slubinfoFlag;
-  loadSlabs($slabopts);
+  loadSlabs($slabFilt);
 
   foreach my $slab (sort keys %slabdata)
   {
@@ -4709,14 +4717,16 @@ usage: collectl [switches]
                                   z - turn off compression of plot files
   -O, --subopts    subopts    list of sub-options that get applied to subsystems
                               see --showsubopts for full list
-                                NFS = [23C], Lustre = [BDMR], Processes = [P]
+                                NFS = [23C], Lustre = [BDMR]
   -p, --playback   file       playback results from 'file'
   -P, --plot                  generate output in 'plot' format
   -s, --subsys     subsys     record/playback data from one or more subsystems
                                 values = [cdfilmnstxyCDEFLLNTXYZ] defaults = [$SubsysCore]
                                 also see --all above
+  --iosize                    brief format: include I/O sizes for disks/networks/interconnects
   --verbose                   display output in verbose format (this mode can get automatically
                               selected in some cases where brief doesn't make sense)
+
 
 Various types of help
   -h, --help                  print this text
@@ -4748,10 +4758,6 @@ These switches are for more advanced usage
   -b, --begin      time         in playback mode, don't start at this date/time
                                 time actually in '[date-]time' format
   -C, --config     file         use alternate collectl.conf file
-      --custdir    directory    optional directory to write custom output to
-      --custom     file[,dir]   name output routine to be called and an optional directory
-                                for writing to.  can be used with -P, -f, --rawtoo and
-                                sockets if output done via printText() routine
   -d, --debug      debug        see source for details or try -d 1 to get started
   -D, --daemon                  run as a daemon
   -e, --end        time         in playback mode, don't process after this date/time
@@ -4786,13 +4792,14 @@ showSubsys(1);
 my $eof2b=<<EOF2b;
   -T, --timezone   hours        number of hours by which to offset times during playback
                                 or blank to print times in the timezone where recorded
-  --top             [num]       show top 'num' consumers of cpu each interval (DEF: 10)
-                                  NOTE - you can mix with -s too!
+  --top            [type][,num] show top 'num' consumers of a resource for each interval
+                                where type can be 'time', 'io' or 'flt'.  Can also mix with -s.
+                                (def=time,window height)
   -w, --wide                    print wide field contents (don't use K/M/G)
-  -Y, --slabopts   slabs        restricts which slabs are listed, where 'slab's is of the
+  --slabfilt       slabs        restricts which slabs are listed, where 'slab's is of the
                                 form: 'slab[,slab...].  if 'slab' is a filename (you CAN mix them), 
                                 it must contain a list of slabnames, one per line
-  -Z, --procopts   procs        restricts which procs are listed, where 'procs' is of the
+  --procfilt       procs        restricts which procs are listed, where 'procs' is of the
                                 form: <type><match>[[,<type><match>],...].  Be sure to quote
                                 if embedded spaces
                                   c - any substring in command name
@@ -4804,8 +4811,9 @@ my $eof2b=<<EOF2b;
                                   U - any processes owned by this user
                                 NOTE1:  if 'procs' is actually a filename, that file will be 
                                         read and all lines concatenated together, comma separted,
-                                        as if typed in as an argument of -Z.  Lines beginning with
-                                        # will be ignored as comments and blank lines skipped.
+                                        as if typed in as an argument of --procfilt.  Lines 
+                                        beginning with # will be ignored as comments and blank 
+                                        lines skipped.
                                 NOTE2:  if any type fields are immediatly followed by a plus sign,
                                         any threads associated with that process will also be reported.
                                         see man page for important restrictions
@@ -4814,8 +4822,6 @@ Synonyms
   --utc = -oU
 
 These are Alternate Display Formats
-  --procmem                   show memory utilization by process
-  --procio                    show process level I/ counters
   --vmstat                    show output similar to vmstat
 
 Logging options
@@ -4853,6 +4859,7 @@ sub showSubsys
                                   d - disk
                                   f - nfs
                                   i - inodes
+				  j - interrupts by CPU
                                   l - lustre
                                   m - memory
                                   n - network
@@ -4862,10 +4869,11 @@ sub showSubsys
                                   y - slabs
                                 as an alternative format you can say '-s +[$SubsysExcore$SubsysDet]'
                                 where '+xxx' adds major subsystems to '$SubsysCore'
-                                  C -  individual CPUs
+                                  C -  individual CPUs, including interrupts if -sj or -sJ
                                   D -  individual Disks
                                   E -  environmental (fans, temps, etc)
                                   F -  nsf detail data
+				  J -  interrupts by CPU by interrupt number
                                   L -  lustre
                                   LL - ost level lustre details (clients & OSTs)
                                   N -  individual Networks
@@ -4907,8 +4915,6 @@ sub showOptions
 				      NOTE - does NOT work in verbose mode
 
                                 filtering
-                                  s - for slab processing filter out slabs with 0 allocations
-                                  S - for slab processing filter out slabs with no slab activity
                                   x - report exceptions only (see man page)
                                   X - record all values + exceptions in plot format (see manpage)
  
@@ -4946,9 +4952,23 @@ sub showSubopts
                                   D - collect lustre disk stats (MDS and OSS only)
                                   M - collect lustre client metadata
                                   R - collect lustre client readahead stats
-                                Processes
-                                  P - never look for new pids or threads to match processing
+
+      --procopts   options      Processes
+                                  i - show io counters in display
+                                  m - show memory breakdown and faults in display
+                                  p - never look for new pids or threads to match processing
                                       criteria - (also improves performance)
+                                  r - show root command name for a narrower display
+                                      this can be combined with w
+                                  t - include ALL threads (can be a lot of overhead if many
+                                      active threads)
+                                  w - make format wider by including process arguments
+                                  z - exlude any processes with 0 in sort field
+
+      --slabopts   options      Slabs
+                                  s - only show slabs with non-zero allocations
+                                  S - only show slabs that have changed since last interval
+
 EOF5
 
 printText($subopts);

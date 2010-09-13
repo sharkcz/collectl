@@ -70,7 +70,7 @@ only those slabs beginning with 'blk' or 'ext3'
 
 <div class=terminal>
 <pre>
-collectl -i:1 -sy -Yblk,ext --verbose -oT
+collectl -i:1 -sy --slabfilt blk,ext --verbose -oT
 # SLAB SUMMARY
 #         <---Objects---><-Slabs-><-----memory----->
 #          In Use   Avail  Number      Used   TotalK
@@ -86,7 +86,7 @@ timestamps
 
 <div class=terminal-wide13>
 <pre>
-collectl -i:1 -sY -Yblk,ext -oTm
+collectl -i:1 -sY --slabfilt blk,ext -oTm
 waiting for 1 second sample...# SLAB DETAIL
 #                                          <----------- objects -----------><--- slabs ---><----- memory ----->
 #             Slab Name                    Size  /slab   In Use     Avail    SizeK  Number      UsedK    TotalK
@@ -107,7 +107,7 @@ more interesting we've added filtering on 'dentry' as well:
 
 <div class=terminal-wide13>
 <pre>
-collectl -i:1 -sY -Yblk,ext,dentry -oTS
+collectl -i:1 -sY --slabfilt blk,ext,dentry -oTS
 # SLAB DETAIL
 #                                      <----------- objects -----------><--- slabs ---><----- memory ----->
 #         Slab Name                    Size  /slab   In Use     Avail    SizeK  Number      UsedK    TotalK

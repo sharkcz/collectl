@@ -50,7 +50,22 @@ Average transfer rates: 32051995 bytes/sec, 31300.776 Kbytes/sec
 
 If we compare the write rates to the number of writes we can also infer writes 
 of about 128KB which is good to know because that means we're being efficient 
-in the size of the data blocks being handed to the driver.
+in the size of the data blocks being handed to the driver.  However if we don't
+mind using the extra columns, we can include <i>--iosize</i>, which tells
+collectl to include the average I/O size when using this default display format
+also known as brief mode.  In <i>verbose</i> mode the I/O sizes are always included,
+at least as of Version 2.6.3.
+
+<div class=terminal>
+<pre>
+#<--------CPU--------><---------------Disks---------------->
+#cpu sys inter  ctxsw KBRead  Reads Size KBWrit Writes Size
+   9   8   381     71      0      0    0  30644    276  111
+  14  13   325     85      0      0    0  32888    258  127
+  11  10   313     80      0      0    0  31064    261  119
+  12  11   421    186      0      0    0  32376    276  117
+</pre>
+</div>
 <p>
 This may also be a good time to mention screen real estate.  There is a lot of information
 that collectl can display and everything takes space!  More often than not you don't 

@@ -304,6 +304,11 @@ A value -1 will prevent any headers from being displayed and a value of 0
 will cause only a single header to be displayed and never repeated.
 .RE
 
+.B --iosize
+.RS
+In brief mode, include iosize with disk, infiniband and network data.
+.RE
+
 .B -l, --limits limit
 .RS
 Override one or more default exception limits.  If more than one limit they
@@ -582,6 +587,19 @@ If -f is not specified, all output is sent to the terminal.
 Output is always one line per sampling interval.
 .RE
 
+.B --procfilt filters
+.RS
+These filters restrict which processes are selected for collection/display
+and replaces -Z which is now deprecated.  See
+collectl -x for more details.
+.RE
+
+.B --procopts options
+.RS
+These options control the way data is displayed and also replaces -OP, --procio
+and --procmem.  See collectl -x for more details.
+.RE
+
 .B "-s, --subsys subsystem"
 .RS
 This field controls which subsystem data is to be collected or played back
@@ -709,9 +727,35 @@ Similar to --showoptions, this command summaries just the paramaters associated 
 Yet another way to summare a portion of the help text, this command only shows valid subsystems.
 .RE
 
-.B "--top [num]"
+.B --slabfilt filters
 .RS
-Include the top consumers of total cpu for this interval.  In interactive mode and if not specified, the process
+This replaces -Y which is now deprecated.  One can specify a list of slab names separated
+by commas and only those slabs that match the strings will be listed or summaried.  If using
+the old slab data structures the names must exactly match but for the new slub allocator
+the filters are considered patterns and therefore only a portion of the slab name must match.
+.RE
+
+.B --slabopt options
+.RS
+This replaces -Os and -OS which are deprecated.  If an option of s is chosen, any slabs with an
+allocation of 0 will be excluded from the detail display.  If S is chosen only those slabs whose
+allocations changed between samples will be displayed.
+.RE
+
+.B "--top [type][,num]"
+.RS
+Include the top "num" consumers by resource for this interval.  The default number is the height
+of the window if it can be determined otherwise 24, and the 
+default resource is the total cpu time which is taken as the sum of SysT and UsrT.  
+One can also specify a different type as either "io"
+for total process IO (for kernels supporting process I/O stats) or "flt" for total page faults
+per process.
+
+This switch can also be used with -s in which case a portion of the window is reserved at the
+top to fill in the subsystem data, which is currently in verbose mode though a brief format
+is contemplated for some time in the future.
+
+In interactive mode and if not specified, the process
 monitoring interval will be set to that for other subsystems.  The screen will be cleared for each interval
 resulting in a display similar to the 'top' utility.  In playback more the screen will NOT be cleared.  You
 cannot use this switch in 'record' mode.

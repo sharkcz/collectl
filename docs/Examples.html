@@ -44,16 +44,16 @@ could fit on a single line.  This format always includes the date and time.
 ### RECORD    1 >>> cag-dl380-01 <<< (1179493640.005) (Fri May 18 09:07:20 2007) ###
 
 # CPU SUMMARY (INTR, CTXSW & PROC /sec)
-# USER  NICE   SYS  IDLE  WAIT  INTR  CTXSW  PROC  RUNQ   RUN   AVG1  AVG5 AVG15
-    50     0     0    50     0   400    400     0    82     0   0.00  0.00  0.00
+# USER  NICE   SYS  WAIT   IRQ  SOFT STEAL  IDLE  INTR  CTXSW  PROC  RUNQ   RUN   AVG1  AVG5 AVG15
+     1     0     0     0     0     0     0    98   354    501     1   100     1   0.41  0.12  0.04
 
 # DISK SUMMARY (/sec)
-#Reads  R-Merged  R-KBytes   Writes  W-Merged  W-KBytes
-     0         0         0        0         0         0
+#Reads  R-Merged  R-KBytes  SizeKB    Writes  W-Merged  W-KBytes  SizeKB
+     0         0         0       0         4        70       296      74
 
 # NETWORK SUMMARY (/sec)
-#InPck  InErr OutPck OutErr   Mult   ICmp   OCmp    IKB    OKB
-     0      0      0      0      0      0      0      0      0
+#InPck  InErr OutPck OutErr   Mult   ICmp   OCmp    IKB    OKB  ISize  OSize
+   235      0    207      0      0      0      0     36     44    158    220
 </pre>
 </div>
 

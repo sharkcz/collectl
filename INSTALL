@@ -1,0 +1,60 @@
+#!/bin/bash
+
+BINDIR=/opt/hp/collectl
+
+mkdir -p $BINDIR
+mkdir -p $BINDIR/sbin
+mkdir -p $BINDIR/docs
+mkdir -p $BINDIR/initd
+mkdir -p $BINDIR/man1
+
+cp GPL ARTISTIC COPYING  $BINDIR
+cp RELEASE-collectl      $BINDIR
+cp UNINSTALL             $BINDIR
+
+cp collectl.pl           $BINDIR/sbin/collectl
+cp formatit.ph lexpr.ph  $BINDIR/sbin
+cp sexpr.ph vmstat.ph    $BINDIR/sbin
+cp docs/*                $BINDIR/docs
+cp initd/*               $BINDIR/initd
+cp man1/*                $BINDIR/man1
+gzip $BINDIR/man1/*
+
+# create symlinks
+ln -sf $BINDIR/man1/collectl.1.gz /usr/share/man/man1/collectl.1.gz
+ln -sf $BINDIR/sbin/collectl      /usr/bin/collectl
+ln -sf $BINDIR/sbin/collectl      /usr/sbin/collectl
+ln -sf $BINDIR/collectl.conf      /etc/collectl.conf
+ln -sf $BINDIR/initd/collectl     /etc/init.d/collectl
+
+# remove any stale versions in case the names numbers used have changed.
+# on new ROCKS installion 'rm' isn't there yet!  [thanks roy]
+if [ -x /bin/rm ] ; then
+  /bin/rm -f /etc/init.d/rc*.d/*collectl
+  /bin/rm -f /etc/rc.d/rc*.d/*collectl
+fi
+
+# Try and decide which distro this is based on distro specific files.
+distro=1
+if [[ -f /sbin/yast ]]; then
+    distro=2
+    ln -sf $BINDIR/initd/collectl-suse /etc/init.d/collectl
+fi
+
+# debian
+if [[ -f /usr/sbin/update-rc.d ]]; then
+    distro=3
+    ln -sf $BINDIR/initd/collectl-debian /etc/init.d/collectl
+    update-rc.d collectl defaults
+fi
+
+# redhat
+if [[ -f /etc/redhat-release ]]; then
+    distro=4
+    chkconfig --add collectl
+fi
+
+if [[ ${distro} = 1 ]]; then
+    ln -sf /etc/rc.d/init.d/collectl /etc/rc.d/rc5.d/K99collectl
+fi
+

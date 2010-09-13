@@ -63,32 +63,40 @@ with --verbose, but it is expected few systems will fall into this category.
 
 <div class=terminal>
 <pre>
-#<-----------Disks----------->
-#KBRead  Reads  KBWrit Writes
+#<---------------Disks---------------->
+#KBRead  Reads  Size KBWrit Writes Size
 </pre>
 </div>
 
 <table>
 <tr><td><b>KBRead</b></td><td>KB read/sec</td></tr>
 <tr><td><b>Reads</b></td><td>Number of reads/sec</td></tr>
+<tr><td><b>Size</b></td><td>Average read size in KB.  This field only included 
+if <i>--iosize</i> specified</td></tr>
 <tr><td><b>KBWrite<b></td><td>KB written/sec</td></tr>
 <tr><td><b>Writes</b></td><td>Number of writes/sec</td></tr>
+<tr><td><b>Size</b></td><td>Average write size in KB.  This field only included 
+if <i>--iosize</i> specified</td></tr>
 </table>
 <p>
 <h3>Infiniband, <i>collectl -sx</i></h3>
 
 <div class=terminal>
 <pre>
-#<----------InfiniBand---------->
-#  KBin  pktIn  KBOut pktOut Errs
+#<---------------InfiniBand--------------->
+#  KBin  pktIn Size  KBOut pktOut Size Errs
 </pre>
 </div>
 
 <table>
 <tr><td><b>KBin</b></td><td>KB received/sec.</td></tr>
 <tr><td><b>pckIn</b></td><td>Packets received/sec.</td></tr>
+<tr><td><b>size</b></td><td>Average incoming packet size in KB.  This field is only
+included if <i>--iosize</i> included</td></tr>
 <tr><td><b>KBout</b></td><td>KB sent/sec.</td></tr>
 <tr><td><b>pktOut</b></td><td>Packets sent/sec.</td></tr>
+<tr><td><b>size</b></td><td>Average outgoing packet size in KB.  This field is only
+included if <i>--iosize</i> included</td></tr>
 <tr valign=top><td><b>Errs</b></td><td>Count of current errors.  Since these 
 are typically infrequent, it is felt that reporting them as a rate would result 
 in either not seeing them OR round-off hiding their values.</td></tr>
@@ -197,8 +205,8 @@ cache as buffered I/O uses this memory to cache the data.</td></tr>
 
 <div class=terminal>
 <pre>
-#<-----------Network---------->
-#netKBi pkt-in  netKBo pkt-out
+#<---------------Network--------------->
+#netKBi pkt-in size netKBo pkt-out size
 </pre>
 </div>
 
@@ -206,8 +214,12 @@ cache as buffered I/O uses this memory to cache the data.</td></tr>
 <tr valign=top><td><b>netKBi</b></td><td>KB received/sec over all real network interfaces and therefore 
 excludes 'lo' and 'sit'.</td></tr>
 <tr><td><b>pkt-in</b></td><td>Packets received/sec over all real network interfaces.</td></tr>
+<tr><td><b>size</b></td><td>Average incoming packet size in bytes.  This field is only included
+if <i>--iosize</i> specified</td></tr>
 <tr><td><b>netKBo</b></td><td>KB sent/sec over all real network interfaces.</td></tr>
 <tr><td><b>pkt-out</b></td><td>Packets sent/sec over all real network interfaces.</td></tr>
+<tr><td><b>size</b></td><td>Average outgoing packet size in bytes.  This field is only included
+if <i>--iosize</i> specified</td></tr>
 </table>
 
 <p><h3>NFS</b>, <i>collectl -sf</i></h3>

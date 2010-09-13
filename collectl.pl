@@ -56,6 +56,7 @@
 
 use POSIX;
 use Config;
+use 5.008000;
 use Getopt::Long;
 Getopt::Long::Configure ("bundling");
 Getopt::Long::Configure ("no_ignore_case");
@@ -84,7 +85,7 @@ $ReqDir=       '/usr/share/collectl';    # may not exist
 # Constants and removing -w warnings
 $miniDateFlag=0;
 $kernel2_4=$kernel2_6=$PageSize=0;
-$PerlVers=$Memory=$Swap=$Hyper=$Distro=$ProductName='';
+$Memory=$Swap=$Hyper=$Distro=$ProductName='';
 $CpuVendor=$CpuMHz=$CpuCores=$CpuSiblings='';
 $PidFile='/var/run/collectl.pid';    # default, unless --pname
 $PQuery=$PCounter=$VStat=$VoltaireStats=$IBVersion=$HCALids=$OfedInfo='';
@@ -104,19 +105,9 @@ require "Sys/Syslog.pm"    if !$PcFlag;
 
 # Always nice to know if we're root
 $rootFlag=(!$PcFlag && `whoami`=~/root/) ? 1 : 0;
-
-# Save architecture name as well as perl version, noting we want the perl version
-# reformatted to handle 2 digit mainor/patch numbers
 $SrcArch= $Config{"archname"};
-@perlVers=split(/\./, $Config{"version"});
-$PerlVers=sprintf("%d.%02d.%02d", $perlVers[0], $perlVers[1], $perlVers[2]);
-if ($PerlVers lt '5.08.00')
-{
-  print "As of version 2.0, collectl requires perl version 5.8 or greater.\n";
-  print "See /opt/hp/collectl/docs/FAQ-collectl.html for details.\n";
-}
 
-$Version=  '3.4.0-4';
+$Version=  '3.4.1-5';
 $Copyright='Copyright 2003-2009 Hewlett-Packard Development Company, L.P.';
 $License=  "collectl may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
@@ -232,8 +223,9 @@ $DefNetSpeed=10000;
 $IbDupCheckFlag=1;
 $TimeHiResCheck=1;
 $PasswdFile='/etc/passwd';
+$Umask=137;
 $DiskMaxValue=-1;    # disabled
-$DiskFilter='cciss/c\d+d\d+ |hd[ab] | sd[a-z]+ |xvd[a-z] |dm-\d+ |emcpower|psv\d+';
+$DiskFilter='cciss/c\d+d\d+ |hd[ab] | sd[a-z]+ |xvd[a-z] |fio[a-z]+ |dm-\d+ |emcpower|psv\d+';
 $DiskFilterFlag=0;   # only set when filter set in collectl.conf
 
 # Standard locations
@@ -252,10 +244,11 @@ $envOpts='cft';
 $envRules='';
 $envDebug=0;
 $envTestFile='';
+$envFilt=$envRemap='';
 
 $configFile='';
 $ConfigFile='collectl.conf';
-$daemonFlag=$debug=0;
+$daemonFlag=$debug=$formatitLoaded=0;
 GetOptions('C=s'      => \$configFile,
            'D!'       => \$daemonFlag,
            'd=i'      => \$debug,
@@ -293,6 +286,7 @@ require "$ReqDir/formatit.ph";
 $zlibFlag=     (eval {require "Compress/Zlib.pm" or die}) ? 1 : 0;
 $hiResFlag=    (eval {require "Time/HiRes.pm" or die}) ? 1 : 0;
 $diskRemapFlag=(eval {require "$ReqDir/diskremap.ph" or die}) ? 1 : 0;
+$formatitLoaded=1;
 
 # These can get overridden after loadConfig(). Others can as well but this is 
 # a good place to reset those that don't need any further manipulation
@@ -329,7 +323,7 @@ $count=-1;
 $numTop=0;
 $briefFlag=1;
 $showPHeaderFlag=$showMergedFlag=$showHeaderFlag=$showSlabAliasesFlag=$showRootSlabsFlag=0;
-$verboseFlag=$vmstatFlag=$alignFlag=0;
+$verboseFlag=$vmstatFlag=$alignFlag=$whatsnewFlag=0;
 $quietFlag=$utcFlag=0;
 $address=$flush=$fileRoot='';
 $limits=$lustreSvcs=$runTime=$playback=$playbackFile=$rollLog='';
@@ -412,6 +406,7 @@ GetOptions('align!'     => \$alignFlag,
            'ssh!'       => \$sshFlag,
 	   'top=s'      => \$topOpts,
            'utc!'       => \$utcFlag,
+           'umask=s'    => \$Umask,
 	   'v!'         => \$vSwitch,
            'version!'   => \$vSwitch,
 	   'V!'         => \$VSwitch,
@@ -438,6 +433,8 @@ GetOptions('align!'     => \$alignFlag,
            'envrules=s'    => \$envRules,
            'envdebug!'     => \$envDebug,
            'envtest=s'     => \$envTestFile,
+           'envfilt=s'     => \$envFilt,
+           'envremap=s'    => \$envRemap,
            'grep=s'        => \$grepPattern,
            'offsettime=s'  => \$offsetTime,
            'pname=s'       => \$pname,
@@ -457,6 +454,7 @@ GetOptions('align!'     => \$alignFlag,
 	   'slabopts=s'    => \$slabOpts,
            'verbose!'      => \$verboseFlag,
            'vmstat!'       => \$vmstatFlag,
+           'whatsnew!'     => \$whatsnewFlag,
            ) or error("type -h for help");
 
 if ($pname ne '')
@@ -540,6 +538,7 @@ showOptions()      if $showOptionsFlag;
 showSubopts()      if $showSuboptsFlag;
 showTopopts()      if $showTopoptsFlag;
 showSlabAliases($slabFilt)  if $showSlabAliasesFlag || $showRootSlabsFlag;
+whatsnew()         if $whatsnewFlag;
 
 if ($XSwitch)
 {
@@ -630,6 +629,9 @@ $subsys=mergeSubsys($SubsysDef);
 # also be sure to note if the user typed --verbose
 $userVerbose=$verboseFlag;
 setOutputFormat();
+
+# switch validations once we know whether brief or verbose
+error("-oA not allowed in verbose mode")   if $verboseFlag && $options=~/A/;
 
 # This is tricky as the main logic for checking intervals lives further
 # down the code and says it needs to be there!  So, let's do a very 
@@ -879,8 +881,9 @@ error('--showplotheader not allowed with -f')              if $filename ne '' &&
 
 error("--align require HiRes time module")                 if $alignFlag && !$hiResFlag;
 
-# if user enters --envOpts, we need to add it to the defaults; otherwise override them
-$envOpts=($userEnvOpts eq 'M') ? "M$envOpts" : $userEnvOpts    if $userEnvOpts ne '';
+# if user enters --envOpts that don't conflict with defaults, we need to add it to theh
+# otherwise override them
+$envOpts=($userEnvOpts=~/(^[CFM\d]+$')/) ? "$1$envOpts" : $userEnvOpts    if $userEnvOpts ne '';
 
 $allThreadFlag=($procOpts=~/t/) ? 1 : 0;
 
@@ -934,6 +937,9 @@ if (!$PcFlag)
     $Dmidecode='';
     $ProductName='Unknown';
   }
+
+  # Set protections for output files
+  umask oct($Umask) or error("Couldn't set umask to $Umask");
 }
 
 #    C o m m o n    I n i t i a l i z a t i o n
@@ -958,8 +964,8 @@ error("-G requires data collection to a file")
 ($lustreSvcs, $lustreConfigInt)=split(/:/, $lustreSvcs);
 $lustreSvcs=""                      if !defined($lustreSvcs);
 $lustreConfigInt=$LustreConfigInt   if !defined($lustreConfigInt);
-error("Valid values for -L are c, m and o")    
-    if $lustreSvcs!~/^[cmo]*$/;
+error("Valid values for --lustsvcs are any combinations of cmoCMO")    
+    if $lustreSvcs!~/^[cmo]*$/i;
 error("lustre config check interval must be numeric")
     if $lustreConfigInt!~/^\d+$/;
 
@@ -2892,7 +2898,7 @@ sub preprocessPlayback
     print "File: $file  FileSubSys: $thisSubSys  NfsOpts: $thisNfsOpts  LustOpts: $thisLustOpts\n"
 	if $debug & 2048;
 
-    # note that -s and -L override anything in the files AND in case -s contained +/- 
+    # note that -s and --lustsvc override anything in the files AND in case -s contained +/- 
     # we need to do a merge rather than a wholesale replace     
     $thisSubSys=mergeSubsys($thisSubSys);
     $lastLustreConfig=$lustreSvcs    if $lustreSvcs ne '';
@@ -3049,7 +3055,7 @@ sub configChange
   {
     $preprocMessages{$prefix.'|'.$index++}="  -s overridden to '$subsys'"
 	if $configChange & 1;
-    $preprocMessages{$prefix.'|'.$index++}="  -L overridden to '$services'"
+    $preprocMessages{$prefix.'|'.$index++}="  --lustsvr overridden to '$services'"
 	if $configChange & 2;
     $preprocMessages{$prefix.'|'.$index++}="  -i overridden from '$interval' to '$userInterval'"
 	if $configChange & 4;
@@ -3104,7 +3110,7 @@ sub checkSubsysOpts
 {
   error("you cannot mix --slabopts with --top")  if $slabOpts ne '' && $topSlabFlag;
   error("invalid slab option in '$slabOpts'")    if $slabOpts ne '' && $slabOpts!~/^[sS]+$/;
-  error("invalid env option in '$envOpts")       if $envOpts ne ''  && $envOpts!~/^[cftM]+$/;
+  error("invalid env option in '$envOpts'")      if $envOpts ne ''  && $envOpts!~/^[cftCFM\d]+$/;
 
   if ($procOpts ne '')
   {
@@ -3122,9 +3128,9 @@ sub checkSubsysOpts
   # specified by the user and then disabled by collectl.
   error("--lustsvcs only applies to lustre")    
       if $lustreSvcs ne '' && $subsys!~/l/i && $userSubsys!~/l/i;
-  my $cltFlag=($CltFlag || $lustreSvcs=~/c/) ? 1 : 0;
-  my $mdsFlag=($MdsFlag || $lustreSvcs=~/m/) ? 1 : 0;
-  my $ostFlag=($OstFlag || $lustreSvcs=~/o/) ? 1 : 0;
+  my $cltFlag=($CltFlag || $lustreSvcs=~/c/i) ? 1 : 0;
+  my $mdsFlag=($MdsFlag || $lustreSvcs=~/m/i) ? 1 : 0;
+  my $ostFlag=($OstFlag || $lustreSvcs=~/o/i) ? 1 : 0;
 
   error("--lustopts only applies to lustre")                 if $lustOpts ne '' && $subsys!~/l/i;
   error("--lustopts B only applies to Lustre Clts/Osts")     if $lustOpts=~/B/ && !$ostFlag && !$cltFlag;
@@ -3406,6 +3412,7 @@ sub getProc
         if ($line=~/hd[ab] /)            { record(2, "$tag $line"); next; }
         if ($line=~/ sd[a-z]+ /)         { record(2, "$tag $line"); next; }
         if ($line=~/xvd[a-z] /)          { record(2, "$tag $line"); next; }
+        if ($line=~/fio[a-z]+ /)         { record(2, "$tag $line"); next; }
         if ($line=~/dm-\d+ /)            { record(2, "$tag $line"); next; }
         if ($line=~/emcpower/)           { record(2, "$tag $line"); next; }
         if ($line=~/psv\d+/)             { record(2, "$tag $line"); next; }
@@ -3537,8 +3544,9 @@ sub getExec
     my $lineNum=0;
     foreach my $line (<CMD>)
     {
-      # OFED 1.5 adds an extra field called CounterSelect2, which we want to ignore
-      next    if ++$lineNum==13 && $IBVersion>1.4;
+      # OFED 1.5 adds an extra field called CounterSelect2, which we want to
+      # ignore
+      next    if ++$lineNum==13 && ($IBVersion ge '1.5.0');
 
       if ($line=~/^#.*(\d+)$/)
       {
@@ -3580,6 +3588,7 @@ sub getExec
   {
     foreach my $line (<CMD>)
     {
+      next    if $envFilt ne '' && $line!~/$envFilt/;
       record(2, "$tag: $line");
     }
   }
@@ -4133,8 +4142,9 @@ sub buildCommonHeader
   $commonHeader.="# Host:       $Host  DaemonOpts: $DaemonOptions\n";
   $commonHeader.="# Distro:     $Distro  Platform: $ProductName\n";
   $commonHeader.=$timeZoneInfo  if defined($timeZoneInfo);
-  $commonHeader.="# SubSys:     $tempSubsys Options: $options NfsFilt: $nfsFilt ";
-  $commonHeader.=              "Interval: $tempInterval NumCPUs: $NumCpus $Hyper NumBud: $NumBud Flags: $flags\n";
+  $commonHeader.="# SubSys:     $tempSubsys Options: $options Interval: $tempInterval NumCPUs: $NumCpus ";
+  $commonHeader.=              "$Hyper NumBud: $NumBud Flags: $flags\n";
+  $commonHeader.="# Filters:    NfsFilt: $nfsFilt EnvFilt: $envFilt\n";
   $commonHeader.="# HZ:         $HZ  Arch: $SrcArch PageSize: $PageSize\n";
   $commonHeader.="# Cpu:        $CpuVendor Speed(MHz): $CpuMHz Cores: $CpuCores  Siblings: $CpuSiblings\n";
   $commonHeader.="# Kernel:     $Kernel  Memory: $Memory  Swap: $Swap\n";
@@ -4766,8 +4776,11 @@ sub loadConfig
         if ($param=~/^-/)
         {
           # If new switch, time to write out old one (and arg)
+          # Note that if there are quotes, we need to remove them as they'll show up
+          # in argument itself.  Apparently this is NOT a problem for single quotes
 	  if ($switch ne '')
           {
+	    $arg=~s/"//g;
             unshift(@ARGV, $arg)    if $arg ne '';
             unshift(@ARGV, "$switch");
   	  }
@@ -5441,7 +5454,7 @@ sub showDefaults
   printText("              Interactive   Daemon\n");
   printText("  -c             -1         -1\n");
   printText("  -i             1:$Interval2:$Interval3   $Interval:$Interval2:$Interval3\n");
-  printText("  -L             :$LustreConfigInt       :$LustreConfigInt\n");
+  printText("  --lustsvcs      :$LustreConfigInt       :$LustreConfigInt\n");
   printText("  -s             cdn        $SubsysCore\n");
   printText("Defaults only settable in config file:\n");
   printText("  LimSVC        = $LimSVC\n");
@@ -5483,9 +5496,18 @@ sub error
     $sockFlag=0    if $serverFlag;
 
     `stty echo`    if !$PcFlag;
-    printText("Error: $text\n");
-    printText("type '$Program -h' for help\n");
     logmsg("F", "Error: $text")    if $daemonFlag;
+
+    # we can only call printText() when formatit loaded.
+    if ($formatitLoaded)
+    {
+      printText("Error: $text\n");
+      printText("type '$Program -h' for help\n");
+    }
+    else
+    {
+      print "Error: $text\n";
+    }
     exit(1);
   }
 
@@ -5585,6 +5607,7 @@ This is the complete list of switches, more details in man page
       --thru       time         time thru which to playback data (see --from)
       --top        [type][,num] show top 'num' processes sorted by type
                                   --showtopopts for details
+      --umask      mask         set output file permissions mask (see man umask)
       --verbose                 display output in verbose format (automatically
                                 selected when brief doesn't make sense)
   -w, --wide                    print wide field contents (don't use K/M/G)
@@ -5615,6 +5638,7 @@ Various types of help
   --showplotheader            show plot headers that 'would be' generated
   --showslabaliases           for SLUB allocator, show non-root aliases
   --showrootslabs             same as --showslabaliases but use 'root' names
+  --whatsnew                  show summary of recent version new features
 EOF2
 printText("$extended\n");
 return    if defined($_[0]);
@@ -5728,6 +5752,14 @@ Environmental
       t - display temperature data
       M - display data on multiple lines (useful when too much data)
 
+  --envfilt perl-regx
+      during collection, this filter is applied to the data returned by
+      ipmitool and only those lines that match are kept
+
+  --envremap perl-regx...
+      a list of regx expressions, comma separated, are applied to the 
+      final env names before reporting
+
   The following are for those needed to develop/debug remapping rules.
   See online documentation OR Ipmi.html in docs/
   --envrules  filename     file containin remapping rules
@@ -5746,6 +5778,9 @@ Lustre
       c - client
       m - mds
       o - oss
+    NOTE - you can specify the service in either lower or upper case, in
+    case other tools might care.  see the collectl documentation on lustre
+    for details
 
 NFS
   --nfsfilt  TypeVer,...
@@ -5870,4 +5905,28 @@ EOF5
 
 printText($subopts);
 exit    if !defined($_[0]);
+}
+
+sub whatsnew
+{
+  my $whatsnew=<<EOF6;
+What's new in collectl:
+
+Version 3.4.1
+- new switches
+  - --whatsnew   prints this text
+  - --envopts    C/F will convert term to C or F, n selects ipmi device
+  - --envfilt    select a subset of ipmi sensors 
+  - --envremap   remap names to other ones
+  - --umask      lets you specify umask for file creation
+- new functionality
+  - support for Fusion-IO disks
+  - added 'filters' section to header and move nfs filters to it
+  - added x= to lexpr, which allows one to call custom routine
+  - new option for --envopts allows you to specify ipmi dev #
+
+EOF6
+
+  printText($whatsnew);
+  exit;
 }

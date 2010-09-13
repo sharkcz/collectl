@@ -15,7 +15,6 @@
 #                    cpu, disk, infiniband, lustre, memory, network,
 #                    nfs, process, quadrics, slabs and more in easy 
 #                    to read format.
-#
 ### END INIT INFO
 
 # chkconfig: 345 99 99

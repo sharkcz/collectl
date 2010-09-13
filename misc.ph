@@ -1,5 +1,12 @@
 # copyright, 2003-2009 Hewlett-Packard Development Company, LP
 
+# NOTE - by default, this module only collectl data once a minute, which you can change
+# with the i=x parameter (eg --import misc,i=x).  Regardless of the collection interval,
+# date will be reported every interval in brief/verbose formats to provide a consisent 
+# set of output each monitoring cycle.  However, --export output will only be displayed
+# when collected, based in i=.  To report --export data during ALL samples, in case the
+# listener expects it, include the a switch (eg misc,a).
+
 #    M i s c e l l a n e u o s    C o u n t e r
 
 use strict;
@@ -9,28 +16,34 @@ our ($miniFiller, $rate, $SEP, $datetime, $miniInstances, $interval);
 
 my (%miscNotOpened, $miscUptime, $miscMHz, $miscMounts, $miscLogins);
 my ($miscUptimeTOT, $miscMHzTOT, $miscMountsTOT, $miscLoginsTOT);
-my ($miscInterval, $miscImportCount, $miscSampleCounter);
+my ($miscInterval, $miscImportCount, $miscSampleCounter, $miscAllFlag);
 sub miscInit
 {
   my $impOptsref=shift;
   my $impKeyref= shift;
 
-  # For now, only options are 'i=' and s
+  # If we ever run with a ':' in the inteval, we need to be sure we're
+  # only looking at the main one.
+  my $miscInterval1=(split(/:/, $interval))[0];
+
+  # For now, only options are a, 'i=' and s
   $miscInterval=60;
+  $miscAllFlag=0;
   if (defined($$impOptsref))
   {
     foreach my $option (split(/,/,$$impOptsref))
     {
       my ($name, $value)=split(/=/, $option);
-      error("invalid misc option: '$name'")    if $name ne 'i' && $name ne 's';
+      error("invalid misc option: '$name'")    if $name ne 'a' && $name ne 'i' && $name ne 's';
 
       $miscInterval=$value    if $name eq 'i';
+      $miscAllFlag=1          if $name eq 'a';
     }
   }
 
-  $miscImportCount=int($miscInterval/$interval);
-  error("misc interval option not a multiple of '$interval' seconds")
-        if $interval*$miscImportCount != $miscInterval;
+  $miscImportCount=int($miscInterval/$miscInterval1);
+  error("misc interval option not a multiple of '$miscInterval1' seconds")
+        if $miscInterval1*$miscImportCount != $miscInterval;
 
   $$impOptsref='s';    # only one collectl cares about
   $$impKeyref='misc';
@@ -156,7 +169,7 @@ sub miscPrintPlot
 
 sub miscPrintExport
 {
-  return    if (($miscSampleCounter-1) % $miscImportCount)!=0;
+  return    if !$miscAllFlag && (($miscSampleCounter-1) % $miscImportCount)!=0;
 
   my $type=   shift;
   my $ref1=   shift;

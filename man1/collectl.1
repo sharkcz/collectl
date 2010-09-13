@@ -727,6 +727,13 @@ resulting in a display similar to the 'top' utility.  In playback more the scree
 cannot use this switch in 'record' mode.
 .RE
 
+
+.B "--umask mask"
+.RS
+Sets collectl's umask to control output file permissions.  Defaultis 0137.
+See 'man umask' for details.
+.RE
+
 .B -v
 .RS
 Show version and whether or not Compression and/or HiResTime modules have
@@ -773,7 +780,27 @@ f - display fan data
 .br
 t - display temperature data
 .br
+C - convert temperature to Celcius if in Farenheit
+.br
+F - convert temperature to Farenheit if in Celcius
+.br
 M - display each type of data on separate line
+.br
+9 - any number, will tell ipmitool to read on this device number
+.RE
+
+.B "--envfilt regx"
+.RS
+If specified, this regx is evaluated against each line of data returned by ipmitool
+and only those that match are retained.  All other data is lost.
+.RE
+
+.B "--envremap
+.RS
+If specified as a comma separated list of perl regular substitution expressions without the
+=~s portion, each expression is applied to each environmental field name, thereby allowing
+one to rename the column headers.  This can be most useful when running on heterogeneuos
+systems and you want consistent column names.
 .RE
 
 .B "--lustopts Lustre Options"

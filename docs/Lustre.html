@@ -17,7 +17,7 @@ If you select -sl and the system doesn't have lustre installed, it will warn
 you and then disable that switch.
 <p>
 <h3>Controlling Which Data is Displayed</h3>
-It turns out that lustre records a wealth of performance data, far more than makes sense to
+Lustre records a wealth of performance data, far more than makes sense to
 display all the time, and so by default collectl displays minimal information
 such as bytes/operations read and written.  At the client detail level lustre
 can differentiate this
@@ -30,7 +30,7 @@ switches.
 detail data or combine them to get both.  However, since the client detail data can actually
 be presented at the individual filesystem or OST level, there is an option to show the OST
 level details (filesystem details are the default) <i>see --lustopts O</i>.
-<li>--luistopts: This switch is used to provide further detail about the types of data that
+<li>--lustopts: This switch is used to provide further detail about the types of data that
 is to be collected/displayed.  There are 5 such values that collectl cares about:
 <ul>
 <li>B - rpc buffer level data.</li>
@@ -45,21 +45,20 @@ As it turns out, nothing is quite as simple as it seems and while the following
 case is not typical, it needs to be addressed for completeness.  Since collectl allows one to
 collect one set of data and to later display a different set,
 consider what happens in one were
-to collect multiple types of lustre data for a client using <i>--lustopts MR<i>, but then just play back
+to collect multiple types of lustre data for a client using <i>--lustopts MR</i>, but then just play back
 the basic client data which is collected without specifying <i>--lustopts</i>.
 By default, playback mode defaults
 to the settings data was collected with and to change the display one needs to explicity
-change those settings.  To meet this need, there are 3 additional values one can use with
---lustopts, namely c, o and m to indicate on playback one wants to see the base data.  Natually
-these can be combined with other valid values for --lustopts as well for maximum flexibility.
+change those settings.  To meet this need, use <i>--lustsvc</i>, which is described in more
+detail later.
 </ul>
 </ul>
 <p>
 In the spirit of letting the user display whatever they want to, collectl will allow one to
 select multiple values for <i>--lustopts</i> and it will try to display the results appropriately.
 Perhaps the easiest thing to do is just experiment and in most cases you'll get what you're 
-looking for.  There are a few combinations of -s and --lustopts that do not make sense and if you 
-choose one, you will be told.
+looking for.  There are a few combinations of <i>-s</i> and <i>--lustopts</i> that do not 
+make sense and if you choose one, you will be told.
 <p>
 
 <h3> What About Playback?</h3>
@@ -74,46 +73,38 @@ you'd like it to be.  If you select a statistics type that hasn't been recorded,
 that information will be displayed, but as zeros.
 <p>
 <h3>Recognizing Service Configuration Changes</h3>
-In some cases lustre services may change after collectl starts. This includes
-services starting and stopping as well as the configurations of those services
-themselves changing.
+In some cases lustre services may change after collectl starts. In fact, it may not
+even be running and if so you'll get a message telling you it is not and that collectl
+cannot determine the system type since it could be a client, MDS, OSS or some 
+combination.  This includes services starting and stopping as well as the configurations 
+of those services themselves changing.
 For  example one might occasionally mount/umount different lustre filesystems on
 a client.  Not to worry.  Collectl
 periodically checks for configuration changes and automatically adjusts the data it collects
-as well as anything it may be currently displaying.  If you know that the configuration will
-be limited to only 1 or 2 possible services, you can reduce the overhead in checking for
-those services by specifying a finite list with -L.  However, in most cases this extra
-overhead is not enough to make it worth bothering with.
-<p>
-The frequency at which collectl checks for configuration changes is
-controlled by the variable 'LustreConfigInt' in 'collectl.conf' and so can easily be
-overriden, but this typically shouldn't be necessary.
-It is also possible to specify this monitoring frequency via -L when collectl
-is started.  One should note that the overhead in monitoring the state changes is related to
-the complexity of the server and has been observed to be less than 0.1% when checked
-every 10 seconds on a minimally configured server.
+as well as anything it may be currently displaying.  However this can also lead to the 
+output format changing.  If you know that the system type could change and you simply want to
+force the type of output to be consistent, use <i>--lustsvc</i> as described
+in the next section.
 <p>
 <h3>Changing the Default Recording/Display Behavior</h3>
 There are some times when you want specific control over what data is recorded or
-displayed rather than the default behavior.  This is typically the case when a system
+displayed rather than the default behavior OR collectl starts before lustre does and
+it can't determine the type of system it is.  This is typically the case when a system
 is playing multiple roles by providing more than one service.  For example, if a system
-has been configured as both an OST and a client, every time you run collectl you will collect
+has been configured as both an OSS and a client, every time you run collectl you will collect
 or display data about both and sometimes this is NOT what you want.  There may be other times
 where you have developed some reports or graphs that expect data in a standard format and
 you've collected a subset (or superset) of data.
 <p>
 To override this behavior of the lustre portion of the data (remember you can
-control the displaying of
-individual subsystems with -s), use -L to specify the type of services you're
-interested
+control the displaying of individual subsystems with -s), use <i>--lustsvc</i> to 
+specify the type of service(s) you're interested
 in and collectl will only pay attention to those, both for recording to a file as well as
-display.  When in recording mode, this will also limit the types of configuration changes
-collectl will watch for too.  One should also note with -L it is possible to collect data
-for some services and later display data for a different set.  Naturally when displaying
+display.  Naturally when displaying
 data for services you never collectled data on, those services will print as zeros.
 <p>
-If all this sounds confusing, just experiment with various combinations of -s,
---lustopts and lustsvcs and observe the behavior.
+If all this sounds confusing, just experiment with various combinations of <i>-s,
+--lustopts</i> and <i>--lustsvcs</i> and observe the behavior.
 
 </body>
 </html>

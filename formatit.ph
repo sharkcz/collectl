@@ -33,16 +33,8 @@ sub initRecord
   chomp $Distro;
 
   # For -sD calculations, we need the HZ of the system
-  # Note the hack for perl 5.6 which doesn't support PAGESIZE
   $HZ=POSIX::sysconf(&POSIX::_SC_CLK_TCK);
-  if ($PerlVers!~/5\.06/)
-  {
-    $PageSize=POSIX::sysconf(_SC_PAGESIZE);
-  }
-  else
-  {
-    $PageSize=($SrcArch=~/ia64/) ? 16384 : 4096;
-  }
+  $PageSize=POSIX::sysconf(_SC_PAGESIZE);
 
   # If we have process IO everyone must.  This was added in 2.6.23,
   # but then only if someone builds the kernel with it enabled, though
@@ -78,8 +70,7 @@ sub initRecord
   {
     if (!open BUD, '</proc/buddyinfo')
     {
-      logmsg("W", "-sb disabled because /proc/buddyinfo does not exist");
-      $subsys=~s/b//;
+      disableSubsys('b', '/proc/buddyinfo does not exist');
     }
     else
     {
@@ -180,13 +171,8 @@ sub initRecord
       }
     }
 
-    if ($myrinetFlag+$quadricsFlag+$mellanoxFlag==0)
-    {
-      # expectation with --all is you get everthing and this message shouldn't apply
-      logmsg("W", "-sx disabled because no interconnect hardware/drivers found")    if !$allFlag;
-      $xFlag=$XFlag=0;
-      $subsys=~s/x//ig;
-    }
+    disableSubsys('x', 'no interconnect hardware/drivers found')
+	if $myrinetFlag+$quadricsFlag+$mellanoxFlag==0;
 
     # User had ability to turn off in case they don't want destructive monitoring
     if ($mellanoxFlag)
@@ -211,9 +197,7 @@ sub initRecord
           $PQuery=getOfedPath($PQuery, 'perfquery', 'PQuery');
           if ($PQuery eq '')
           {
-	    logmsg('E', "Couldn't find perfquery!  Disabling infiniband monitoring");
-            $xFlag=$XFlag=0;
-            $subsys=~s/x//ig;
+            disableSubsys('l', "couldn't find perfquery!");
             $mellanoxFlag=0;
           }
 
@@ -227,9 +211,7 @@ sub initRecord
           $message="No such file or directory"    if $temp=~/No such file/;
           if ($message ne '')
           {
-            logmsg('E', "perfquery error: $message!  Disabling infiniband monitoring");
-            $xFlag=$XFlag=0;
-            $subsys=~s/x//ig;
+            disableSubsys('l', "perfquery error: $message!");
             $mellanoxFlag=0;
             $PQuery='';
           }
@@ -243,7 +225,10 @@ sub initRecord
               logmsg('W', "Couldn't find 'ofed_info'.  Won't be able to determine OFED version")
 	          if $OfedInfo eq '';
             }
-            $IBVersion=($OfedInfo ne '' && `$OfedInfo|head -n1`=~/OFED-(.*)/) ? $1 : '???';
+
+            # Unfortunately the ofed_info that ships with voltaire adds 5 extra
+            # line at front end so let's look at first 10 lines for version.
+            $IBVersion=($OfedInfo ne '' && `$OfedInfo|head -n10`=~/OFED-(.*)/) ? $1 : '???';
 	    print "OFED V$IBVersion\n"    if $debug & 2;
 	  }
         }
@@ -334,9 +319,7 @@ sub initRecord
         {
 	  if (!$daemonFlag)
           {
-            logmsg("W", "-sx disabled because another instance already monitoring Infiniband");
-            $xFlag=$XFlag=0;
-            $subsys=~s/x//ig;
+	    disableSubsys('x', 'another instance already monitoring Infiniband');
           }
           else
           {
@@ -374,6 +357,9 @@ sub initRecord
 
     if ($message eq '')
     {
+      # If specified by --envopts, set -d for ipmitool
+      $Ipmitool.=" -d $1"    if $envOpts=~/(\d+)/;
+
       logmsg('I', "Initialized ipmitool cache file '$IpmiCache'");
       my $command="$Ipmitool sdr dump $IpmiCache";
       `$command`;
@@ -394,16 +380,11 @@ sub initRecord
       }
       else
       {
-        $message="Couldn't create '$ipmiExec'";
+        $message="couldn't create '$ipmiExec'";
       }
     }
 
-    if ($message ne '')
-    {
-      logmsg("W", "$message so -sE disabled");
-      $subsys=~s/E//;
-      $EFlag=0;
-    }
+    disableSubsys('E', $message)    if $message ne '';
   }
 
   # find all the networks and when possible include thier speeds
@@ -478,12 +459,9 @@ sub initRecord
   $NumLustreFS=$numBrwBuckets=0;
   if ($subsys=~/l/i)
   {
-     if (`ls /lib/modules/*/kernel/net/lustre 2>/dev/null|wc -l`==0)     
+    if (`ls /lib/modules/*/kernel/net/lustre 2>/dev/null|wc -l`==0)     
     {
-      logmsg("W", "-sl data collection disabled because this system ".
-	          "does not have lustre modules installed")    if !$allFlag;
-      $lFlag=$LFlag=0;
-      $subsys=~s/l//ig;
+      disableSubsys('l', 'this system does not have lustre modules installed');
     }
     else
     {
@@ -517,13 +495,8 @@ sub initRecord
       print "Lustre -- CltFlag: $CltFlag  NumMds: $NumMds  NumOst: $NumOst\n"
 	  if $debug & 8;
 
-      if ($CltFlag+$NumMds+$NumOst==0 && $lustreSvcs eq '')
-      {
-        logmsg("W", "-sl data collection disabled because no lustre services running ".
-	          "and I don't know its type.  You will need to use -L to force type.");
-        $lFlag=$LFlag=0;
-        $subsys=~s/l//ig;
-      }
+      disableSubsys('l', "no lustre services running and I don't know its type.  You will need to use --lustsvc to force type.")
+      	if $CltFlag+$NumMds+$NumOst==0 && $lustreSvcs eq '';
 
       # Global to count how many buckets there are for brw_stats
       @brwBuckets=(1,2,4,8,16,32,64,128,256);
@@ -536,7 +509,7 @@ sub initRecord
       # error processing clean, only try to open the file if an MDS or OSS.
       # Since services may not be up, we also need to look at '$lustreSvcs',
       # though ultimately we'll only set the disk types and the maximum buckets
-      if ($subsys=~/l/i && $lustOpts=~/D/ && ($MdsFlag || $OstFlag || $lustreSvcs=~/[mo]/))
+      if ($subsys=~/l/i && $lustOpts=~/D/ && ($MdsFlag || $OstFlag || $lustreSvcs=~/[mo]/i))
       {
         # The first step is to build up a hash of the sizes of all the
         # existing partitions.  Since we're only doing this once, a 'cat's
@@ -1272,6 +1245,19 @@ sub initFormat
   $ipmiFile->{ignore}=[];
   loadEnvRules()    if $subsys=~/E/ || $envTestFile ne '';
 
+  # Wasn't sure if this should have been buried in 'loadEnvRules()'
+  # since they're not actualy 'rules'
+  if ($envRemap ne '')
+  {
+    @envRemaps=split(/,/,$envRemap);
+    for (my $i=0; $i<@envRemaps; $i++)
+    {
+      $envRemaps[$i]=~/\/(.*?)\/(.*?)\//;
+      $ipmiRemap->[$i]->[1]=$1;
+      $ipmiRemap->[$i]->[2]=$2;
+    }
+  }
+
   #    A r c h i t e c t u r e    S t u f f
 
   $word32=2**32;
@@ -1378,6 +1364,35 @@ sub initLast
     {
       # There are 2 ports on an hca, numbered 1 and 2
       $ibFieldsLast[$i][1][$j]=$ibFieldsLast[$i][2][$j]=0;
+    }
+  }
+}
+
+# When a subsys is selected for which this is no possibility of collecting
+# data, we must disable it in subsys as well as any --export modules which
+# explicitly selects that subsys too
+sub disableSubsys
+{
+  my $type=shift;
+  my $why= shift;
+
+  # If user specified --all, they shouldn't see these messages
+  logmsg("W", "-s$type disabled because $why")    if !$allFlag;
+  $subsys=~s/$type//ig;
+
+  # Not really sure if need to do this but it certainly can't hurt.
+  $EFlag=0           if $type=~/E/;
+  $bFlag=$BFlag=0    if $type=~/b/;
+  $lFlag=$KFlag=0    if $type=~/l/;
+  $xFlag=$XFlag=0    if $type=~/x/;
+
+  # Now make sure any occurances in s= of an export are disabled too.
+  for (my $i=0; $i<@expOpts; $i++)
+  {
+    if ($expOpts[$i]=~/$type/i)
+    {
+      logmsg('W', "found 's=$type' in lexpr so disabled there too")     if !$allFlag;
+      $expOpts[$i]=~s/$type//ig;
     }
   }
 }
@@ -1676,9 +1691,9 @@ sub initInterval
   }
   else
   {
-    $reportCltFlag=1    if $lustreSvcs=~/c/;
-    $reportMdsFlag=1    if $lustreSvcs=~/m/;
-    $reportOstFlag=1    if $lustreSvcs=~/o/;
+    $reportCltFlag=1    if $lustreSvcs=~/c/i;
+    $reportMdsFlag=1    if $lustreSvcs=~/m/i;
+    $reportOstFlag=1    if $lustreSvcs=~/o/i;
   }
 
   $envFanIndex=$envTempIndex=$envFirstHeader=$envNewHeader=0;
@@ -2671,10 +2686,26 @@ sub dataAnalyze
       $index=$envTempIndex++    if $type eq 'temp';
       $index=0                  if $type eq 'power';
       $fields[1]=-1             if $fields[1] eq 'no reading';
+
+      # If any last minute name remapping, this is the place for it
+      for (my $i=0; defined(@$ipmiRemap) && $i<@{$ipmiRemap}; $i++)
+      {
+        my $p1=$ipmiRemap->[$i]->[1];
+        my $p2=$ipmiRemap->[$i]->[2];
+        $name=~s/$p1/$p2/;
+      }
+
       $ipmiData->{$type}->[$index]->{name}=  $name;
       $ipmiData->{$type}->[$index]->{inst}=  $instance;
       $ipmiData->{$type}->[$index]->{value}= ($fields[1]!~/h$/) ? $fields[1] : $fields[3];
       $ipmiData->{$type}->[$index]->{status}=$fields[3];
+
+      # we may need to convert temperatures
+      if ($name=~/^Temp/ && $envOpts=~/[CF]/)
+      {
+        $ipmiData->{$type}->[$index]->{value}= $ipmiData->{$type}->[$index]->{value}*1.8+32      if $envOpts=~/F/ && $fields[2]=~/C$/;
+        $ipmiData->{$type}->[$index]->{value}= ($ipmiData->{$type}->[$index]->{value}-32)*5/9    if $envOpts=~/C/ && $fields[2]=~/F$/;
+      }
     }
   }
 
@@ -4251,9 +4282,13 @@ sub printPlot
     return    if $subsys=~/^[YZ]$/;    # we're done if ONLY printing slabs or processes
   }
 
-  # Print headers noting that by default $headerRepeat set to 0 for -P
+  # Print headers noting that by default $headerRepeat set to 0 for -P.  Also note we have to
+  # get more elaborate for terminal/file-based plot data.  On the terminal when HR is 0, we only
+  # want one header but when going to files we ALWAYS want a new header each day when 
+  # $headersPrinted gets reset to 0.
   $interval1Counter++;
-  printHeaders()    if ($headerRepeat==0 && $interval1Counter==1) ||
+  printHeaders()    if ($headerRepeat==0 && $filename eq '' && $interval1Counter==1) ||
+                       ($headerRepeat==0 && $filename ne '' && !$headersPrinted) ||
                        ($headerRepeat>0  && ($interval1Counter % $headerRepeat)==1);
 
   #######################
@@ -8305,7 +8340,7 @@ sub ibCheck
 sub lustreCheckClt
 {
   # don't bother checking if specific services were specified and not this one
-  return 0    if $lustreSvcs ne '' && $lustreSvcs!~/c/;
+  return 0    if $lustreSvcs ne '' && $lustreSvcs!~/c/i;
 
   my ($saveFS, $saveOsts, $saveInfo, @lustreFS, @lustreDirs);
   my ($dir, $dirname, $inactiveFlag);
@@ -8435,7 +8470,7 @@ sub lustreCheckClt
 sub lustreCheckMds
 {
   # don't bother checking if specific services were specified and not this one
-  return 0    if $lustreSvcs ne '' && $lustreSvcs!~/m/;
+  return 0    if $lustreSvcs ne '' && $lustreSvcs!~/m/i;
 
   # if this wasn't an MDS and still isn't, nothing has changed
   my $type=($cfsVersion lt '1.6.0') ? 'MDT' : 'MDS';
@@ -8472,7 +8507,7 @@ sub lustreCheckMds
 sub lustreCheckOst
 { 
   # don't bother checking if specific services were specified and not this one
-  return 0    if $lustreSvcs ne '' && $lustreSvcs!~/o/;
+  return 0    if $lustreSvcs ne '' && $lustreSvcs!~/o/i;
 
   # if this wasn't an OST and still isn't, nothing has changed.
   return 0    if !$NumOst && !-e "/proc/fs/lustre/obdfilter";

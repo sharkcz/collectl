@@ -32,7 +32,6 @@
   <li><a href="#ops2">Why is my 'raw' file so big?</a></li>
   <li><a href="#ops3">Playing back multiple files to terminal doesn't show file names</a></li>
   <li><a href="#ops4">Why don't the averages/totals produced in brief mode look correct?</a></li>
-  <li><a href="#ops5">I'm getting errors "<i>Ignoring '!' modifier for short option</i>"</a></li>
   <li><a href="#ops6">What does <i>New slab created after logging started</i> mean?</a></li>
   <li><a href="#ops7">Why does collectl say <i>waiting for 60 second sample...</i> but doesn't?</a></li>
   <li><a href="#ops8">Why am I not seeing exceptions only with -ox?</a></li>
@@ -297,15 +296,6 @@ resolution than displayed and so there is less round-off error with the averages
 and totals.
 
 <a name="ops5"></a>
-<h2>I'm getting errors "<i>Ignoring '!' modifier for short option</i>"</h2>
-As of Version 2, collectl expects at least perl version 5.8 to be installed.  If
-you do not have a newer version of perl and cannot install a newer one, you can 
-get around this problem by installing a newer version of the module <i>perl-Appconfig</i>.
-Unfortunately, newer versions of perl-Appconfig only operate with perl 5.8 or 
-greater so you will have to install it on some other system running perl 5.8 first.  
-Then you need to manually replace the three modules <i>Getopt.pm, Long.pm</i> and 
-<i>Std.pm</i> on your perl 5.6 system, which can be found under /usr/lib/perl5/.  
-It is also recommended you rename rather than overwrite the originals.
 
 <a name="ops6"></a>
 <h2>What does <i>New slab created after logging started</i> mean?</h2>

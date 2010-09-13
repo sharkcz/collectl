@@ -1,18 +1,27 @@
 #!/bin/bash
 
-BINDIR=/usr/bin
-DOCDIR=/usr/share/doc/collectl
-SHRDIR=/usr/share/collectl
+DESTDIR=${DESTDIR:="/"}
 
+BINDIR=$DESTDIR/usr/bin
+DOCDIR=$DESTDIR/usr/share/doc/collectl
+SHRDIR=$DESTDIR/usr/share/collectl
+MANDIR=$DESTDIR/usr/share/man/man1
+ETCDIR=$DESTDIR/etc
+INITDIR=$DESTDIR/$ETCDIR/init.d
+
+mkdir -p $BINDIR
 mkdir -p $DOCDIR
 mkdir -p $SHRDIR
+mkdir -p $ETCDIR
+mkdir -p $MANDIR
+mkdir -p $INITDIR
 mkdir -p $SHRDIR/util
-mkdir -p /var/log/collectl
+mkdir -p $DESTDIR/var/log/collectl
 
 cp collectl.pl           $BINDIR/collectl
-cp collectl.conf         /etc
-cp initd/*               /etc/init.d
-cp man1/*                /usr/share/man/man1
+cp collectl.conf         $ETCDIR
+cp man1/*                $MANDIR
+cp initd/*               $INITDIR
 
 cp docs/*                $DOCDIR
 cp GPL ARTISTIC COPYING  $DOCDIR
@@ -28,10 +37,10 @@ cp client.pl readS       $SHRDIR/util
 cp col2tlviz.pl          $SHRDIR/util
 
 # Force in case redoing the install and files already zipped
-gzip -f /usr/share/man/man1/collectl*
+gzip -f $MANDIR/collectl*
 
-chmod 755 /etc/init.d/collectl*
-chmod 444 /etc/collectl.conf
+chmod 755 $INITDIR/collectl*
+chmod 444 $ETCDIR/collectl.conf
 chmod 755 $BINDIR/collectl
 chmod 444 $DOCDIR/ARTISTIC $DOCDIR/COPYING $DOCDIR/GPL
 chmod 755 $SHRDIR/util/*
@@ -40,46 +49,46 @@ chmod 444 $SHRDIR/formatit.ph $SHRDIR/*expr.ph $SHRDIR/vmstat.ph
 # remove any stale versions in case the names/numbers used have changed.
 # on new ROCKS installion 'rm' isn't there yet!  [thanks roy]
 if [ -x /bin/rm ] ; then
-  /bin/rm -f /etc/init.d/rc*.d/*collectl
-  /bin/rm -f /etc/rc.d/rc*.d/*collectl
+  /bin/rm -f $INITDIR/rc*.d/*collectl
+  /bin/rm -f $ETCDIR/rc.d/rc*.d/*collectl
 fi
 
 # Try and decide which distro this is based on distro specific files.
 distro=1
 if [[ -f /sbin/yast ]]; then
     distro=2
-    cp -f /etc/init.d/collectl-suse /etc/init.d/collectl
-    rm -f /etc/init.d/collectl-suse
-    rm -f /etc/init.d/collectl-debian
-    rm -f /etc/init.d/collectl-generic
+    cp -f $INITDIR/collectl-suse /etc/init.d/collectl
+    rm -f $INITDIR/collectl-suse
+    rm -f $INITDIR/collectl-debian
+    rm -f $INITDIR/collectl-generic
 fi
 
 # debian
 if [[ -f /usr/sbin/update-rc.d ]]; then
     distro=3
-    cp -f /etc/init.d/collectl-debian /etc/init.d/collectl
-    rm -f /etc/init.d/collectl-suse
-    rm -f /etc/init.d/collectl-debian
-    rm -f /etc/init.d/collectl-generic
+    cp -f $INITDIR/collectl-debian /etc/init.d/collectl
+    rm -f $INITDIR/collectl-suse
+    rm -f $INITDIR/collectl-debian
+    rm -f $INITDIR/collectl-generic
     update-rc.d collectl defaults
 fi
 
 # redhat
 if [[ -f /etc/redhat-release ]]; then
     distro=4
-    rm -f /etc/init.d/collectl-suse
-    rm -f /etc/init.d/collectl-debian
-    rm -f /etc/init.d/collectl-generic
+    rm -f $INITDIR/collectl-suse
+    rm -f $INITDIR/collectl-debian
+    rm -f $INITDIR/collectl-generic
     chkconfig --add collectl
 fi
 
 # gentoo
-if [[ -f /etc/gentoo-release ]]; then
+if [[ -f $ETCDIR/gentoo-release ]]; then
     distro=5
-    cp -f /etc/init.d/collectl-generic /etc/init.d/collectl
-    rm -f /etc/init.d/collectl-suse
-    rm -f /etc/init.d/collectl-debian
-    rm -f /etc/init.d/collectl-generic
+    cp -f $INITDIR/collectl-generic /etc/init.d/collectl
+    rm -f $INITDIR/collectl-suse
+    rm -f $INITDIR/collectl-debian
+    rm -f $INITDIR/collectl-generic
     rc-update -a collectl default
 fi
 
@@ -88,10 +97,10 @@ fi
 # rc-update you're going to have to add some custom code below...
 if [[ ${distro} = 1 ]]; then
 
-    cp -f /etc/init.d/collectl-generic /etc/init.d/collectl
-    rm -f /etc/init.d/collectl-suse
-    rm -f /etc/init.d/collectl-debian
-    rm -f /etc/init.d/collectl-generic
+    cp -f $INITDIR/collectl-generic /etc/init.d/collectl
+    rm -f $INITDIR/collectl-suse
+    rm -f $INITDIR/collectl-debian
+    rm -f $INITDIR/collectl-generic
 
     # figure out how to handle reboots
     if [[ -f /sbin/chkconfig ]]; then

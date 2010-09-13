@@ -20,9 +20,13 @@ sub gexprInit
 {
   my $hostport=shift;
 
+  # If we ever run with a ':' in the inteval, we need to be sure we're
+  # only looking at the main one.
+  my $gexInterval1=(split(/:/, $interval))[0];
+
   # Options processing.  must be combo of co, d, i and s (for now)
   $gexDebug=$gexCOFlag=0;
-  $gexInterval=$interval;
+  $gexInterval=$gexInterval1;
   $gexSubsys=$subsys;
   $gexTTL=5;
   foreach my $option (@_)
@@ -46,15 +50,13 @@ sub gexprInit
   error("the port number must be specified")    if !defined($gexPort) || $gexPort eq '';
   $gexMcastFlag=1    if $gexHost=~/^(\d+)/ && $1>=225 && $1<=239;
 
-
-  $gexSubsys=~s/x//gi    if $subsys!~/x/i;    # in case disabled at runtime
   error("gexpr subsys options '$gexSubsys' not a proper subset of '$subsys'")
         if $subsys ne '' && $gexSubsys!~/^[$subsys]+$/;
 
   # convert to the number of samples we want to send
-  $gexSendCount=int($gexInterval/$interval);
-  error("gexpr interval option not a multiple of '$interval' seconds")
-	if $interval*$gexSendCount != $gexInterval;
+  $gexSendCount=int($gexInterval/$gexInterval1);
+  error("gexpr interval option not a multiple of '$lexInterval1' seconds")
+	if $gexInterval1*$gexSendCount != $gexInterval;
 
   $gexFlags=$gexMinFlag+$gexMaxFlag+$gexAvgFlag;
   error("only 1 of 'min', 'max' or 'avg' with 'gexpr'")    if $gexFlags>1;
@@ -81,6 +83,10 @@ sub gexprInit
 
 sub gexpr
 {
+  # if not time to print and we're not doing min/max/tot, there's nothing to do.
+  $gexCounter++;
+  return    if ($gexCounter!=$gexSendCount && $gexFlags==0);
+
   # We ALWAYS process the same number of data elements for any collectl instance
   # so we can use a global index to point to the one we're currently using.
   $gexDataIndex=0;
@@ -347,7 +353,7 @@ sub gexpr
         my $name=$ipmiData->{$key}->[$i]->{name};
         my $inst=($key!~/power/ && $ipmiData->{$key}->[$i]->{inst} ne '-1') ? $ipmiData->{$key}->[$i]->{inst} : '';
 
-        sendData("env.$name$inst", $name,  $ipmiData->{$key}->[$i]->{value});
+        sendData("env.$name$inst", $name,  $ipmiData->{$key}->[$i]->{value}, '%s');
       }
     }
   }
@@ -360,6 +366,7 @@ sub gexpr
   {
     sendData($names[$i], $units[$i], $vals[$i]);
   }
+  $gexCounter=0    if $gexCounter==$gexSendCount;
 }
 
 sub openSocket
@@ -383,6 +390,9 @@ sub sendData
   my $units=shift;
   my $value=shift;
 
+  # We have to increment at the top since multiple exit points (shame on me) so the
+  # very first entry starts at 1 rather than 0;
+  $gexDataIndex++;
   $value=int($value);
 
   # These are only undefined the very first time
@@ -397,7 +407,7 @@ sub sendData
   {
     # And while this should be done in init(), we really don't know how may indexes
     # there are until our first pass through...
-    if ($gexCounter==0)
+    if ($gexCounter==1)
     {
       $gexDataMin[$gexDataIndex]=$gexOneTB;
       $gexDataMax[$gexDataIndex]=0;
@@ -409,12 +419,11 @@ sub sendData
     $gexDataTot[$gexDataIndex]+=$value   if $gexAvgFlag;
   }
 
-  return('')    if ++$gexCounter!=$gexSendCount;
+  return('')    if $gexCounter!=$gexSendCount;
 
   #    A c t u a l    S e n d    H a p p e n s    H e r e
 
   # If doing min/max/avg, reset $value
-  $gexCounter=0;
   if ($gexFlags)
   {
     $value=$gexDataMin[$gexDataIndex]    if $gexMinFlag;
@@ -463,7 +472,6 @@ sub sendData
     $gexTTL[$gexDataIndex]--          if !$valSentFlag;
     $gexTTL[$gexDataIndex]=$gexTTL    if $valSentFlag || $gexTTL[$gexDataIndex]==0;
   }
-  $gexDataIndex++;
 }
 
 sub sendMetaPacket

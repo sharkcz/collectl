@@ -327,6 +327,45 @@ Currently all the systems that power monitoring has been testing on report it as
 <i>Power Meter</i> and without more examples, the parsing is currently set up to specifically
 look for that field.
 <p>
+<h3>Performance and Alternate IMPI Devices</h3>
+<p>
+In some situations there may be multiple ipmi devices over which to communicate and if so, the
+default one may not necessarily be the fastest one.  If you thing the ipmi commands are taking
+too long to execute, try a simple experiment like this:
+
+<pre>
+ipmitool sdr dump /tmp/xxx
+time for i in `seq 1 10`; do ipmitool -S /tmp/xxx sdr > /dev/null; done;
+real    0m20.476s
+user    0m0.004s
+sys     0m0.015s
+<pre>
+
+As you can see, even though the command only used 0.02 seconds of CPU time, the elapsed time 
+was over 20 seconds, a good indication something is not right.  If look in /proc/ipmi you make
+see more than one directory as in the following case:
+
+<pre>
+[root@hpdc3dmgt1 ~]# ls /proc/ipmi
+0  1
+</pre>
+
+This means there are 2 different IPMI devices and since the default is one, let's try repating
+the command above on the other device.  Also notice that since we've already initialized
+our cache file we do not need to reissue the <i>ipmitool sdr dump</i> command:
+
+<pre>
+time for i in `seq 1 10`; do ipmitool -S /tmp/xxx -d1 sdr > /dev/null; done;
+real    0m0.487s
+user    0m0.004s
+sys     0m0.013s
+</pre>
+
+See how the elapsed time is only a fraction using device 1?  To tell collectl to use this
+device instead of the default, simply specify the number in the <i>--envopts</i> switch,
+for example <i> collectl -sE --envopts 1</i>
+
+<p>
 <h3>Restrictions</h3>
 Some systems report what appears to be device codes in the data field and the data in the 4th
 field and I don't know why.  For now, when this occurs report the 4th column as the data

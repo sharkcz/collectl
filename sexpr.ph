@@ -25,7 +25,7 @@ sub sexprInit
   foreach my $option (@_)
   {
     my ($name, $value)=split(/=/, $option);
-    error("invalid lexpr option '$name'")    if $name!~/^[dfs]$|^raw$|^rate$/;
+    error("invalid sexpr option '$name'")    if $name!~/^[dfs]$|^raw$|^rate$/;
 
     $sexprDebug=$value       if $name eq 'd';
     $sexprFilename=$value    if $name eq 'f';
@@ -40,7 +40,6 @@ sub sexprInit
 
   # the naming/location of the output files is based on code in lexpr
   # If importing data, and if not reporting anything else, $subsys will be ''
-  $sexprSubsys=~s/x//gi    if $subsys!~/x/i;    # in case disabled at runtime
   $sexprSumFlag=$sexprSubsys=~/[cdfilmnstxE]/ ? 1 : 0;
   error("sexpr subsys options '$sexprSubsys' not a proper subset of '$subsys'")
             if $subsys ne '' && $sexprSubsys!~/^[$subsys]+$/;
@@ -337,12 +336,12 @@ sub sexprRaw
   # Build up as a single string
   $sexprRec='';
   $sexprRec.="(collectl_summary\n"    if $XCFlag && $sumFlag;
-  $sexprRec.="$pad(sample (time $lastSecs))\n"    if $sumFlag;
+  $sexprRec.="$pad(sample (time $lastSecs[$rawPFlag]))\n"    if $sumFlag;
   $sexprRec.="$cpuSumString$diskSumString$nfsString$inodeString$memString$netSumString";
   $sexprRec.="$lusSumString$sockString$tcpString$intString$impSumString";
   $sexprRec.=")\n"                    if $XCFlag && $sumFlag;
 
-  $sexprRec.="$pad(sample (time $lastSecs))\n"    if !$sumFlag;
+  $sexprRec.="$pad(sample (time $lastSecs[$rawPFlag]))\n"    if !$sumFlag;
   $sexprRec.="(collectl_detail\n"     if $XCFlag && $detFlag;
   $sexprRec.="$cpuDetString$diskDetString$netDetString$envDetString$impDetString";
   $sexprRec.=")\n"                    if $XCFlag && $detFlag;
@@ -601,13 +600,13 @@ sub sexprRate
 
   $sexprRec='';
   $sexprRec.="(collectl_summary\n"    if $XCFlag && $sumFlag;
-  $sexprRec.="$pad(sample (time $lastSecs))\n"    if $sumFlag;
+  $sexprRec.="$pad(sample (time $lastSecs[$rawPFlag]))\n"    if $sumFlag;
   $sexprRec.="$cpuSumString$diskSumString$nfsString$inodeString$memString$netSumString";
   $sexprRec.="$lusSumString$sockString$tcpString$intString$impSumString";
   $sexprRec.=")\n"                    if $XCFlag && $sumFlag;
 
   $sexprRec.="(collectl_detail\n"     if $XCFlag && $detFlag;
-  $sexprRec.="$pad(sample (time $lastSecs))\n"    if !$sumFlag;
+  $sexprRec.="$pad(sample (time $lastSecs[$rawPFlag]))\n"    if !$sumFlag;
   $sexprRec.="$cpuDetString$diskDetString$netDetString$envDetString$impDetString";
   $sexprRec.=")\n"                    if $XCFlag && $detFlag;
 

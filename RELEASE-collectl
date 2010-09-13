@@ -37,19 +37,71 @@ KNOWN PROBLEMS/RESTRICTIONS
   - if system time is changed by more then the log rolling frequency after
     collectl starts, multiple log files will be created during the next polling
     cycle(s)
-  - if a symlink is used to point to the executable, it MUST contain the full
-    path or collectl will not be able to find 'formatit.ph'
+
+CHANGES
+
+3.4.1-5 Mar 30, 2010
+  - new env options F/T converts temps to C or F
+
+3.4.1-4 Mar 29, 2010
+  - new switch --whatsnew prints a summary of changes, a mini-release notes
+
+3.4.1-3 Mar 23, 2010
+  - added Fusion-IO card to list of valid disks: fio
+  - gexpr, lexpr and misc weren't honoring internal interval counter.
+  - if a secondary/tertiary interval specified gexpr/lexpr didn't process 
+    it correctly
+  - new switch: --envfilt allows you to specify filters
+  - if you specify a " in DaemonCommands it gets passed along in the variable itself
+    (not a problem for ') so we have to remove them
+  - added new section 'Filters' to header.  Added EnvFilt and moved NfsFilt to it
+  - added new switch --envremap, which allows for renaming one or more output field names
+  - added new feature switch to lexpr.  if x=file is specified, that file will be loaded
+    via require and a corresponding function name called after every print cycle, allowing
+    one to do modified, custom output
+  - new switch, --umask too control output file protections, see man umask.  default is 0137
+  - new environmental option - if you include a device number with --envopts use THAT as a 
+    device number with -d when running ipmitool.  for some systems the default devices is
+    the slower one and this will have an impact on how fast ipmitool will run, possibly
+    slowing down collectl
+  - added 'use 5.008000', which should have probably been there years ago
+
+3.4.1-2 Mar 16, 2010
+  - do now allow -oA in verbose mode
+  - consolidated all code to disable -s subsystems when a conflict consolidated into
+    disableSubsys which ALSO disables them in s= clause of --export
+  - removed code to disable s= in all the ph export modules since now redundant
+  - support for DESTDIR env variable in INSTALL/UNINSTALL [thanks Bernd]
+  - Voltaire changes output of ofed_info so we have to process IB version
+    slightly differently
+  - change lustre message about needing -L to --lustsvc
+  - changes to lexpr to include processes in run queue and to change prefix
+    for proc creates/runs to 'proc'
+  - changes fo misc.ph to ALWAYS report latest values in --export as well if 'a' 
+    paremeter, noting the default is to only report them when sampled.  collection 
+    still defaults to 1 minute, overridable via 'i='.
+  - since loading formatit.ph moved in a recent release, any calls to error()
+    before it's loaded since it needs a routine internal to formatit.  so now
+    only call printText() from error() if formatit loaded.
+
+3.4.1-1 Feb 22, 2010
+  - when printing plot data to files, wasn't putting headers on subsequent days' files
+
+3.4.1-0 Jan 10, 2010
+  - make sure all major release settings in RELEASE-collectl have dates
+  - remove blank line in all collectl start scripts right before 'END INIT INFO'
+    since debian doesn't like it and we should be consistent
 
 3.4.0-4 Jan 04, 2010
   - updated envrules to include additional parsing rules for dl185 [thanks evan]
-  - changer envrules header for dl585 G1 to G5
+  - changed envrules header for dl585 G1 to G5
   - if running an ofed >= 1.5, ignore 'CounterSelect2' field, which is right in the middle
   - send errors in getExec() to /dev/null because perfquery for > ofed 1.4 is braindead
   - was incorrectly using 256 to print IB debugging info instead of 2
 
 3.4.0-3 Dec 14, 2009
   - was not clearing right variable for CPU Detail Totals in sexpr.ph
-  - fixed typo on QLocic HCA name from qlib to qib
+  - fixed typo on QLogic HCA name from qlib to qib
 
 3.4.0-2 Dec 13, 2009
   - fixed typo of HugePages from HughPages [thanks Frederic] 
@@ -61,7 +113,7 @@ KNOWN PROBLEMS/RESTRICTIONS
   - restructure installation directories to be more standard
   - pid was not properly set for suse flush command
 
-3.3.7-1
+3.3.7-1 Nov 26, 2009
   - added support for psv [polyserve] disks
   - added support for QLogic IB HCA
   - changes to INSTALL/UNINSTALL to handle gentoo and to restructure 'generic'
@@ -1057,7 +1109,7 @@ KNOWN PROBLEMS/RESTRICTIONS
   - fixed a few minor problems to ensure works with colplot/colgui
   - reformat FAQ and include in kit
 
-1.6.7
+1.6.7   Mar 20, 2006
   - didn't quite get -s right for overriding that in file
   - made size of disk block buckets bigger but limiting the size if 
     displayed values based on collectl.conf entry
@@ -1274,7 +1326,7 @@ KNOWN PROBLEMS/RESTRICTIONS
     disabled
   - made width of network name dynamic to account for IB names
  
-1.3.2	
+1.3.2	Mar 13, 2006
   - for M3 reporting, headers weren't printing
   - /proc/slabinfo went to V2.1 with no format change, so had to extend
     the check to include anything in 2.*

@@ -12,27 +12,33 @@ my ($lexSubsys, $lexInterval, $lexDebug, $lexCOFlag, $lexTTL, $lexFilename, $lex
 my ($lexDataIndex, @lexDataLast, @lexDataMin, @lexDataMax, @lexDataTot, @lexTTL, $lexSendCount);
 my ($lexMinFlag, $lexMaxFlag, $lexAvgFlag)=(0,0,0);
 my $lexOneTB=1024*1024*1024*1024;
+my $lexExtName='';
 my $lexCounter=0;
 my $lexFlags;
 sub lexprInit
 {
+  # If we ever run with a ':' in the inteval, we need to be sure we're
+  # only looking at the main one.
+  my $lexInterval1=(split(/:/, $interval))[0];
+
   # Defaults for options
   $lexDebug=$lexCOFlag=0;
   $lexFilename='';
-  $lexInterval=$interval;
+  $lexInterval=$lexInterval1;
   $lexSubsys=$subsys;
   $lexTTL=5;
 
   foreach my $option (@_)
   {
     my ($name, $value)=split(/=/, $option);
-    error("invalid lexpr option '$name'")    if $name!~/^[dfis]?$|^co$|^ttl$|^min$|^max$|^avg$/;
+    error("invalid lexpr option '$name'")    if $name!~/^[dfisx]?$|^co$|^ttl$|^min$|^max$|^avg$/;
 
     $lexCOFlag=1           if $name eq 'co';
     $lexDebug=$value       if $name eq 'd';
     $lexFilename=$value    if $name eq 'f';
     $lexInterval=$value    if $name eq 'i';
     $lexSubsys=$value      if $name eq 's';
+    $lexExtName=$value     if $name eq 'x';
     $lexTTL=$value         if $name eq 'ttl';
     $lexMinFlag=1          if $name eq 'min';
     $lexMaxFlag=1          if $name eq 'max';
@@ -40,7 +46,6 @@ sub lexprInit
   }
 
   # If importing data, and if not reporting anything else, $subsys will be ''
-  $lexSubsys=~s/x//gi    if $subsys!~/x/i;    # in case disabled at runtime
   $lexSumFlag=$lexSubsys=~/[cdfilmnstxE]/ ? 1 : 0;
   error("lexpr subsys options '$lexSubsys' not a proper subset of '$subsys'")
 	    if $subsys ne '' && $lexSubsys!~/^[$subsys]+$/;
@@ -57,18 +62,39 @@ sub lexprInit
 	if $lexFilename eq '' && $filename ne '';
 
   # convert to the number of samples we want to send
-  $lexSendCount=int($lexInterval/$interval);
-  error("lexpr interval option not a multiple of '$interval' seconds")
-        if $interval*$lexSendCount != $lexInterval;
+  $lexSendCount=int($lexInterval/$lexInterval1);
+  error("lexpr interval option not a multiple of '$lexInterval1' seconds")
+        if $lexInterval1*$lexSendCount != $lexInterval;
 
   $lexFlags=$lexMinFlag+$lexMaxFlag+$lexAvgFlag;
   error("only 1 of 'min', 'max' or 'avg' with 'lexpr'")    if $lexFlags>1;
   error("'min', 'max' and 'avg' require lexpr 'i' that is > collectl's -i")
 	if $lexFlags && $lexSendCount==1;
+
+  if ($lexExtName ne '')
+  {
+    $lexExtBase=$lexExtName;
+    $lexExtBase=~s/\..*//;    # in case extension
+    $lexExtName.='.ph'    if $lexExtName!~/\./;
+
+    my $tempName=$lexExtName;
+    $lexExtName="$ReqDir/$lexExtName"    if !-e $lexExtName;
+    if (!-e "$lexExtName")
+    {
+      my $temp="can't find lexpr extension file '$tempName' in ./";
+      $temp.=" OR $ReqDir/"    if $ReqDir ne '.';
+      error($temp);
+    }
+    require $lexExtName;
+  }
 }
 
 sub lexpr
 {
+  # if not time to print and we're not doing min/max/tot, there's nothing to do.
+  $lexCounter++;
+  return    if ($lexCounter!=$lexSendCount && $lexFlags==0);
+
   # We ALWAYS process the same number of data elements for any collectl instance
   # so we can use a global index to point to the one we're currently using.
   $lexDataIndex=0;
@@ -91,8 +117,10 @@ sub lexpr
 
       $cpuSumString.=sendData("ctxint.ctx",  $ctxt/$intSecs);
       $cpuSumString.=sendData("ctxint.int",  $intrpt/$intSecs);
-      $cpuSumString.=sendData("ctxint.proc", $proc/$intSecs);
-      $cpuSumString.=sendData("ctxint.runq", $loadQue);
+
+      $cpuSumString.=sendData("proc.creates", $proc/$intSecs);
+      $cpuSumString.=sendData("proc.runq",    $loadQue);
+      $cpuSumString.=sendData("proc.run",     $loadRun);
 
       $cpuSumString.=sendData("cpuload.avg1",  $loadAvg1, '%4.2f');
       $cpuSumString.=sendData("cpuload.avg5",  $loadAvg5, '%4.2f');
@@ -201,7 +229,6 @@ sub lexpr
       $lusSumString.=sendData("lusost.writes",   $lustreWriteOpsTot/$intSecs);
       $lusSumString.=sendData("lusost.writekbs", $lustreWriteKBytesTot/$intSecs);
     }
-
   }
 
   my $memString='';
@@ -315,7 +342,7 @@ sub lexpr
       {
         my $name=$ipmiData->{$key}->[$i]->{name};
         my $inst=($key!~/power/ && $ipmiData->{$key}->[$i]->{inst} ne '-1') ? $ipmiData->{$key}->[$i]->{inst} : '';
-        $envString.=sendData("env.$name$inst", $ipmiData->{$key}->[$i]->{value});
+        $envString.=sendData("env.$name$inst", $ipmiData->{$key}->[$i]->{value}, '%s');
       }
     }
   }
@@ -329,14 +356,21 @@ sub lexpr
   foreach (my $i=0; $i<scalar(@nameD); $i++) { $impDetString.=sendData($nameD[$i], $valD[$i]); }
   $lexSumFlag=1    if $impSumString ne '';   # in case not already set
 
+  $lexprExtString='';
+  &$lexExtBase(\$lexprExtString)    if $lexExtName ne '';
+
+  # min/max/tot now updated, but there may be nothing to actally print yet
+  return    if $lexCounter!=$lexSendCount;
+
   #     B u i l d    O u t p u t    S t r i n g
 
   my $lexprRec='';
-  $lexprRec.="sample.time $lastSecs\n"    if $lexSumFlag;
+  $lexprRec.="sample.time $lastSecs[$rawPFlag]\n"    if $lexSumFlag;
   $lexprRec.="$cpuSumString$diskSumString$nfsString$inodeString$memString$netSumString";
   $lexprRec.="$lusSumString$sockString$tcpString$intString$envString$impSumString";
+  $lexprRec.=$lexprExtString;
 
-  $lexprRec.="sample.time $lastSecs\n"   if !$lexSumFlag;
+  $lexprRec.="sample.time $lastSecs[$rawPFlag]\n"   if !$lexSumFlag;
   $lexprRec.="$cpuDetString$diskDetString$netDetString$impDetString";
 
   # Either send data over socket or print to terminal OR write to
@@ -351,6 +385,7 @@ sub lexpr
     print EXP  $lexprRec;
     close EXP;
   }
+  $lexCounter=0;
 }
 
 # this code tightly synchronized with gexpr
@@ -359,6 +394,10 @@ sub sendData
   my $name= shift;
   my $value=shift;
   my $format=shift;
+
+  # We have to increment at the top since multiple exit points (shame on me) so the
+  # very first entry starts at 1 rather than 0;
+  $lexDataIndex++;
 
   # These are only undefined the very first time
   if (!defined($lexTTL[$lexDataIndex]))
@@ -372,7 +411,7 @@ sub sendData
   {
     # And while this should be done in init(), we really don't know how may indexes
     # there are until our first pass through...
-    if ($lexCounter==0)
+    if ($lexCounter==1)
     {
       $lexDataMin[$lexDataIndex]=$lexOneTB;
       $lexDataMax[$lexDataIndex]=0;
@@ -383,13 +422,11 @@ sub sendData
     $lexDataMax[$lexDataIndex]=$value    if $lexMaxFlag && $value>$lexDataMax[$lexDataIndex];
     $lexDataTot[$lexDataIndex]+=$value   if $lexAvgFlag;
   }
-
-  return('')    if ++$lexCounter!=$lexSendCount;
+  return('')    if $lexCounter!=$lexSendCount;
 
   #    A c t u a l    S e n d    H a p p e n s    H e r e
 
   # If doing min/max/avg, reset $value
-  $lexCounter=0;
   if ($lexFlags)
   {
     $value=$lexDataMin[$lexDataIndex]    if $lexMinFlag;
@@ -405,7 +442,6 @@ sub sendData
   {
     $valSentFlag=1;
     $format='%d'    if !defined($format);
-#    $returnString=sprintf("%s %d\n", $name, $value)    unless $lexDebug & 8;
     $returnString=sprintf("%s $format\n", $name, $value)    unless $lexDebug & 8;
     $lexDataLast[$lexDataIndex]=$value;
   }
@@ -440,7 +476,6 @@ sub sendData
     $lexTTL[$lexDataIndex]--          if !$valSentFlag;
     $lexTTL[$lexDataIndex]=$lexTTL    if $valSentFlag || $lexTTL[$lexDataIndex]==0;
   }
-  $lexDataIndex++;
   return($returnString);
 }
 

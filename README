@@ -1,15 +1,11 @@
 If you're real lazy, just run INSTALL and it will install collectl into the
-same locations as the rpm.  It will be rooted at /opt/hp/collectl and several
-symlinks will be created back to the executables and man pages.  There's also
-an UNINSTALL that will completely remove everything.
-
-If you're only just lazy and want to install in a difference location, I'm 
-lazy too and so hardcoded the installation directory into INSTALL and UNINSTALL
-but it will only take a 1 line change to point them whereever your want.  Just
-be sure to change it in both places.
+same locations as the rpm.  It will install as /usr/bin/collectl and all the
+other runtime components will be placed into /usr/share/collectl.  If you
+really care where everything goes, read the script as it's pretty short.
+There's also an UNINSTALL that will completely remove everything.
 
 If you want to be more creative, you can either hack up the installation
-script or use it as a guide to move things around to where ever you want them
+script or use it as a guide to move things around to whereever you want them
 keeping a couple of things in mind:
 - collectl.conf is looked for first in /etc and then in its binary directory
-- all ph files must be in the same directory as collectl itself
+- all ph files must be in the same directory as collectl itself OR /usr/share/collectl

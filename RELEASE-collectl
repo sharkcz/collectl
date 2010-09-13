@@ -41,12 +41,39 @@ KNOWN PROBLEMS/RESTRICTIONS
     when -b/-e used.  these can safely be ignored.
   - in playback mode, make sure to deselect -O if recorded subsys not specified
     or else will trip error checks in checkSubOpts()
-  - this version may generate errors "Ignoring '!' modifier for short option P" with
-    older versions of perl OR at least older version of the 'getopts' module.
-  - when showing process command, only show command portion.  the args will still be
-    saved when using -P
+  - this version may generate errors "Ignoring '!' modifier for short option
+    P" with older versions of perl OR at least older version of the 'getopts'
+    module.
+  - when showing process command, only show command portion.  the args will 
+    still be saved when using -P
+  - if run as a non-privileged users, network speeds will NOT be recorded in
+    in file headers and the default speed specified by DefNetSpeed in the conf
+    file will be used to determine if any network stats are bogus
 
-2.4.1
+2.4.2	Jan 16, 2008
+  - changed purge algorithm to explicitly purge any files in the logging directory
+    that match hostname, contain date/time stamp and do NOT end in 'log'.  Before only
+    raw files were purged and this was clearly not the intent.
+  - on a lustre MDS, the mds_sync counter has moved as well as others added so pull more
+    of them.  even though the newer ones won't be reported on, they'll be in the 'raw'
+    file for reference via tools like grep.
+  - bogus network record processing changed as follows:
+    - use double the reported network speed from the raw file header and if not known use
+      the DefNetSpeed in collectl.conf which for now it 10000Mb.
+    - was setting 10G network speeds in header wrong (wasn't multiplying by 1000).  Therefore
+      if we find a network with speed of '10' on older version multiply by 1000 as this only
+      effects 'bogus' check.
+    - added IB speeds to network interfaces in header BUT limited to OFED and assuming
+      all devices running at same speed
+  - looks like I broke old style slab reporting!  the data is still collected correctly
+    but won't print.  now it will...
+  - just discovered you couldn't print to terminal in plot format for -sY or -sZ, though I 
+    don't know why you would ever want to!  in any event, they now call writeData() and so can...
+  - if writing to non-compressed files and the flush time is less than the interval, just
+    open the files with autoflushing enabled to save flushing overhead
+  - plot format for [SOCK] data was sticking an extra $SEP in header after [SOCK]Tw
+
+2.4.1	Jan 05, 2008
   - corrected calculation for cpu times to include soft, irq and steal which was 
     causing incorrect values to be reported for system with higher values in one
     more of these counters.  If one replays any existing raw files the correct

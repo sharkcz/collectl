@@ -118,6 +118,22 @@ sub initRecord
 
   #    I n t e r c o n n e c t    C h e c k s
 
+  # Since the build of the IB code only checks is -sx and we want to know about
+  # IB speeds for plain on -sn, let's just do this non-conditionally and then
+  # only for ofed.  Furthermore I'm going to assume that even if mulitple IB 
+  # interfaces they're all the same
+  # speed, at least for now...
+  $ibSpeed='??';
+  if (-e '/sys/class/infiniband')
+  {
+    $line=`cat /sys/class/infiniband/*/ports/1/rate`;
+    if ($line=~/\s*(\d+)\s+(\S)/)
+    {
+      $ibSpeed=$1;
+      $ibSpeed*=1000    if $2 eq 'G';
+    }
+  }
+
   # if doing interconnect, the first thing to do is see what interconnect
   # hardware is present via lspci.  Note that from the H/W database, we get
   # the following IDS -Quadrics: 14fc, Myricom: 14c1, Mellanox (IB): 15b3
@@ -197,7 +213,7 @@ sub initRecord
     }
 
     # One last check and this is a doozie!  Because we read IB counters by doing
-    # a read/clear everytime, mulitple copies of collectl will step on each other.
+    # a read/clear everytime, multiple copies of collectl will step on each other.
     # Therefore we can only allow one instance to actually monitor the IB and the
     # first one wins, unless we're trying to start a daemon in which case we let 
     # step on the other [hopefully temporary] instance.
@@ -276,28 +292,33 @@ sub initRecord
     $NumTemps=(split(/\s+/, `tail -n 1 /proc/cpqtemp`))[1];
   }
 
-  # ...their names too.  note that '$null' lets us ignore errors
-  # except during debugging.
+  # find all the networks and when possible include thier speeds
   undef @temp;
   $NumNets=0;
   @temp=`$Grep -v -E "Inter|face" /proc/net/dev`;
   $NetNames='';
   $NetWidth=5; # Minimum size
   $null=($debug & 1) ? '' : '2>/dev/null';
+  my $interval1=(split(/:/, $interval))[0];
   foreach $temp (@temp)
   {
     $temp=~/^\s*(.*):/;    # most names have leading whitespace
     $netName=$1;
     $NetWidth=length($netName)    if length($netName)>$NetWidth;
-    $speed='';
+    $speed=($netName=~/^ib/) ? $ibSpeed : '';
     if ($rootFlag && $netName=~/eth/ && $Ethtool ne '')
     {
       $command="$Ethtool $netName $null | $Grep Speed";
       print "Command: $command\n"    if $debug & 1;
       $speed=`$command`;
-      $speed=($speed=~/Speed:\s+(\d+)/) ? ":$1" : ':??';
+      $speed=($speed=~/Speed:\s+(\d+)(\S)/) ? "$1" : '??';
+      $speed*=1000    if $speed ne '??' && $2 eq 'G';
     }
-    $NetNames.="$netName$speed ";
+    $NetNames.="$netName:$speed ";
+
+    # Since speeds are in Mb we really need to multiple by 125 to conver to KB
+    $NetMaxTraffic[$NumNets]=($speed ne '' && $speed ne '??') ?
+		2*$interval1*$speed*125 : 2*$interval1*$DefNetSpeed*125;
     $NumNets++;
   }
   $NetNames=~s/ $//;
@@ -836,18 +857,25 @@ sub initFormat
     $NumNets=$1;
     $NetNames=$2;
     $NetWidth=5;
-    foreach $netName (split(/ /, $NetNames))
+    my $index=0;
+    my $interval1=(split(/:/, $interval))[0];
+    foreach my $netName (split(/ /, $NetNames))
     {
-      $netName=~s/:.*//;  # For now, remove speed component
+      my $speed=($netName=~/:(\d+)/) ? $1 : $DefNetSpeed;
+      $speed*=1000    if $speed==10 && $version le '2.4.2';    # had missed the 'G'
+      $NetMaxTraffic[$index]=2*$interval1*$speed*125;
+      $netName=~s/:.*//;
       $NetWidth=length($netName)    if $NetWidth<length($netName);
+      $index++;
     }
     $NetWidth++;
 
-    # shouldn't hurt if no slabs defined since we only use
-    # during slab reporting
+    # shouldn't hurt if no slabs defined since we only use during slab reporting
+    # but if there ARE slabs and not the slub allocator, we've got the older type
     $header=~/NumSlabs:\s+(\d+)\s+Version:\s+(\S+)/;
     $NumSlabs=$1;
     $SlabVersion=$2;
+    $slabinfoFlag=1    if $NumSlabs && !$slubinfoFlag;
 
     # If using the SLUB allocator, the data has been recorded using the 'root' names for each
     # slab and when we print the data we want the 'first' name which we need to extract from
@@ -2327,26 +2355,18 @@ sub dataAnalyze
     undef @fields;
     @fields=split(/\s+/, $data);
 
-    # just to warn people why there may be unitialized variable warnings
-    logmsg("W", "New network device found, but I don't know its name")
-	 if !defined($netRxKBLast[$netIndex]);
-
-    # This seems to be relatively rare though it was observed a few times
-    # on x86_64.  Not enough data at this time to know if I should do more
-    # but the symptom is a complete record is read from /proc but the Tx or Rx
-    # byte counts are totally hosed, either too high or simple 0 - very 
-    # tempting to just test for 0 8-)!  All I can think of doing is checking 
-    # for an unreasonably change in transfer rate as lightweight as possible
-    # and before the 'last' values are reset.
-    # NOTE - the first interval of each file processed MUST be skipped
-    #        'last' variables have been reset to 0!
-    if ($intervalCounter && 
-	  ((($fields[1]-$netRxKBLast[$netIndex]) > $TenGB) ||
-           (($fields[9]-$netTxKBLast[$netIndex]) > $TenGB)))
+    # In rare occasions a new network device shows up so we need to make sure we init
+    # the appropriate variables
+    if (!defined($netRxKBLast[$netIndex]))
     {
-      incomplete("NET:".$fields[0], $lastSecs, 'Bogus');
-      $netIndex++; 
-      return;
+      $NumNets++;
+      $netName=(split(/\s+/, $line))[1];
+      $netRxKBLast[$netIndex]=$netRxPktLast[$netIndex]=$netTxKBLast[$netIndex]=$netTxPktLast[$netIndex]=0;
+      $netRxErrLast[$netIndex]=$netRxDrpLast[$netIndex]=$netRxFifoLast[$netIndex]=$netRxFraLast[$netIndex]=0;
+      $netRxCmpLast[$netIndex]=$netRxMltLast[$netIndex]=$netTxCarLast[$netIndex]=$netTxCmpLast[$netIndex]=0;
+      $netTxErrLast[$netIndex]=$netTxDrpLast[$netIndex]=$netTxFifoLast[$netIndex]=$netTxCollLast[$netIndex]=0;
+      $NetMaxTraffic[$netIndex]=2*$interval*$DefNetSpeed*125;
+      logmsg("W", "New network device found: $netName");
     }
 
     if (scalar(@fields)<17)
@@ -2375,10 +2395,25 @@ sub dataAnalyze
     $netTxCarNow= $fields[15];
     $netTxCmpNow= $fields[16];
 
-    # basic stuff - note that we have to wait until AFTER we fix to convert to KB
-    $netRxKB[$netIndex]= fix($netRxKBNow- $netRxKBLast[$netIndex])/1024;
+    # It has occasionally been observed that bogus data is returned for some networks.
+    # If we see anything that looks like twice the typical speed, ignore it but remember
+    # that during the very first interval this data should be bogus!
+    my $netRxKBTemp=fix($netRxKBNow-$netRxKBLast[$netIndex])/1024;
+    my $netTxKBTemp=fix($netTxKBNow-$netTxKBLast[$netIndex])/1024;
+    if ($intervalCounter &&  
+         ($netRxKBTemp>$NetMaxTraffic[$netIndex] || $netTxKBTemp>$NetMaxTraffic[$netIndex]))
+    {
+      #print "$netNameNow TxNOW: $netTxKBNow LAST: $netTxKBLast[$netIndex]\n";
+      #print "$netNameNow RX: $netRxKBTemp TX: $netTxKBTemp  MAX: $NetMaxTraffic[$netIndex]\n";
+      incomplete("NET:".$netNameNow, $lastSecs, 'Bogus');
+      logmsg('I', "Bogus Value(s) for $netNameNow - TX: $netTxKBTemp  RX: $netRxKBTemp");
+      $netIndex++; 
+      return;
+    }
+
+    $netRxKB[$netIndex]= $netRxKBTemp;
+    $netTxKB[$netIndex]= $netTxKBTemp;
     $netRxPkt[$netIndex]=fix($netRxPktNow-$netRxPktLast[$netIndex]);
-    $netTxKB[$netIndex]= fix($netTxKBNow- $netTxKBLast[$netIndex])/1024;
     $netTxPkt[$netIndex]=fix($netTxPktNow-$netTxPktLast[$netIndex]);
 
     # extended/errors
@@ -2896,7 +2931,7 @@ sub printHeaders
 
   if ($subsys=~/s/)
   {
-    $headers.="[SOCK]Used${SEP}[SOCK]Tcp${SEP}[SOCK]Orph${SEP}[SOCK]Tw${SEP}${SEP}[SOCK]Alloc${SEP}";
+    $headers.="[SOCK]Used${SEP}[SOCK]Tcp${SEP}[SOCK]Orph${SEP}[SOCK]Tw${SEP}[SOCK]Alloc${SEP}";
     $headers.="[SOCK]Mem${SEP}[SOCK]Udp${SEP}[SOCK]Raw${SEP}[SOCK]Frag${SEP}[SOCK]FragMem${SEP}";
   }
 
@@ -5959,7 +5994,8 @@ sub incomplete
   $time=sprintf("%02d:%02d:%02d", $hh, $mm, $ss);
 
   my $message=(!defined($special)) ? "Incomplete" : $special;
-  logmsg("W", "$message data record skipped for $type data on $date at $time");
+  my $where=($playback eq '') ? "on $date" : "in $playbackFile";
+  logmsg("W", "$message data record skipped for $type data $where at $time");
 }
 
 # Handy for debugging
@@ -6518,7 +6554,7 @@ sub printPlotProc
     $datetime.=".$usecs"    if $options=~/m/;
 
     # Username comes from translation hash OR we just print the UID
-    $procPlot.=sprintf("%s${SEP}%d${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%d${SEP}%d${SEP}%d${SEP}%d${SEP}%d${SEP}%d${SEP}%d${SEP}%s${SEP}%s${SEP}%s\n",
+    $procPlot.=sprintf("%s${SEP}%d${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%d${SEP}%d${SEP}%d${SEP}%d${SEP}%d${SEP}%d${SEP}%d${SEP}%s${SEP}%s${SEP}%s",
           $datetime, $procPid[$i], $procUser[$i],  $procPri[$i], 
 	  $procPpid[$i],  $procState[$i],  
 	  defined($procVmSize[$i]) ? $procVmSize[$i] : 0, 
@@ -6540,12 +6576,16 @@ sub printPlotProc
 	  cvt($majFlt), cvt($minFlt),
 	  defined($procCmd[$i])    ? $procCmd[$i] : $procName[$i]);
 
-    if (!$addrFlag)
-    {
-      $ZPRC->gzwrite($procPlot) or 
-	       writeError('prc', $ZPRC)    if  $zFlag;
-      print PRC $procPlot                  if !$zFlag;
-    }
+    # This is a little messy (sorry about that).  The way writeData works is that
+    # on writeData(0) calls, it builds up a string in $oneline which can be appended
+    # to the current string (for displaying multiple subsystems in plot format on
+    # the terminal and the final call writes it out.  In order for all the paths
+    # to work with sockets, etc we need to do it this way.  And since writeData takes
+    # care of \n be sure to leave OFF each line being written.
+    $oneline='';
+    writeData(0, '', \$procPlot, PRC, $ZPRC, 'proc', \$oneline);
+    writeData(1, '', undef, $LOG, undef, undef, \$oneline)
+        if !$logToFileFlag || $addrFlag;
     $procPlot='';
   }
 }
@@ -6623,11 +6663,17 @@ sub printPlotSlab
     }
   }
 
-  if (!$addrFlag)
+  # See printPlotProc() for details on this...
+  # Also note we're printing the whole thing in one call vs 1 call/line and we
+  # only want to print when there's data since filtering can result in blank
+  # lines.  Finally, since writeData() appends a find \n, we need to strip it.
+  if ($slabPlot ne '')
   {
-    $ZSLB->gzwrite($slabPlot) or 
-               writeError('slb', $ZSLB)    if  $zFlag;
-    print SLB $slabPlot                  if !$zFlag;
+    $oneline='';
+    $slabPlot=~s/\n$//;
+    writeData(0, '', \$slabPlot, SLB, $ZSLB, 'slb', \$oneline);
+    writeData(1, '', undef, $LOG, undef, undef, \$oneline)
+        if !$logToFileFlag || $addrFlag;
   }
 }
 

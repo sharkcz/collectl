@@ -386,32 +386,21 @@ Exception processing requires --verbose.  Did you forget to include it?
 
 <a name="ops9"></a>
 <h2>I'm seeing a bogus data point!</h2>
-Every effort has been made to filter out <i>bogus</i> or <i>invalid</i> data
-and other than rare occurances you should not be seeing any but
-the important thing to remember is
-that collectl simply reports what it sees.  If that data is being presented
-incorrectly is it <i>not</i> a collectl bug.  One example of this is the way
-network counters are reported and if monitored once a second you <i>will</i>
-see incorrect values every minute or two!  See the <i>collectl-themath</i>
-man page for more details on this.  In kernels prior to 2.6.15, some
-disk statistics showed up incorrectly because the numbers reported for
-<I>bytes transferred</I> were actually the bytes queued.  This anomaly has
-since been corrected in the kernel.
+This message means collectl has read a corrupted network statistics record
+and is ignoring it.  It also turns out this has been attributed to some
+bnx2 chips and a workaround has been generated for newer drivers.  If you
+want a little more information your can read about it
+<a href=http://git.kernel.org/?p=linux/kernel/git/davem/net-2.6.git;a=commit;h=02537b0676930b1bd9aff2139e0e645c79986931>
+here.</a>
 <p>
-There are also times when a corrupted record may be read from /proc and to
-keep things efficient, collectl may not detect this until <i>playback</i>
-at which time it will generate a message to that effect.  There have even
-been a few occasions when network data is read correctly but for unknown
-reasons there are one or more bogus values in the fields.  In most cases
-these too are also detected.
-<p>
-Even with all these tests, there may still be occasions where something
-slips through the cracks, but hopefully these will be rare enough to only be a
-minor annoyance.  If one is trying to plot data that has 
-<i>slipped through</i> with tools that 
-autoscale based on the data, you may see extemely high values for the y-axis
-with a spike for the bad data point.  In order to see the rest of the data
-at a proper scale you will either have to select plotting times outside the
-time of the bad data OR manually set the maximum value for the y-axis.
+The way collectl determines a record is bogus is to look at the transmit and receive 
+rates for each interface and compare them to the speed of that interface
+(from ethtool <i>and</i> if running as <i>root</i> OR ELSE it uses
+the value of <i>DefNetSpeed</i> which can be overridden in collectl.conf).
+It either exceeds twice the inteface rate, the record is considered bogus
+and ignored.  This will cause collectl to report the previous rate
+for this interval.  While not foolproof, it is hoped this will reduce the
+frequency of this type of data.
+
 </body>
 </html>

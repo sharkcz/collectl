@@ -130,14 +130,13 @@ use -i:10.
 When selected, 
 .BR collectl
 runs indefinately (or at least until the system reboots).
-The maximum number of files that will be retained (older ones are automatically
-deleted) is controlled by the
+The maximum number of raw and/or plot files that will be retained 
+(older ones are automatically deleted) is controlled by the
 .BR days
 field, the default is 7 days.  The
 .BR increment
 field which is also optional (but is position dependent) specifies the duration of
-an individual collection file in minutes the default of which is 1440 minutes
-or 1 day.
+an individual collection file in minutes the default of which is 1440 or 1 day.
 .RE
 
 .B "--quiet"
@@ -669,9 +668,9 @@ to save the time of wading through the entire help screen.
 
 .B --showrootslabs
 .RS
-This command only works on systems using the new slab allocator and will list the root name (these
-are those entries in /sys/slab which are not soft links) along with all its alias names.  If a
-name doesn't have an alias, it will not appear in this report.
+This command only works on systems using the new slab allocator and will list the root 
+name (these are those entries in /sys/slab which are not soft links) along with all 
+its alias names.  If a name doesn't have an alias, it will not appear in this report.
 .RE
 
 .B --showslabaliases

@@ -85,7 +85,7 @@ if ($Config{'version'} lt '5.8.0')
 #  exit;
 }
 
-$Version=  '2.4.1';
+$Version=  '2.4.2';
 $Copyright='Copyright 2003-2008 Hewlett-Packard Development Company, L.P.';
 $License=  "collectl may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
@@ -187,6 +187,7 @@ $LustreMaxBlkSize=512;
 $LustreConfigInt=1;
 $InterConnectInt=900;
 $HeaderRepeat=20;
+$DefNetSpeed=10000;
 
 $Passwd=       '/etc/passwd';
 $Grep=         '/bin/grep';
@@ -247,10 +248,10 @@ $showPHeaderFlag=$showMergedFlag=$showHeaderFlag=$showSlabAliasesFlag=$showRootS
 $verboseFlag=$procmemFlag=$vmstatFlag=$alignFlag=0;
 $quietFlag=$utcFlag=$procioFlag=0;
 $address=$beginTime=$endTime=$filename=$flush='';
-$limits=$lustreSvcs=$procopts=$runTime=$subOpts=$playback=$rollLog='';
+$limits=$lustreSvcs=$procopts=$runTime=$subOpts=$playback=$playbackFile=$rollLog='';
 $groupFlag=$msgFlag=$niceFlag=$plotFlag=$sshFlag=$wideFlag=$rawFlag=$sexprFlag=0;
 $userOptions=$userInterval=$userSubsys=$slabopts=$custom=$sexprType=$sexprDir='';
-$rawtooFlag=0;
+$rawtooFlag=$autoFlush=0;
 
 # Since --top has an optional argument, we need to see if it was specified without
 # one and stick in the default
@@ -651,9 +652,9 @@ if ($interval=~/\./ && !$hiResFlag)
 }
 
 # some restrictions of plot format -- can't send to terminal for slabs or
-# processes unless only subsystem selected.  quite frankly I see no reason
+# processes unless only 1 subsystem selected.  quite frankly I see no reason
 # to ever do it but there are so damn many other odd switch combos we might
-# as well allow that one too.
+# as well catch these too.
 error("to display on terminal using -sY with -P requires only -sY")
     if $plotFlag && $filename eq '' && $subsys=~/Y/ && length($subsys)>1;
 error("to display on terminal using -sZ with -P requires only -sZ")
@@ -975,6 +976,9 @@ if ($playback ne '')
   $saveSubOpts=$subOpts;    # in case specified
   while ($file=glob($playback))
   {
+    # Unfortunately we need a more unique global name for the file we're doing
+    $playbackFile=$file;
+
     # For now, we're going to skip files in error and process the rest.
     # Some day we may just want to exit on errors (or have another switch!)
     $ignoreFlag=0;
@@ -1515,6 +1519,8 @@ else
 
 # Note that even if printing in plotting mode to terminal we STILL call newlog
 # because that points the LOG, DSK, etc filehandles at STDOUT
+# Also, note that in somecase we set non-compressed files to autoflush
+$autoFlush=1    if $flush ne '' && $flush<=$interval && !$zFlag;
 newLog($filename, "", "", "", "", "")    if ($filename ne '' || $plotFlag || $showPHeaderFlag);
 
 # We want all final runtime parameters defined before doing this
@@ -1773,7 +1779,7 @@ for (; $count!=0 && !$doneFlag; $count--)
     # MDS Processing
     if ($NumMds)
     {
-      getProc(3, "/proc/fs/lustre/mdt/MDT/mds/stats", "MDS", 22, 13);
+      getProc(3, "/proc/fs/lustre/mdt/MDT/mds/stats", "MDS", 22, 21);
     }
 
     # CLIENT Processing
@@ -1798,7 +1804,6 @@ for (; $count!=0 && !$doneFlag; $count--)
           getProc(2, "$lustreCltOstDirs[$index]/rpc_stats", "LLITE_RPC:$index", 8, 11);
         }
       }
-
       # Client LL data
       if ($LLFlag)
       {
@@ -2069,7 +2074,7 @@ for (; $count!=0 && !$doneFlag; $count--)
   # case we lose our wakeup signal, only sleep as long as requested noting
   # we SHOULD get woken up before this timer expires since we already used
   # up part of our interval with data collection
-  flushBuffers()                       if $flushTime && time>=$flushTime;
+  flushBuffers()                       if !$autoFlush && $flushTime && time>=$flushTime;
   if ($interval!=0)
   {
     sleep $interval                    if !$hiResFlag;
@@ -2996,7 +3001,7 @@ sub newLog
   }
 
   # If generating plot data on terminal, just open everything on STDOUT
-  # but be SURE set the buffers to flush in case anyone runs to run as part
+  # but be SURE set the buffers to flush in case anyone runs as part
   # of a script and needs the output immediately.
   if ($filename eq "" && ($plotFlag || $showPHeaderFlag))
   {
@@ -3209,6 +3214,7 @@ sub newLog
     # Furthermore, if --rawtoo we don't create proc/slab files
     if (!$rawtooFlag)
     {
+      print "Creating PRC and/or SLB\n"    if $debug & 8192;
       open PRC, "$mode$filename.prc" or 
 	  logmsg("F", "Couldn't open '$filename.prc'")  if !$zFlag && $ZFlag;
       $ZPRC=Compress::Zlib::gzopen("$filename.prc.gz", $zmode) or
@@ -3224,23 +3230,54 @@ sub newLog
 	  logmsg("F", "Couldn't open '$filename.tcp'")  if !$zFlag && $TFlag;
     $ZTCP=Compress::Zlib::gzopen("$filename.tcp.gz", $zmode) or
           logmsg("F", "Couldn't open TCP gzip file")    if  $zFlag && $TFlag;
+
+    if ($autoFlush)
+    {
+      print "Setting non-compressed files to 'autoflush'\n"    if $debug & 1;
+      if (defined(fileno($LOG)))  { select $LOG; $|=1; }
+      if (defined(fileno(BLK)))   { select BLK;  $|=1; }
+      if (defined(fileno(CLT)))   { select CLT;  $|=1; }
+      if (defined(fileno(CPU)))   { select CPU;  $|=1; }
+      if (defined(fileno(DSK)))   { select DSK;  $|=1; }
+      if (defined(fileno(DSKX)))  { select DSKX; $|=1; }
+      if (defined(fileno(ELN)))   { select ELN;  $|=1; }
+      if (defined(fileno(ENV)))   { select ENV;  $|=1; }
+      if (defined(fileno(IB)))    { select IB;   $|=1; }
+      if (defined(fileno(OST)))   { select OST;  $|=1; }
+      if (defined(fileno(NET)))   { select NET;  $|=1; }
+      if (defined(fileno(NFS)))   { select NFS;  $|=1; }
+      if (defined(fileno(PRC)))  { select PRC;  $|=1; }
+      if (defined(fileno(SLB)))   { select SLB;  $|=1; }
+      if (defined(fileno(TCP)))   { select TCP;  $|=1; }
+    }
   }
 
   #    P u r g e    O l d    L o g s
 
   # ... but only if an interval specified
-  # we need name of logging directory and the root of the filename such that
-  # we can purge "root*raw*" in the associated directory.  'root' will be either
-  # the hostname if -f directory was specified OR 'xxx' if -f xxx was.
+  # explicitly purge anything in the logging directory as long it looks like a collectl log
+  # starting with the host name.  be sure we don't purge .log files because they're small and
+  # good to have around.
   if ($purgeDays)
   {
+    my ($day, $mon, $year)=(localtime(time-86400*$purgeDays))[3..5];
+    my $purgeDate=sprintf("%4d%02d%02d", $year+1900, $mon+1, $day);
     $dirname=dirname($filename);
-    $dirname.='/'    if $dirname!~/\//;    # in case doesn't end in '/'
-    $basename=basename($filename);
-    $root=(split(/-/, $basename))[0];
-    $command= "find $dirname -name '$root*raw*' -mtime +$purgeDays -exec rm -f {} \\;";
-    `$command`;
-    logmsg("I", "Purge Command: $command")    if $debug & 1;
+    if (opendir DIR, "$dirname")
+    {
+      while (my $filename=readdir(DIR))
+      {
+        next    if $filename=~/^\./;
+        next    if $filename=~/log$/;
+        next    if $filename!~/-(\d{8})(-\d{6})*\./ || $1 ge $purgeDate;
+
+        unlink "$dirname/$filename";
+      }
+    }
+    else
+    {
+      logmsg('E', "Couldn't open '$dirname' for purging");
+    }
   }
   return 1;
 }
@@ -3441,8 +3478,9 @@ sub sigAlrm
 sub sigUsr1
 {
   # There should be a small enough number of these to make it worth logging
-  logmsg("I", "Flushing buffers in response to signal USR1");
-  flushBuffers();
+  logmsg("I", "Flushing buffers in response to signal USR1")    if !$autoFlush;
+  logmsg("W", "No need to signal 'USR1' since autoflushing")    if  $autoFlush;
+  flushBuffers()    if !$autoFlush;
 }
 
 sub sigPipe
@@ -3881,6 +3919,7 @@ sub loadConfig
       $LustreConfigInt=$value  if $param=~/^LustreConfigInt/;
       $InterConnectInt=$value  if $param=~/^InterConnectInt/;
       $HeaderRepeat=$value     if $param=~/^HeaderRepeat/;
+      $DefNetSpeed=$value      if $param=~/^DefNetSpeed/;
     }
   }
   close CONFIG;

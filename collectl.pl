@@ -85,7 +85,7 @@ if ($Config{'version'} lt '5.8.0')
 #  exit;
 }
 
-$Version=  '2.4.3';
+$Version=  '2.5.0';
 $Copyright='Copyright 2003-2008 Hewlett-Packard Development Company, L.P.';
 $License=  "collectl may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
@@ -165,7 +165,7 @@ $cmdSwitches=preprocSwitches();
 
 # These are the defaults for interactive and daemon subsystems
 $SubsysDefInt='cdn';
-$SubsysDefDaemon='cdlmnstx';
+$SubsysDefDaemon='cdjlmnstx';
 
 # We want to load any default settings so that user can selectively 
 # override them.  We're giving these starting values in case not
@@ -204,11 +204,11 @@ $SysIB='/sys/class/infiniband';
 
 # These aren't user settable but are needed to build the list of ALL valid
 # subsystems
-$SubsysDet=   "CDEFLNTXYZ";
+$SubsysDet=   "CDEFJLNTXYZ";
 $SubsysExcore="fiy";
 
 # These are the subsystems allowed in brief mode
-$BriefSubsys="cdfFlmnstxy";    # note - use of y requires SAME intervals!
+$BriefSubsys="cdfFjlmnstxy";    # note - use of y requires SAME intervals!
 
 $configFile='';
 $ConfigFile='collectl.conf';
@@ -459,7 +459,10 @@ $utcFlag=1    if $options=~/U/;
 error("you can only specify -s with --top with -p")        if $numTop ne 0 && $userSubsys ne '' && $playback eq '';
 error("you cannot specify -f with --top")                  if $numTop ne 0 && $filename ne '';
 
+# Note we have to do a separate test for -sj in playback mode section
 error("--sexpr does not work in playback mode")            if $sexprType ne '' && $playback ne '';
+error("--sexpr does not support -sJ")                      if $sexprType ne '' && $subsys=~/J/;
+error("--sexpr with -sj also requires -sC")                if $sexprType ne '' && $subsys=~/j/ && $subsys!~/C/;
 error("--sexpr types are 'raw' and 'rate'")                if $sexprType ne '' && $sexprType!~/raw|rate/;
 error("--rawtoo does not work in playback mode")           if $rawtooFlag && $playback ne '';
 error("--rawtoo requires -f")                              if $rawtooFlag && $filename eq '';
@@ -1026,6 +1029,9 @@ if ($playback ne '')
     ($recVersion, $recDate, $recTime, $recSecs, $recTZ, $recInterval, $recSubsys)=initFormat($file);
     print "  ignoring redundant pre-collectl 1.3.0 -sd in favor of -sp in $file\n"    if $IgnoreDiskData;
 
+    # We can only do this test after figuring out what's in the header.
+    error("-sj or -sJ with -P also requires -sC")    if $subsys=~/j/i && $subsys!~/C/ && $plotFlag;
+
     # Need to reset the globals for the intervals that gets recorded in the header.
     # Note the conditional on the assignments for i2 and i3.  This is because they SHOULD be
     # in the header as of V2.1.0 and I don't want to mask any problems if they're not.
@@ -1420,8 +1426,9 @@ $recVersion=$Version;
 # not do it twice, but we have to do it AFTER initFormat()
 checkSubOpts();
 
-# Last minute validation can only be done after initRecord() and I don't
-# want to move it around (at least not now)
+#    L a s t    M i n u t e    V a l i d a t i o n
+
+# These can only be done after initRecord()
 error("-sL only applies to MDS services when used with -OD")
     if $subsys=~/L/ && $NumMds && $subOpts!~/D/;
 error("-OD only applies to SFS")
@@ -1485,7 +1492,7 @@ error("interval3 only applies to -sE")
     if defined($interval3)  && $subsys!~/E/;
 $interval2=$Interval2   if !defined($interval2);
 $interval3=$Interval3   if !defined($interval3);
-$interval=$interval2    if $origInterval=~/^:/ || $subsys=~/^[yz]+$/i;
+$interval=$interval2    if $origInterval=~/^:/ || ($subsys=~/^[yz]+$/i && $interval!=0);
 $interval=$interval3    if $origInterval=~/^::/;
 
 if ($interval!=0)
@@ -1515,7 +1522,7 @@ else
   $interval2=$interval3=0;
   $limit2=6;
   $limit3=30;
-  print "Lim2: $limit2  Lim3: $limit3\n"    if $debug & 1;
+  print "Interval Lim2: $limit2  Lim3: $limit3\n"    if $debug & 1;
 }
 
 # Note that even if printing in plotting mode to terminal we STILL call newlog
@@ -1700,6 +1707,11 @@ for (; $count!=0 && !$doneFlag; $count--)
           if ($cFlag || $CFlag) && $line=~/(^intr \d+)/;
     }
     close PROC;
+  }
+
+  if ($jFlag || $JFlag)
+  {
+    getProc(0, '/proc/interrupts', 'int', 1);
   }
 
   # Disk data can come from 'diskstats' OR 'partitions'.  If no data in 
@@ -3396,13 +3408,15 @@ sub setOutputFormat
   # writing to a file or in daemon mode, all of which are handled above.  
   $tempVerbose=0;
   $tempVerbose=1       if ($verboseFlag) ||
-                        $subsys!~/^[$BriefSubsys]+$/ || $subOpts=~/[BDM]/ || $plotFlag || $daemonFlag;
+                           $subsys!~/^[$BriefSubsys]+$/ || 
+			   $subOpts=~/[BDM]/ || $plotFlag || $daemonFlag;
 
   # If doing a single subsystem to the terminal in verbose mode, use -oh
-  # we need the check for -oh because this gets called twice
+  # we need the check for -oh because this gets called twice.  When subsys
+  # is '', that means --intstat must have been specified
   $options.='h'    if $filename eq ''  && $tempVerbose && $options!~/h/ && 
                       ($userOptions eq '' || $userOptions!~/h/) && 
-		      length($subsys)==1;
+		      (length($subsys)==1 || $subsys=~/^[Cj]+$/);
 
   # just to keep it simple, when doing slabs or processes in verbose mode we DO want to print
   # headers for each interval and rather than complicate the logic above, do it separately.
@@ -3634,6 +3648,7 @@ sub setFlags
                                   $EFlag=($subsys=~/E/) ? 1 : 0;
   $fFlag=($subsys=~/f/) ? 1 : 0;  $FFlag=($subsys=~/F/) ? 1 : 0;
   $iFlag=($subsys=~/i/) ? 1 : 0;
+  $jFlag=($subsys=~/j/) ? 1 : 0;  $JFlag=($subsys=~/J/) ? 1 : 0;
   $mFlag=($subsys=~/m/) ? 1 : 0;
   $nFlag=($subsys=~/n/) ? 1 : 0;  $NFlag=($subsys=~/N/) ? 1 : 0;
   $sFlag=($subsys=~/s/) ? 1 : 0;

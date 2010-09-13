@@ -130,7 +130,7 @@ sub initRecord
   $ibSpeed='??';
   if (-e '/sys/class/infiniband')
   {
-    $line=`cat /sys/class/infiniband/*/ports/1/rate`;
+    $line=`cat /sys/class/infiniband/*/ports/1/rate 2>&1`;
     if ($line=~/\s*(\d+)\s+(\S)/)
     {
       $ibSpeed=$1;
@@ -585,7 +585,7 @@ sub initFormat
     # +/- we also need to deal with as in collectl.pl, but in this
     # case without the error checking since it already passed through.
     $header=~/SubSys:\s+(\S+)\s+SubOpts:\s+(\S*)\s*Options/;
-    $subsys=$recSubsys=$1;
+    $recSubsys=$subsys=$1;
     $subOpts=$2;
     $recHdr1.=" Subsys: $subsys";
     if ($userSubsys ne '')
@@ -857,6 +857,7 @@ sub initFormat
     $Hyper=($header=~/HYPER/) ? "[HYPER]" : "";
 
     $flags=($header=~/Flags:\s+(\S+)/) ? $1 : '';
+    $intFlag=      ($flags=~/I/) ? 1 : 0;
     $processIOFlag=($flags=~/i/) ? 1 : 0;
     $slubinfoFlag= ($flags=~/s/) ? 1 : 0;
     
@@ -1373,10 +1374,13 @@ sub initDay
 # they occur for multiple devices and/or on multiple lines in the raw file.
 sub initInterval
 {
-  my $i;
-
   $userP[$NumCpus]=$niceP[$NumCpus]=$sysP[$NumCpus]=$idleP[$NumCpus]=0;
   $irq[$NumCpus]=$softP[$NumCpus]=$stealP[$NumCpus]=$waitP[$NumCpus]=0;
+
+  for (my $i=0; $i<$NumCpus; $i++)
+  {
+    $intrptTot[$i]=0;
+  }
 
   $netIndex=0;
   $netRxKBTot=$netRxPktTot=$netTxKBTot=$netTxPktTot=0;
@@ -1587,6 +1591,62 @@ sub dataAnalyze
 
     ($loadRun, $loadQue)=split(/\//, $loadProcs);
     $loadRun--;   # never count ourself!
+  }
+
+  elsif ($type eq 'int' && $subsys=~/j/i)
+  {
+    # Note that leading space(s) were removed when we split line above
+    my ($type, @vals)=split(/\s+/, $data, $NumCpus+2);
+
+    #    I n i t i a l i z e    ' l a s t '    v a l u e s
+
+    # Since I'm not sure if new entries can show up dynamically AND because we
+    # have to find non-numeric entries so we can initialize them, let's just
+    # always do our initialization dynamically instead of in initRecord().
+    $type=~s/:$//;
+    my $typeSort=($type=~/^\d/) ? sprintf("%03d", $type) : $type;
+    if (!defined($intrptType{$typeSort}))
+    {
+      $intrptType{$typeSort}=1;
+      if ($type=~/^\d/)
+      {
+        # We use array for numeric values and a hash for strings as the array
+        # access is a little faster expecially as the number of entries grows
+        # We're also reformatting the modifier so the devices line up...
+        my ($intType, $intDevices)=split(/\s+/, $vals[$NumCpus], 2);
+        chomp $intDevices;
+        $intName{$typeSort}=sprintf("%-15s %s", $intType, $intDevices);
+        for (my $i=0; $i<$NumCpus; $i++)
+        {
+          $intrptLast[$type]->[$i]=0;
+        }
+      }
+      else
+      {
+        for (my $i=0; $i<$NumCpus; $i++)
+        {
+          $intrptLast{$type}->[$i]=0;
+        }
+      }
+    }
+
+    #    M a t h    h a p p e n s    h e r e
+
+    for (my $i=0; $i<$NumCpus; $i++)
+    {
+      if ($type=~/^\d/)
+      {
+        $intrpt[$type]->[$i]=$vals[$i]-$intrptLast[$type]->[$i];
+        $intrptLast[$type]->[$i]=$vals[$i];
+        $intrptTot[$i]+=$intrpt[$type]->[$i];
+      }
+      # Not sure if other types that only hit cpu0
+      elsif ($i==0 || ($type ne 'ERR' && $type ne 'MIS'))
+      {
+        $intrpt{$type}->[$i]=$vals[$i]-$intrptLast{$type}->[$i];
+        $intrptLast{$type}->[$i]=$vals[$i];
+      }
+    }
   }
 
   elsif ($type=~/OST_(\d+)/)
@@ -3093,6 +3153,7 @@ sub printHeaders
       $cpuHeaders.="[CPU:$i]User%${SEP}[CPU:$i]Nice%${SEP}[CPU:$i]Sys%${SEP}";
       $cpuHeaders.="[CPU:$i]Wait%${SEP}[CPU:$i]Irq%${SEP}[CPU:$i]Soft%${SEP}";
       $cpuHeaders.="[CPU:$i]Steal%${SEP}[CPU:$i]Idle%${SEP}[CPU:$i]Totl%${SEP}";
+      $cpuHeaders.="[CPU:$i]Intrpt${SEP}";
     }
     writeData(0, $ch, \$cpuHeaders, CPU, $ZCPU, 'cpu', \$headersAll);
   }
@@ -3602,9 +3663,9 @@ sub printPlot
     $cpuPlot='';
     for ($i=0; $i<$NumCpus; $i++)
     {
-      $cpuPlot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
+      $cpuPlot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
                 $userP[$i], $niceP[$i],  $sysP[$i],  $waitP[$i], $irqP[$i],  
-                $softP[$i], $stealP[$i], $idleP[$i], $totlP[$i]);
+                $softP[$i], $stealP[$i], $idleP[$i], $totlP[$i], $intrptTot[$i]/$intSecs);
     }
     writeData(0, $datetime, \$cpuPlot, CPU, $ZCPU, 'cpu', \$oneline);
   }
@@ -4136,7 +4197,8 @@ sub printTerm
     {
       printText("\n")    if $options!~/t/;
       printText("# SINGLE CPU$Hyper STATISTICS\n");
-      printText("#$miniFiller   CPU  USER NICE  SYS WAIT IRQ  SOFT STEAL IDLE\n");
+      my $intrptText=($subsys=~/j/i) ? ' INTRPT' : '';
+      printText("#$miniFiller   CPU  USER NICE  SYS WAIT IRQ  SOFT STEAL IDLE$intrptText\n");
     }
 
     # if not recorded and user chose -s C don't print line items
@@ -4144,13 +4206,72 @@ sub printTerm
     {
       for ($i=0; $i<$NumCpus; $i++)
       {
-        $line=sprintf("$datetime   %4d   %3d  %3d  %3d  %3d  %3d  %3d   %3d  %3d\n",
+        $line=sprintf("$datetime   %4d   %3d  %3d  %3d  %3d  %3d  %3d   %3d  %3d",
            $i, 
            $userP[$i], $niceP[$i], $sysP[$i],   $waitP[$i], 
 	   $irqP[$i],  $softP[$i], $stealP[$i], $idleP[$i]);
-	printText($line);
+        $line.=sprintf(" %6d", $intrptTot[$i]/$intSecs)    if $subsys=~/j/i;
+	printText("$line\n");
       }
     } 
+  }
+
+  # Only meaningful when Interrupts not combined with -sC
+  if ($subsys=~/j/ && !$CFlag)
+  {
+    if (printHeader())
+    {
+      printText("\n")    if $options!~/t/;
+      printText("# INTERRUPT SUMMARY\n");
+      my $oneline="#$miniFiller ";
+      for (my $i=0; $i<$NumCpus; $i++)
+      {
+        my $cpuname="Cpu$i";
+        $oneline.=sprintf(" %6s", $cpuname);
+      }
+      printText("$oneline\n");
+    }
+
+    my $oneline="$datetime  ";
+    for (my $i=0; $i<$NumCpus; $i++)
+    {
+      $oneline.=sprintf(" %6d", $intrptTot[$i]);
+    }
+    printText("$oneline\n");
+  }
+
+  if ($subsys=~/J/)
+  {
+    if (printHeader())
+    {
+      printText("\n")    if $options!~/t/;
+      printText("# INTERRUPT DETAILS\n");
+      my $oneline="#$miniFiller Int ";
+      for (my $i=0; $i<$NumCpus; $i++)
+      {
+        my $cpuname="Cpu$i";
+        $oneline.=sprintf(" %6s", $cpuname);
+      }
+      $oneline.=sprintf("   %-15s %s\n", 'Type', 'Device(s)');
+      printText($oneline);
+    }
+
+    foreach my $key (sort keys %intrptType)
+    {
+      next    if $key!~/^\d/;    # for now, only numeric interrupts
+
+      my $linetot=0;
+      my $oneline="$datetime  $key  ";
+      for (my $i=0; $i<$NumCpus; $i++)
+      {
+        next    if $key eq 'ERR' || $key eq 'MIS';
+        my $ints=($key=~/^\d/) ? $intrpt[$key]->[$i]/$intSecs : $intrpt{$key}->[$i]/$intSecs;
+        $oneline.=sprintf("%6d ", $ints);
+        $linetot+=$ints;
+      }
+      $oneline.=sprintf("  %s", $intName{$key})    if $key=~/^\d/;
+      printText("$oneline\n")    if $linetot;
+    }
   }
 
   if ($subsys=~/d/)
@@ -5360,17 +5481,17 @@ sub printSexprRaw
   {
     if ($subsys=~/c/)
     {
-      my ($uTot, $nTot, $sTot, $iTot, $wTot, $irTot, $soTot, $stTot)=(0,0,0,0,0,0,0,0);
+      my ($uTot, $nTot, $sTot, $iTot, $wTot, $irTot, $soTot, $stTot, $intTot)=(0,0,0,0,0,0,0,0);
       for (my $i=0; $i<$NumCpus; $i++)
       {
-        $uTot+= $userLast[$i];
-        $nTot+= $niceLast[$i];
-        $sTot+= $sysLast[$i];
-        $iTot+= $idleLast[$i];
-        $wTot+= $waitLast[$i];
-        $irTot+=$irqLast[$i];
-        $soTot+=$softLast[$i];
-        $stTot+=$stealLast[$i];
+        $uTot+=  $userLast[$i];
+        $nTot+=  $niceLast[$i];
+        $sTot+=  $sysLast[$i];
+        $iTot+=  $idleLast[$i];
+        $wTot+=  $waitLast[$i];
+        $irTot+= $irqLast[$i];
+        $soTot+= $softLast[$i];
+        $stTot+= $stealLast[$i];
       }
       $cpuSumString.="$pad(cputotals (user $uTot) (nice $nTot) (sys $sTot) (idle $iTot) (wait $wTot) ";
       $cpuSumString.=               "(irq $irTot) (soft $soTot) (steal $stTot))\n";
@@ -5379,18 +5500,25 @@ sub printSexprRaw
 
     if ($subsys=~/C/)
     {
-      my ($name, $userTot, $niceTot, $sysTot, $idleTot, $waitTot)=('','','','','','');
+      my ($name, $userTot, $niceTot, $sysTot, $idleTot, $waitTot, $irqTot, $softTot, $stealTot, $intTot)=
+		('','','','','','','','','','');
       for (my $i=0; $i<$NumCpus; $i++)
       {
-        $name.=   "cpu$i ";
-        $userTot.="$userLast[$i] ";
-        $niceTot.="$userLast[$i] ";
-        $sysTot.= "$userLast[$i] ";
-        $idleTot.="$userLast[$i] ";
-        $waitTot.="$userLast[$i] ";
+        $name.=    "cpu$i ";
+        $userTot.= "$userLast[$i] ";
+        $niceTot.= "$userLast[$i] ";
+        $sysTot.=  "$userLast[$i] ";
+        $idleTot.= "$userLast[$i] ";
+        $waitTot.= "$userLast[$i] ";
+        $irqTot.=  "$irqLast[$i] ";
+        $softTot.= "$softLast[$i] ";
+        $stealTot.="$stealLast[$i] ";
+        $intTot.=  "0 ";    # raw has no meaning since INTs totalled over all line entries
       }
       $name=~s/ $//;       $userTot=~s/ $//;    $niceTot=~s/ $//;
       $sysTot=~s/ $//;     $idleTot=~s/ $//;    $waitTot=~s/ $//;
+      $irqTot=~s/ $//;     $softTot=~s/ $//;    $stealTot=~s/ $//;
+      $irqTot=~s/ $//;
 
       $cpuDetString.="$pad(cpuinfo\n";
       $cpuDetString.="$pad  (name $name)\n";
@@ -5399,6 +5527,10 @@ sub printSexprRaw
       $cpuDetString.="$pad  (sys $sysTot)\n";
       $cpuDetString.="$pad  (idle $idleTot)\n";
       $cpuDetString.="$pad  (wait $waitTot))\n";
+      $cpuDetString.="$pad  (irq $irqTot))\n";
+      $cpuDetString.="$pad  (soft $softTot))\n";
+      $cpuDetString.="$pad  (steal $stealTot))\n";
+      $cpuDetString.="$pad  (int $intTot))\n";
     }
   }
 
@@ -5626,7 +5758,8 @@ sub printSexprRate
 
     if ($subsys=~/C/)
     {
-      my ($name, $userTot, $niceTot, $sysTot, $waitTot, $irqTot, $softT, $stealTot, $idleTot)=('','','','','','','','','');
+      my ($name, $userTot, $niceTot, $sysTot, $waitTot, $irqTot, $softT, $stealTot, $idleTot, $intTot)=
+		('','','','','','','','','','');
       for (my $i=0; $i<$NumCpus; $i++)
       {
         $name.=    "cpu$i ";
@@ -5637,11 +5770,14 @@ sub printSexprRate
 	$irqTot.=  "$irqP[$i] ";
 	$softTot.= "$softP[$i] ";
 	$stealTot.="$stealP[$i] ";
-        $idleTot.="$idleP[$i] ";
+        $idleTot.= "$idleP[$i] ";
+        $intTot.=  "$intrptTot[$i] ";
       }
       $name=~s/ $//;       $userTot=~s/ $//;    $niceTot=~s/ $//;
       $sysTot=~s/ $//;     $waitTot=~s/ $//;    $irqTot=~s/ $//;
       $softTot=~s/ $//;    $stealTot=~s/ $//;   $idleTot=~s/ $//;
+      $intTot=~s/ $//;
+
       $cpuDetString.="$pad(cpuinfo\n";
       $cpuDetString.="$pad  (name $name)\n";
       $cpuDetString.="$pad  (user $userTot)\n";
@@ -5652,6 +5788,7 @@ sub printSexprRate
       $cpuDetString.="$pad  (soft $softTot)\n";
       $cpuDetString.="$pad  (steal $stealTot)\n";
       $cpuDetString.="$pad  (idle $idleTot)\n";
+      $cpuDetString.="$pad  (int $intTot)\n";
     }
   }
 
@@ -5887,6 +6024,10 @@ sub sexprHeader
     $sexprHdr.="$pad  (sys $names)\n";
     $sexprHdr.="$pad  (idle $names)\n";
     $sexprHdr.="$pad  (wait $names)\n";
+    $sexprHdr.="$pad  (irq $names)\n";
+    $sexprHdr.="$pad  (soft $names)\n";
+    $sexprHdr.="$pad  (steal $names)\n";
+    $sexprHdr.="$pad  (int $names)\n";
   }
 
   if ($subsys=~/D/)
@@ -6062,6 +6203,13 @@ sub briefFormatit
     $fill2=($Hyper eq '') ? "----" : "-";
     $line.="$cls#$pad";
     $line.="<----${fill1}CPU$Hyper$fill2---->"     if $subsys=~/c/;
+    if ($subsys=~/j/)
+    {
+      my $num=int(($NumCpus-1)*5/2);
+      my $pad1='-'x$num;
+      my $pad2=$pad1;
+      $line.="<${pad1}Int$pad2>";
+    }
     $line.="<-----------Memory---------->"         if $subsys=~/m/;
     $line.="<----slab---->"                        if $subsys=~/y/;
     $line.="<----------Disks----------->"          if $subsys=~/d/;
@@ -6085,6 +6233,13 @@ sub briefFormatit
     $line.="\n";
     $line.="#$miniDateTime";
     $line.="cpu sys inter  ctxsw "                 if $subsys=~/c/;
+    if ($subsys=~/j/)
+    {
+      for (my $i=0; $i<$NumCpus; $i++)
+      {
+        $line.=sprintf("Cpu$i ");
+      }
+    }
     $line.="free buff cach inac slab  map "        if $subsys=~/m/;
     $line.=" Alloc   Bytes "	 		   if $subsys=~/y/ && $slabinfoFlag;
     $line.=" InUse   Total "	 		   if $subsys=~/y/ && $slubinfoFlag;
@@ -6120,6 +6275,14 @@ sub briefFormatit
     $cpuTot=$userP[$i]+$niceP[$i]+$sysTot;
     $line.=sprintf("%3d %3d %5d %6d ",
         $cpuTot, $sysTot, $intrpt/$intSecs, $ctxt/$intSecs);
+  }
+
+  if ($subsys=~/j/)
+  {
+    for (my $i=0; $i<$NumCpus; $i++)
+    {
+      $line.=sprintf("%4s ", cvt($intrptTot[$i]/$intSecs,4,0,0));
+    }
   }
 
   if ($subsys=~/m/)
@@ -6285,9 +6448,9 @@ sub resetMini1Counters
   $lustreCltReadTOT=$lustreCltReadKBTOT=$lustreCltWriteTOT=$lustreCltWriteKBTOT=0;
   $lustreCltRAHitsTOT=$lustreCltRAMissesTOT=0;
   for (my $i=0; $i<$numBrwBuckets; $i++)
-  {
-    $lustreBufReadTOT[$i]=$lustreBufWriteTOT[$i]=0;
-  }
+  { $lustreBufReadTOT[$i]=$lustreBufWriteTOT[$i]=0; }
+  for (my $i=0; $i<$NumCpus; $i++)
+  { $intrptTOT[$i]=0; }
 }
 
 sub countMini1Counters
@@ -6298,6 +6461,9 @@ sub countMini1Counters
   $intrptTOT+=$intrpt;
   $ctxtTOT+=  $ctxt;
   
+  for ($i=0; $i<$NumCpus; $i++)
+  { $intrptTOT[$i]+=$intrptTot[$i]; }
+
   $memFreeTOT+=  $memFree;
   $memBufTOT+=   $memBuf;
   $memCachedTOT+=$memCached;
@@ -6397,6 +6563,14 @@ sub printMini1Counters
 	$cpuTOT/$miniInstances,    $sysPTOT/$miniInstances, 
 	$intrptTOT/$miniInstances, $ctxtTOT/$miniInstances
   	          if $subsys=~/c/;
+
+  if ($subsys=~/j/)
+  {
+    for (my $i=0; $i<$NumCpus; $i++)
+    {
+      printf "%4s ", cvt($intrptTOT[$i]/$miniInstances,4,0,0);
+    }
+  }
 
   printf "%4s %4s %4s %4s %4s %4s ",
         cvt($memFreeTOT/$miniInstances,4,1,1),   

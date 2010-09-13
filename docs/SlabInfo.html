@@ -1,0 +1,154 @@
+<html>
+<head>
+<link rel=stylesheet href="style.css" type="text/css">
+<title>collectl - SlabInfo</title>
+</head>
+
+<body>
+<center><h1>SlabInfo</h1></center>
+<p>
+<center>
+<b><font face="Arial">
+<a href=index.html>Home</a> | 
+<a href=Architecture.html>Architecture</a> | 
+<a href=Features.html>Feature Details</a> | 
+<a href=Examples.html>Examples</a> | 
+<a href=Releases.html>Releases</a> |
+<a href=http://collectl.sourceforge.net/FAQ-collectl.html>FAQ</a> |
+<a href=Support.html>Support</a>
+</h3></font></b>
+</center>
+<p>
+<h3>Introduction</h3>
+In version 2.6.22 of the Linux kernel, the slab allocator has
+been replaced by a new one called SLUB, <i>the Unqueued Slab Allocator</i>,
+and more importantly from collect's perspective,
+the way slab statistics are reported has changed as well.  
+Rather than reporting all slab data in the single file <i>/proc/slabino</i>,
+there is now one subdirectory for each slab under <i>/sys/slab</i>.
+But before getting into all that here's a quick review of how slabs are
+organized by referring to the following diagram:
+<p>
+<img src=slub.jpg>
+<p>
+As you can see, for a given slab name there are multiple slabs and each slab
+consists of multiple objects.  When a process requests an allocation of slab
+memory it is provided as an object from a slab if there is one available. If 
+there are none, a new slab is allocated and the object provided from it.
+Furthermore, <i>slub</i> allows slabs of different names
+but whose objects are the same sizes to share the same slab as you can see below
+for the slab with the very ugly name of <i>:0001024</i>, which in this case is a
+slab which contains 1K objects.  These additional
+entries are called <i>aliases</i> for obvious reasons:
+<p>
+<pre>
+drwxr-xr-x  2 root root 0 Dec 27 07:48 /sys/slab/:0001024
+lrwxrwxrwx  1 root root 0 Dec 27 07:48 /sys/slab/biovec-64 -> ../slab/:0001024
+lrwxrwxrwx  1 root root 0 Dec 27 07:48 /sys/slab/kmalloc-1024 -> ../slab/:0001024
+lrwxrwxrwx  1 root root 0 Dec 27 07:48 /sys/slab/sgpool-32 -> ../slab/:0001024
+</pre>
+
+<p>
+Good news! The slab memory field reported in /proc/meminfo finally matches the total 
+memory reported the individual slabs and so the need for collectl's slab summary
+usage for all slabs has been reduced. However, when selecting a subset of 
+slabs by filter(s), the summary will show the totals for the selected slabs 
+and will therefore be more useful.  More on this in the examples below.
+
+<p>
+The main pieces of information collectl reports on for each named slab are the number of
+slabs that have been allocated, the corresponding number of objects and the number
+of objects that have actully been allocated to processes.  Collectl reports the total
+memory associated with the slabs as well as the amount of slab memory actually 
+being used by processes.  It also reports some constants such as the number 
+of objects/slab and the physical sizes of both objects and slabs.
+
+<center><h3>Examples</h3></center>
+<p>
+The following examples show several different output formats and the commands
+used to produce them.  It should be noted that an interval of 1 second
+had been chosen in each case and one should always consult the help
+and/or man pages for more detail as there are many other formatting options.
+Perhaps the easiest way to get started it to just type the command 
+<i>collectl -i:1 -sY</i> and later add some additional switches to see their impact.
+For those new to collectl, you should also realize that collectl can run as a
+daemon logging all this in the background for later playback and that all the 
+different subsystems it supports can be include by simply adding them to -sY.
+<p>
+
+<h3>Summary</h3>
+This is the verbose, time-stamped slab summary output for 
+only those slabs beginning with 'blk' or 'ext3' 
+
+<div class=terminal>
+<pre>
+collectl -i:1 -sy -Yblk,ext --verbose -oT
+# SLAB SUMMARY
+#         <---Objects---><-Slabs-><-----memory----->
+#          In Use   Avail  Number      Used   TotalK
+13:21:10   120625  124233   30701   113894K  122832K
+13:21:11   120625  124233   30701   113894K  122832K
+13:21:12   120625  124233   30701   113894K  122832K
+</pre>
+</div>
+
+<h3>Standard Detail</h3>
+Here's the same report, only now we're looking at details and tossing in msec
+timestamps
+
+<div class=terminal-wide13>
+<pre>
+collectl -i:1 -sY -Yblk,ext -oTm
+waiting for 1 second sample...# SLAB DETAIL
+#                                          <----------- objects -----------><--- slabs ---><----- memory ----->
+#             Slab Name                    Size  /slab   In Use     Avail    SizeK  Number      UsedK    TotalK
+13:22:31.002 blkdev_ioc                      64     64     1158     1408         4      22         72        88
+13:22:31.002 blkdev_queue                  1608      5       34       35         8       7         53        56
+13:22:31.002 blkdev_requests                288     14       33       84         4       6          9        24
+13:22:31.002 ext2_inode_cache               928      4        0        0         4       0          0         0
+13:22:31.002 ext3_inode_cache               976      4   119349   122660         4   30665     113754    122660
+13:22:31.002 ext3_xattr                      88     46       46       46         4       1          3         4
+</pre>
+</div>
+
+<h3>Standard detail, changes only</h3>
+Here we see the same output again only this time we're simultaneously 
+writing a large file and choosing to report on only those slabs which 
+have changed between monitoring intervals. To make the output a little 
+more interesting we've added filtering on 'dentry' as well:
+
+<div class=terminal-wide13>
+<pre>
+collectl -i:1 -sY -Yblk,ext,dentry -oTS
+# SLAB DETAIL
+#                                      <----------- objects -----------><--- slabs ---><----- memory ----->
+#         Slab Name                    Size  /slab   In Use     Avail    SizeK  Number      UsedK    TotalK
+13:37:29 blkdev_ioc                      64     64     1210     1408         4      22         75        88
+13:37:29 blkdev_queue                  1608      5       34       35         8       7         53        56
+13:37:29 blkdev_requests                288     14      176      196         4      14         49        56
+13:37:29 dentry                         224     18   132486   136656         4    7592      28981     30368
+13:37:29 ext3_inode_cache               976      4   119351   122660         4   30665     113756    122660
+13:37:29 ext3_xattr                      88     46       46       46         4       1          3         4
+13:37:30 blkdev_ioc                      64     64     1208     1408         4      22         75        88
+13:37:30 blkdev_requests                288     14      194      210         4      15         54        60
+13:37:30 ext3_inode_cache               976      4   119248   122580         4   30645     113658    122580
+13:37:31 blkdev_requests                288     14      189      224         4      16         53        64
+13:37:32 blkdev_requests                288     14       95      168         4      12         26        48
+13:37:33 blkdev_requests                288     14      159      196         4      14         44        56
+13:37:34 blkdev_ioc                      64     64     1165     1408         4      22         72        88
+13:37:34 blkdev_requests                288     14      162      196         4      14         45        56
+13:37:34 dentry                         224     18   126002   132210         4    7345      27562     29380
+13:37:34 ext3_inode_cache               976      4   119120   122432         4   30608     113536    122432
+13:37:35 blkdev_ioc                      64     64     1157     1408         4      22         72        88
+13:37:35 blkdev_requests                288     14      176      224         4      16         49        64
+13:37:35 dentry                         224     18   122640   129402         4    7189      26827     28756
+13:37:35 ext3_inode_cache               976      4   118992   122292         4   30573     113414    122292
+13:37:36 blkdev_ioc                      64     64      993     1344         4      21         62        84
+13:37:36 blkdev_requests                288     14      194      224         4      16         54        64
+13:37:36 dentry                         224     18   109983   116712         4    6484      24058     25936
+13:37:36 ext3_inode_cache               976      4   117405   120532         4   30133     111901    120532
+</pre>
+</div>
+
+</body>
+</html>

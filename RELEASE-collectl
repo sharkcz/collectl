@@ -51,6 +51,17 @@ KNOWN PROBLEMS/RESTRICTIONS
   - if system time is changed by more then the log rolling frequency after collectl
     starts, multiple log files will be created during the next polling cycle(s)
 
+2.5.0   Feb 29, 2008
+  - if HCA present but IB stack not completely loaded, the cat of /sys/class/infiniband/*
+    fails and reports error.  redirecting STDERR supresses that error
+  - added support for reporting interrupts by CPU
+  - removed all but the collectl and collectl-data man pages, moving their content
+    to the collectl web site at sourceforge AND to /opt/hp/collectl/docs
+  - when installing is a brand new ROCKS environment /bin/rm not there yet so make
+    conditional in %pre section of spec file [thanks roy]
+  - modified spec file to add build level to release so I can keep the release number
+    the same [thanks again, roy]
+
 2.4.3	Feb 04, 2008
   - cpu percentages calculations need to include iowait in denominator
   - memory stats: include AnonPages in mapped memory

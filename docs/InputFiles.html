@@ -1,0 +1,60 @@
+<html>
+<head>
+<link rel=stylesheet href="style.css" type="text/css">
+<title>collectl - Input Files</title>
+</head>
+
+<body>
+<center><h1>Input Files</h1></center>
+<p>
+The following is a list of the files read by collectl to support the different types of data
+being collected, noting the one exception is Infiniband data which is obtained
+by the <i>perfquery</i> OFED utility.
+
+<center>
+<table border="1">
+<tr><td><b>Subsystem</b></td><td><b>File(s)</b></td></tr>
+<tr><td>CPU</td><td>/proc/loadavg</td></tr>
+<tr><td>&nbsp;</td><td>/proc/stat</td></tr>
+<tr><td>Disk</td><td>/proc/diskstats</td></tr>
+<tr><td>&nbsp;</td><td>/proc/partitions</td></tr>
+<tr><td>&nbsp;</td><td>/proc/stat</td></tr>
+<tr><td>Inode</td><td>/proc/sys/fs/dentry-state</td></tr>
+<tr><td>&nbsp;</td><td>/proc/sys/fs/dquot-nr</td></tr>
+<tr><td>&nbsp;</td><td>/proc/sys/fs/file-nr</td></tr>
+<tr><td>&nbsp;</td><td>/proc/sys/fs/inode-state</td></tr>
+<tr><td>&nbsp;</td><td>/proc/sys/fs/super-nr</td></tr>
+<tr><td>Interrupts</td><td>/proc/interruptstd></tr>
+<tr><td>Interconnect</td><td>/proc/qsnet/ep/rail[0-1]/stats</td></tr>
+<tr><td>&nbsp;</td><td>perfquery *</td></tr>
+<tr><td>Lustre</td><td>/proc/fs/lustre/llite/.../stats</td></tr>
+<tr><td>&nbsp;</td><td>/proc/fs/lustre/llite/.../read_ahead_stats</td></tr>
+<tr><td>&nbsp;</td><td>/proc/fs/lustre/mdt/MDT/mds/stats</td></tr>
+<tr><td>&nbsp;</td><td>/proc/fs/lustre/osc/OST_...client.../stats</td></tr>
+<tr><td>&nbsp;</td><td>/proc/fs/lustre/obdfilter/OST_.../stats</td></tr>
+<tr><td>&nbsp;</td><td>/proc/fs/lustre/obdfilter/OST_.../brw_stats</td></tr>
+<tr><td>&nbsp;</td><td>/proc/fs/lustre/osc/OSC...mds.../stats</td></tr>
+<tr><td>Memory</td><td>/proc/meminfo</td></tr>
+<tr><td>&nbsp;</td><td>/proc/stat</td></tr>
+<tr><td>&nbsp;</td><td>/proc/vmstat</td></tr>
+<tr><td>Network</td><td>/proc/net/dev</td></tr>
+<tr><td>NFS</td><td>/proc/net/rpc/nfs</td></tr>
+<tr><td>&nbsp;</td><td>/proc/net/rpc/nfsd</td></tr>
+<tr><td>Process</td><td>/proc/pid/cmdline</td></tr>
+<tr><td>&nbsp;</td><td>/proc/pid/io</td></tr>
+<tr><td>&nbsp;</td><td>/proc/pid/stat</td></tr>
+<tr><td>&nbsp;</td><td>/proc/pid/status</td></tr>
+<tr><td>Slab</td><td>/proc/slabinfo</td></tr>
+<tr><td>&nbsp;</td><td>/sys/slab<slab>/object_size</td></tr>
+<tr><td>&nbsp;</td><td>/sys/slab<slab>/objects</td></tr>
+<tr><td>&nbsp;</td><td>/sys/slab<slab>/objs_per_slab</td></tr>
+<tr><td>&nbsp;</td><td>/sys/slab<slab>/order</td></tr>
+<tr><td>&nbsp;</td><td>/sys/slab<slab>/slab_size</td></tr>
+<tr><td>&nbsp;</td><td>/sys/slab<slab>/slabs</td></tr>
+<tr><td>Socket</td><td>/proc/net/sockstat</td></tr>
+<tr><td>Tcp</td><td>/proc/net/netstat</td></tr>
+</table>
+</center>
+
+</body>
+</html>

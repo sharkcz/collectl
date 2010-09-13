@@ -58,7 +58,7 @@ if the client exists collectl keeps running and will again look for a
 new connection, allowing it to survive client restarts or crashes.
 If collectl receives the text 'exit' from the client, it will shut down.
 
-The default port is set at 1234 but can be changed - see collectl.conf.  
+The default port is set at 2655 but can be changed - see collectl.conf.  
 
 In both forms, one can additionally request local data logging by 
 specifying a combination of -P and -f.  See
@@ -136,6 +136,7 @@ data collection interval.
 .RE
 
 .B -G, --group
+.RS
 Treat process data as an entirely separate group of data, writing it into its own raw file, named
 'rawp'.  These separate process files can be played back and processed just like any other 
 collectl raw files and in fact one can even play back both at the same time if that is what is
@@ -144,6 +145,14 @@ possible to generate huge raw files (some have been observerd to be >250MB!) and
 will happily play back/process these files it can take a long time.  By using the -G switch one
 still gets a hugh rawp file, but the raw file is a much more manageable size and as a result much
 faster to process.
+.RE
+
+.B --home
+.RS
+Always start the display for the current interval at the top of the screen
+also known as the home position (non-plot format only).  This generates a
+real-time, continously refreshing display when the data fits on a single screen.
+.RE
 
 .B "-i, --interval interval[:interval2[:interval3]]"
 .RS
@@ -231,27 +240,38 @@ Playback Mode
 In this mode, data is read from one or more data files that were
 generated in Record Mode
 
-.RE
-.B "-b, --begin BeginTime"
-.RS
-Display data from this time forward.  The format of this
-field is [yyyymmdd-]hh:mm:ss.  If the 8 digit date is omitted, the date is
-taken from the data file.
-
-.RE
-.B "-e, --end EndTime"
-.RS
-Display data thru this time period.  The format of this
-field is [yyyymmdd-]hh:mm:ss.  If the 8 digit date is omitted, the date is
-taken from the data file.
-.RE
-
 .B "-f, --filename Filename"
 .RS
 If specified, this is the name of a file or directory 
 to write the output to (rather than
 the terminal).  See the description for details on the format of this field.
 This requires the -P flag as well.
+.RE
+
+.B "--from time range"
+.RS
+Play back data starting with this time, which may optionally include the ending
+time as well, which is of the format of [date:]time[-[date:]time].
+The leading 0 of the hour is optional and is not specified, the seconds are 
+assumed to be 0.
+.RE
+
+.B "--passwd filename"
+.RS
+When playing back process data on a system other than the one it was collected on, 
+this lets you specify an alternate passwd file used to translate the UIDs.
+.RE
+
+.B "--offsettime seconds"
+.RS
+This field originally was used before collectl reported the timezone in the file
+headers and allowed one to compensate.  Since then it is rarely needed except in
+two possible cases, one in which data on two systems is to be compared and they
+weren't synchonized with ntp.  This allows all the times to be reported as shifted
+by some number of seconds.  The other case (and this is very rare) is when a clock
+had changed in the middle of a sample and will not be converted correctly.  When
+this happens one may have to play back the samples in pieces and manually set
+the time offset.
 .RE
 
 .B "-p, --playback Filename"
@@ -270,17 +290,12 @@ As an added feature, since people sometimes automate
 the running of this option and don't want to hard code a date, you can 
 specify the string YESTERDAY or TODAY and they will be replaced in the
 filename string by the appropriate date.
-
+.RE
 .RE
 
-.B "-T, --timezone hours"
+.B "--thru time"
 .RS
-During playback, sample times are reported in the local time at which they
-were recorded.  Since this determination is made at the time the playback
-file is opened and not for each record, there may be times when a clock had
-changed in the middle of a sample and will not be converted correctly.  When
-this happens one may have to play back the samples in pieces and manually set
-the time offset with -T.
+Time thru which to play back a raw file.  See --from for more
 .RE
 
 Common Switches - both record and playback modes
@@ -347,7 +362,7 @@ is the default value and is only included for completeness.
 Report device activity if either IOS or SVC thresholds are reached.
 .RE
 
-.B -L, --lustresvc [c|m|o][:seconds]
+.B -L, --lustsvcs [c|m|o][:seconds]
 .RS
 This switch limits which servics lustre checks for and the frequency of those checks.
 For more information see the man page collectl-lustre.
@@ -457,26 +472,6 @@ that interval.  Normalization can be disabled via this option, the result being
 the reported values are not divided by the duration of the interval.
 .RE
 
-.B s
-.RS
-When reporting detailed slab data, leave out slabs with no allocations.
-.RE
-
-.B S
-.RS
-When reporting any slab data, leave out slabs with no activity during the 
-current interval.  In other words, only show slabs that change.  Note that
-changes in active objects or allocations are not included in this condition
-as they change too frequently and do not effect memory allocated for the slabs.
-.RE
-
-.B t
-.RS
-Always start the display for the current interval at the top of the screen
-(non-plot format only).  This generates the illusion of a real-time display
-when the data fits on a single screen.
-.RE
-
 .B T
 .RS
 For use with terminal output and brief mode, preceeds each line with a time stamp.
@@ -489,7 +484,7 @@ in the name.  This forces
 multiple collections taken the same day to be written to multiple files.
 .RE
 
-.B "u or --utc"
+.B "U or --utc"
 .RS
 In plot format only, report timestamps in Coordinated Universal time which is more
 commonly know as UTC.
@@ -592,6 +587,13 @@ Output is always one line per sampling interval.
 These filters restrict which processes are selected for collection/display
 and replaces -Z which is now deprecated.  See
 collectl -x for more details.
+.RE
+
+.B --procanalyze
+.RS
+When specified and there is process data in the raw file, a summary file will be generated
+with one entry unique process containing such things as the total cpu consumed for both user
+and system, min/max utilization of various memory types, total page faults and several others.
 .RE
 
 .B --procopts options

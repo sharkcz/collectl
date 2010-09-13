@@ -10,8 +10,8 @@
 
 Data is reported in this form when either --verbose is used OR if there is at least one
 type of data requested that doesn't have a brief form such as any detail data or 
-ionodes, processes or slabs.  Specifying some of the lustre output options with -O such 
-as B, D and M will also force verbose format.
+ionodes, processes or slabs.  Specifying some of the lustre output options with --lustopts
+such as B, D and M will also force verbose format.
 
 <p><h3>CPU, <i>collectl -sc</i></h3>
 
@@ -69,21 +69,21 @@ This next set of fields apply to processes
 <div class=terminal>
 <pre>
 # DISK SUMMARY (/sec)
-#Reads  R-Merged  R-KBytes  SizeKB  Writes  W-Merged  W-KBytes  SizeKB
+#KBRead RMerged  Reads SizeKB   KBWrit WMerged Writes SizeKB
 </div></pre>
 
 <table>
-<tr><td><b>Reads</b></td><td>Number of reads/sec</td></tr>
-<tr valign=top><td><b>R-Merged</b></td>
+<tr><td><b>KBRead</b></td><td>KB read/sec</td></tr>
+<tr valign=top><td><b>RMerged</b></td>
 <td>Read requests merged per second when being dequeued.
 These statistics are not available in older kernels which 
 only record disk statistics in /proc/stat.</td></tr>
-<tr><td><b>R-KBytes</b></td><td>KB read/sec</td></tr>
+<tr><td><b>Reads</b></td><td>Number of reads/sec</td></tr>
 <tr><td><b>SizeKB</b></td><td>Average read size in KB</td></tr>
-<tr><td><b>Writes</b></td><td>Number of writes/sec</td></tr>
-<tr valign=top><td><b>W-Merged</b></td>
+<tr><td><b>KBWrite<b></td><td>KB written/sec</td></tr>
+<tr valign=top><td><b>WMerged</b></td>
 <td>Write requests merged per second when being dequeued.</tr></tr>
-<tr><td><b>W-KBytes<b></td><td>KB written/sec</td></tr>
+<tr><td><b>Writes</b></td><td>Number of writes/sec</td></tr>
 <tr><td><b>SizeKB</b></td><td>Average write size in KB</td></tr>
 </table>
 
@@ -114,15 +114,15 @@ many files and/or directories I create, this number goes up!  Sholdn't it go dow
 <div class=terminal>
 <pre>
 # INFINIBAND SUMMARY (/sec)
-# OpsIn  OpsOut   KB-In  KB-Out  IOSizeI IOSizeO  Errors
+#  KBIn   PktIn  SizeIn   KBOut  PktOut SizeOut  Errors
 </pre></div>
 <table>
-<tr><td><b>OpsIn</b></td><td>Packets received/sec.</td></tr>
-<tr><td><b>OpsOut</b></td><td>Packets transmitted/sec.</td></tr>
-<tr><td><b>KB-In</b></td><td>KB received/sec.</td></tr>
-<tr><td><b>KB-Out</b></td><td>KB transmitted/sec.</td></tr>
-<tr><td><b>IOSizeI</b></td><td>Average incoming packet size in KB</td></tr>
-<tr><td><b>IOSizeO</b></td><td>Average outgoing packet size in KB</td></tr>
+<tr><td><b>KBIn</b></td><td>KB received/sec.</td></tr>
+<tr><td><b>PktIn</b></td><td>Packets received/sec.</td></tr>
+<tr><td><b>SizeIn</b></td><td>Average incoming packet size in KB</td></tr>
+<tr><td><b>KBOut</b></td><td>KB transmitted/sec.</td></tr>
+<tr><td><b>PktOut</b></td><td>Packets transmitted/sec.</td></tr>
+<tr><td><b>SizeOut</b></td><td>Average outgoing packet size in KB</td></tr>
 <tr valign=top><td><b>Errs</b></td><td>Count of current errors.  Since these
 are typically infrequent, it is felt that reporting them as a rate would result
 in either not seeing them OR round-off hiding their values.</td></tr>
@@ -131,37 +131,37 @@ in either not seeing them OR round-off hiding their values.</td></tr>
 <p><h3>Lustre</h3>
 
 <p><b>Lustre Client</b>, <i>collectl -sl</i>
-<p>There are several formats here controlled by the -O switch.  There is 
+<p>There are several formats here controlled by the --lustopts switch.  There is 
 also detail data for these available as well.  Specifying -sL results in 
-data broken out by the file system and -sLL breaks it out by OST.
+data broken out by the file system and --lustopts O further breaks it out by OST.
 
 <div class=terminal>
 <pre>
 # LUSTRE CLIENT SUMMARY
-# Reads ReadKB  Writes WriteKB
+# KBRead  Reads  KBWrite Writes
 </pre></div>
 
 <table>
+<tr><td><b>KBRead</b></td><td>KB/sec delivered to the client.</td></tr>
 <tr><td valign=top><b>Reads</b></td><td>Reads/sec delivered to the client,
 not necessarily from the lustre
 storage servers.</td></tr>
-<tr><td><b>ReadKB</b></td><td>KB/sec delivered to the client.</td></tr>
+<tr><td><b>KBWrite</b></td><td>KB Writes/sec delievered to the storage servers.</td></tr>
 <tr><td><b>Writes</b></td><td>Writes/sec delievered to the storage servers.</td></tr>
-<tr><td><b>WriteKB</b></td><td>KB Writes/sec delievered to the storage servers.</td></tr>
 </table>
 
 <div class=terminal-wide14>
 <pre>
 # LUSTRE CLIENT SUMMARY: METADATA
-# Reads ReadKB  Writes WriteKB  Open Close GAttr SAttr  Seek Fsync DrtHit DrtMis
+# KBRead  Reads KBWrite Writes  Open Close GAttr SAttr  Seek Fsynk DrtHit DrtMis
 </pre></div>
 
 <table>
+<tr><td><b>KBRead</b></td><td>KB/sec delivered to the client.</td></tr>
 <tr><td valign=top><b>Reads</b></td><td>Reads/sec delivered to the client,
 not necessarily from the lustre storage servers.</td></tr>
-<tr><td><b>ReadKB</b></td><td>KB/sec delivered to the client.</td></tr>
+<tr><td><b>KBWrite</b></td><td>KB Writes/sec delievered to the storage servers.</td></tr>
 <tr><td><b>Writes</b></td><td>Writes/sec delievered to the storage servers.</td></tr>
-<tr><td><b>WriteKB</b></td><td>KB Writes/sec delievered to the storage servers.</td></tr>
 <tr><td><b>Open</b></td><td>File opens/sec</td></tr>
 <tr><td><b>Close</b></td><td>File closes/sec</td></tr>
 <tr><td><b>GAttr</b></td><td>getattrs/sec</td></tr>
@@ -174,15 +174,15 @@ not necessarily from the lustre storage servers.</td></tr>
 <div class=terminal-wide14>
 <pre>
 # LUSTRE CLIENT SUMMARY: READAHEAD
-# Reads ReadKB  Writes WriteKB  Pend  Hits Misses NotCon MisWin LckFal  Discrd ZFile ZerWin RA2Eof HitMax
+# KBRead  Reads KBWrite Writes  Pend  Hits Misses NotCon MisWin FalGrb LckFal  Discrd ZFile ZerWin RA2Eof HitMax  Wrong
 </pre></div>
 
 <table>
+<tr><td><b>KBRead</b></td><td>KB/sec delivered to the client.</td></tr>
 <tr><td valign=top><b>Reads</b></td><td>Reads/sec delivered to the client,
 not necessarily from the lustre storage servers.</td></tr>
-<tr><td><b>ReadKB</b></td><td>KB/sec delivered to the client.</td></tr>
+<tr><td><b>KBWrite</b></td><td>KB Writes/sec delievered to the storage servers.</td></tr>
 <tr><td><b>Writes</b></td><td>Writes/sec delievered to the storage servers.</td></tr>
-<tr><td><b>WriteKB</b></td><td>KB Writes/sec delievered to the storage servers.</td></tr>
 <tr><td><b>Pend</b></td><td>Pending issued pages</td></tr>
 <tr><td><b>Hits</b></td><td>prefetch cache hits</td></tr>
 <tr><td><b>Misses</b></td><td>prefetch cache misses</td></tr>
@@ -204,18 +204,18 @@ not necessarily from the lustre storage servers.</td></tr>
 <div class=terminal-wide14>
 <pre>
 # LUSTRE CLIENT SUMMARY: RPC-BUFFERS (pages)
-#Rds  RdK   1K   2K   ...  Wrts WrtK   1K   2K   ...
+#RdK  Rds   1K   2K   ...  WrtK Wrts   1K   2K   ...
 </pre></div>
 
 This display shows the size of rpc buffer distribution buckets in K-pages.  You can find the 
 page size for you system in the header (<i>collectl --showheader</i>).
 <p>
 <table>
-<tr><td valign=top><b>Rds</b></td><td>Reads/sec</td></tr>
 <tr><td valign=top><b>RdK</b></td><td>KBs read/sec</td></tr>
+<tr><td valign=top><b>Rds</b></td><td>Reads/sec</td></tr>
 <tr><td valign=top><b>nK</b></td><td>Number of pages of of this size read</td></tr>
-<tr><td valign=top><b>Wrts</b></td><td>Writes/sec</td></tr>
 <tr><td valign=top><b>WrtK</b></td><td>KBs written/sec</td></tr>
+<tr><td valign=top><b>Wrts</b></td><td>Writes/sec</td></tr>
 <tr><td valign=top><b>nK</b></td><td>Number of pages of of this size written</td></tr>
 </table>
 
@@ -225,7 +225,7 @@ page size for you system in the header (<i>collectl --showheader</i>).
 <pre>
 # LUSTRE FILESYSTEM SUMMARY
 #<------------- MDS --------------->
-#CLOSE   GETATTR     REINT      SYNC
+#Close   Getattr     Reint      Sync
 </pre></div>
 
 <table>
@@ -259,48 +259,48 @@ Note that this report is only available for HP's SFS.
 <div class=terminal>
 <pre>
 # LUSTRE FILESYSTEM SUMMARY
-#<------------------- OST ------------------>
-#READ OPS   READ KB      WRITE OPS   WRITE KB
+#<----------------- OST ---------------->
+#KBRead     Reads      KBWrite    Writes
 </pre></div>
 
 <table>
-<tr><td><b>Read Ops</b></td><td>Reads/sec</td></tr>
-<tr><td><b>Read KB</b></td><td>KB/sec read</td></tr>
-<tr><td><b>Write Ops</b></td><td>Writes/sec</li>
-<tr><td><b>Write KB</b></td><td>KB/sec written</td></tr>
+<tr><td><b>KBRead</b></td><td>KB/sec read</td></tr>
+<tr><td><b>Reads</b></td><td>Reads/sec</td></tr>
+<tr><td><b>KBWrite</b></td><td>KB/sec written</td></tr>
+<tr><td><b>Writes</b></td><td>Writes/sec</li>
 </table>
 
-<p><b>Lustre Object Storage Server</b>, <i>collectl -sl -OB</i>
+<p><b>Lustre Object Storage Server</b>, <i>collectl -sl --lustopts B</i>
 <div class=terminal>
 <pre>
 # LUSTRE FILESYSTEM SUMMARY
 #<--------read----------------writes-----------------
-#Rds  RdK   1K   2K   ...  Wrts WrtK   1K   2K   ....
+#RdK  Rds   1K   2K   ...  WrtK Wrts   1K   2K   ....
 </pre></div>
 
 <table>
-<tr><td valign=top><b>Rds</b></td><td>Reads/sec</td></tr>
 <tr><td valign=top><b>RdK</b></td><td>KBs read/sec</td></tr>
+<tr><td valign=top><b>Rds</b></td><td>Reads/sec</td></tr>
 <tr><td valign=top><b>nK</b></td><td>Number of pages of of this size read</td></tr>
-<tr><td valign=top><b>Wrts</b></td><td>Writes/sec</td></tr>
 <tr><td valign=top><b>WrtK</b></td><td>KBs written/sec</td></tr>
+<tr><td valign=top><b>Wrts</b></td><td>Writes/sec</td></tr>
 <tr><td valign=top><b>nK</b></td><td>Number of pages of of this size written</td></tr>
 </table>
 
-<p><b>Lustre Object Storage Server</b>, <i>collectl -sl -OD</i>
+<p><b>Lustre Object Storage Server</b>, <i>collectl -sl --lustopts D</i>
 
 <div class=terminal>
 <pre>
 # LUSTRE DISK BLOCK LEVEL SUMMARY
-#Rds  RdK 0.5K   1K   ...   Wrts WrtK 0.5K   1K   ...
+#RdK  Rds 0.5K   1K   ...   WrtK Wrts 0.5K   1K   ...
 </pre></div>
 
 <table>
-<tr><td valign=top><b>Rds</b></td><td>Reads/sec</td></tr>
 <tr><td valign=top><b>RdK</b></td><td>KBs read/sec</td></tr>
+<tr><td valign=top><b>Rds</b></td><td>Reads/sec</td></tr>
 <tr><td valign=top><b>nK</b></td><td>Number of blocks of of this size read</td></tr>
-<tr><td valign=top><b>Wrts</b></td><td>Writes/sec</td></tr>
 <tr><td valign=top><b>WrtK</b></td><td>KBs written/sec</td></tr>
+<tr><td valign=top><b>Wrts</b></td><td>Writes/sec</td></tr>
 <tr><td valign=top><b>nK</b></td><td>Number of blocks of of this size written</td></tr>
 </table>
 
@@ -355,48 +355,48 @@ Receive errors are broken out for errors, dropped, fifo and fragments.
 <div class=terminal>
 <pre>
 # NETWORK SUMMARY (/sec)
-#InPck  InErr OutPck OutErr   Mult   ICmp   OCmp    IKB    OKB  ISize  OSize
+# KBIn  PktIn SizeIn  MultI   CmpI  ErrIn  KBOut PktOut  SizeO   CmpO ErrOut
 </pre></div>
 
 <table>
-<tr><td><b>InPck</b></td>
-<td>Incoming packets/sec</td></tr>
-
-<tr><td><b>InErr</b></td>
-<td>Incoming errors/sec</td></tr>
-
-<tr><td><b>OutPck</b></td>
-<td>Outgoing packets/sec</td></tr>
-
-<tr><td><b>OutErr</b></td>
-<td>Outgoing errors/sec</td></tr>
-
-<tr><td><b>Mult</b></td>
-<td>Outgoing multicast packets/sec</td></tr>
-
-<tr><td><b>ICmp</b></td>
-<td>Incoming compressed packets/sec</td></tr>
-
-<tr><td><b>OCmp</b></td>
-<td>Outgoing compressed packets/sec</td></tr>
-
-<tr><td><b>IKB</b></td>
+<tr><td><b>KBIn</b></td>
 <td>Incoming KB/sec</td></tr>
 
-<tr><td><b>OKB</b></td>
-<td>Outgoing KB/sec</td></tr>
+<tr><td><b>PktIn</b></td>
+<td>Incoming packets/sec</td></tr>
 
-<tr><td><b>ISize</b></td>
+<tr><td><b>SizeI</b></td>
 <td>Average incoming packet size in bytes</td></tr>
 
-<tr><td><b>OSize</b></td>
+<tr><td><b>MultI</b></td>
+<td>Incoming multicast packets/sec</td></tr>
+
+<tr><td><b>CmpI</b></td>
+<td>Incoming compressed packets/sec</td></tr>
+
+<tr><td><b>ErrIn</b></td>
+<td>Incoming errors/sec</td></tr>
+
+<tr><td><b>KBOut</b></td>
+<td>Outgoing KB/sec</td></tr>
+
+<tr><td><b>PktOut</b></td>
+<td>Outgoing packets/sec</td></tr>
+
+<tr><td><b>SizeO</b></td>
 <td>Average outgoing packet size in bytes</td></tr>
+
+<tr><td><b>CmpO</b></td>
+<td>Outgoing compressed packets/sec</td></tr>
+
+<tr><td><b>ErrOut</b></td>
+<td>Outgoing errors/sec</td></tr>
 </table>
 
 <p><h3>NFS, <i>collectl -sf</i></h3>
 <p>
 These statistics will be reported for V3 servers by default but you can
-choose a different version and/or client data via -O.  They correspond
+choose a different version and/or client data via --nfsopts.  They correspond
 to the net, rpc and protocol specific sections of the nfsstat utility.
 
 <div class=terminal>
@@ -418,7 +418,7 @@ to the net, rpc and protocol specific sections of the nfsstat utility.
 <tr><td><b>Write</b></td><td>Number of writes/sec</td></tr>
 </table>
 
-<p><h3>NFS, <i>collectl -sf -OC</i></h3>
+<p><h3>NFS, <i>collectl -sf -nfsopts C</i></h3>
 <p>The data reported for clients is slightly different, specifically the 
 retrans and authref fields.
 

@@ -27,48 +27,49 @@ switches.
 
 <ul>
 <li>-s:  As is normally the case, one can specify '-sl' for summary level data, '-sL' for
-detail data or combine them to get both.
-However, since the client detail data can actually be presented at the individual filesystem or 
-OST level, a third option '-sLL' has been included to indicate OST level details, noting that 
-'-sL' aggregates at the filesystem.</li>
-<li>-O: The '-O' switch is used to provide further detail about the types of data that is to be
-collected/displayed.  There are 4 such values that collectl cares about:
+detail data or combine them to get both.  However, since the client detail data can actually
+be presented at the individual filesystem or OST level, there is an option to show the OST
+level details (filesystem details are the default) <i>see --lustopts O</i>.
+<li>--luistopts: This switch is used to provide further detail about the types of data that
+is to be collected/displayed.  There are 5 such values that collectl cares about:
 <ul>
 <li>B - rpc buffer level data.</li>
 <li>D - disk block statistics, which applies to both MDS and OSS servers.  One should also note
 this is specific to HP SFS and this data is not available in the open source version.</li>
 <li>M - client metadata (note that this was the default prior to collectl V1.6.2).</li>
+<li>O - for client details only, show results by OST
 <li>R - read_ahead statistics.  Unlike the other options, which generate a lot of data,
--OR may be used with brief mode.</li>
+<i>--lustopts R</i> may be used with brief mode.</li>
 <p>
 As it turns out, nothing is quite as simple as it seems and while the following
 case is not typical, it needs to be addressed for completeness.  Since collectl allows one to
 collect one set of data and to later display a different set,
 consider what happens in one were
-to collect multiple types of lustre data for an OST using -DB, but then just play back
-the basic OST data which is collected without specifying -O.
+to collect multiple types of lustre data for a client using <i>--lustopts MR<i>, but then just play back
+the basic client data which is collected without specifying <i>--lustopts</i>.
 By default, playback mode defaults
 to the settings data was collected with and to change the display one needs to explicity
 change those settings.  To meet this need, there are 3 additional values one can use with
--O, namely c, o and m to indicate on playback one wants to see the base data.  Natually
-these can be combined with other valid values for -O as well for maximum flexibility.
+--lustopts, namely c, o and m to indicate on playback one wants to see the base data.  Natually
+these can be combined with other valid values for --lustopts as well for maximum flexibility.
 </ul>
 </ul>
 <p>
 In the spirit of letting the user display whatever they want to, collectl will allow one to
-select multiple values for -O and it will try to display the results appropriately.
+select multiple values for <i>--lustopts</i> and it will try to display the results appropriately.
 Perhaps the easiest thing to do is just experiment and in most cases you'll get what you're 
-looking for.  There are a few combinations of -s and -O that do not make sense and if you 
+looking for.  There are a few combinations of -s and --lustopts that do not make sense and if you 
 choose one, you will be told.
 <p>
 
 <h3> What About Playback?</h3>
 As is always the case with playback, unless otherwise told to do something else, collectl 
 will playback its recorded data
-based on the parameters selected for collection.  In other words, if you specify '-OBR'
+based on the parameters selected for collection.  In other words, if you specify 
+<i>--lustopts OBR</i>
 in record mode, collectl will record both RPC buffer and read_ahead stats.  When you play the
 data back, it will then display both as well.  However, you also have the option of specifying
--O, typically thought of as a collection-only switch, and it will force the output to what
+<i>--lustopts</i>, typically thought of as a collection-only switch, and it will force the output to what
 you'd like it to be.  If you select a statistics type that hasn't been recorded,
 that information will be displayed, but as zeros.
 <p>
@@ -111,18 +112,8 @@ collectl will watch for too.  One should also note with -L it is possible to col
 for some services and later display data for a different set.  Naturally when displaying
 data for services you never collectled data on, those services will print as zeros.
 <p>
-If all this sounds confusing, just experiment with various combinations of -s, -L and -O
-and observe the behavior.
-<p>
-<h3>Known Problems</h3>
-In the process of enhancing lustre data collection in V1.5.0, it was discovered
-that collectl was not as robust as it should have been with respect to the
-identification of data files.  As a result, -sLL may capture erroneous data which
-cannot be played back with either the version that collected it or any newer versions.
-<p>
-The number of reads/writes of for lustre client side data is wrong!  The number KB's
-read and written when using the -sLL switch are reported as zero.  This is a problem
-with lustre and has been reported.
+If all this sounds confusing, just experiment with various combinations of -s,
+--lustopts and lustsvcs and observe the behavior.
 
 </body>
 </html>

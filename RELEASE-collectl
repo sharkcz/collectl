@@ -2,54 +2,88 @@ RELEASE NOTES FOR COLLECTL
 
 INSTALLATION
 
-For RedHat and SuSE environemnts:
+Using the rpm
 
     use rpm -i
     
     In both cases, collectl will not be configured to start on boot
     but can easily be set to do so with the chkconfig command.
 
-For Debian
+Installing from source
 
-    Convert the rpm package into a deb package using the experimental
-    tool "alien".  However, the process is not automatic and you will 
-    need to know a handful of Debian-specific concepts.  The key is to 
-    manually change the generated debian/rules file from DH_COMPAT=3 to 
-    DH_COMPAT=2	and then build the package with dpkg-buildpackage.  
-
-    For example:
-
-	alien -g -k -c collectl-1.3.0-1.noarch.rpm
-	sed 's/DH_COMPAT=3/DH_COMPAT=2/' collectl-1.3.0/debian/rules rules.new
-	cp rules.new collectl-1.3.0/debian/rules
-	chmod +x collectl-1.3.0/debian/rules
-	cd collectl-1.3.0/
-	dpkg-buildpackage
-	cd ..
-
-	You can then install with dpk -i collectl_1.3.0-1_all.deb
-
-    After installation the environment will be configured such that
-    collectl will start on system boot as is done with other Debian
-    kits.  If this is not what you want you can disable the behavior 
-    with 'update-rc.d'.
+    unpack the tarball, which you've obviously done
+    follow the instructions in the README, which basicall saw to run INSTALL
 
 KNOWN PROBLEMS/RESTRICTIONS
 
-  - in playback mode, make sure to deselect -O if recorded subsys not specified
-    or else will trip error checks in checkSubOpts()
-  - this version may generate errors "Ignoring '!' modifier for short options
-    with older versions of perl OR at least older version of the 'getopts'
-    module.
-  - when showing process command, only shows command portion since args can be 
-    quite long.  the args will still be saved in .pcr file when using -P
+  - There is a known problem with older perl Time::HiRes modules, newer
+    versions of glibc and colletcl intervals of 1 second or greater (see
+    http://collectl.sourceforge.net/HiResTime.html for more details) that
+    can result in 'setitimer' messages being logged at system startup when
+    collectl has been configured to run as a daemon.  these messages appear
+    to benign, but be sure to let someone know if that proves not to be the
+    case.  If collectl determines your system has this mismatch, it will 
+    report it as a warning in collectl's message file in /var/log/collectl
+    every time it starts as a daemon.  If you choose, you can easily turn 
+    off the checking by editing the entry at the bottom of /etc/collectl.conf 
+    named TimeHiResCheck and setting it to 0.
   - if run as a non-privileged users, network speeds will NOT be recorded in
     in file headers and the default speed specified by DefNetSpeed in the conf
     file will be used to determine if any network stats are bogus
-  - if system time is changed by more then the log rolling frequency after collectl
-    starts, multiple log files will be created during the next polling cycle(s)
-  - if a symlink is used to point to the executable, it MUST contain the full path
-    or collectl will not be able to find 'formatit.ph'
+  - if system time is changed by more then the log rolling frequency after
+    collectl starts, multiple log files will be created during the next polling
+    cycle(s)
+  - if a symlink is used to point to the executable, it MUST contain the full
+    path or collectl will not be able to find 'formatit.ph'
+
+3.0.0-4 July 1, 2008
+  - major switch cleanup
+    - completed cut-over from -O to xxxopts started in V2.6.4 by creating 
+      --nfsopts/--lustopts.  -O kept around for backwards compatibility
+      for nfs and lustre
+    - a couple of switch changes to reduce complexity of -o and to clarify new
+      meaning of handling time offsets and from/thru times for playback
+      - replaced -ot with --home
+      - replaced -oP to passwd
+      - replaced -t/--timezone to --offsettime which now takes a time in seconds
+      - replaced -b/-e to --from/--thru
+  - new switch: --procanalyze will produce space separated process summary file
+    (extension = prcs) that summaries process data for each unique process
+  - big enhancement for --top.  now when -s specified prints a scrolling window
+    showing histories (-oT recommended but not required) if in brief OR verbose
+    and all lines the same.  note - this mode does NOT support detail subsystem data
+    - also now identifying the parent who created the thread correctly
+  - output format cleanup to make things more concise.  no changes to plot format
+    - changed order of columns for brief lustre client to be consistent with all
+      other brief fields
+    - changed order of I/O related verbose subsystems (disk, network, infiniband 
+      and lustre) to be more consistent with brief mode.  in other words, all input
+      stats preceed output stats and KBs preceed I/Os.  NOTE - the order of the
+      fields for plot data have not been touched.
+  - reformatted help to make more readable (I hope) and fit in 80 columns too!
+  - nfs got inadevetantly dropped as a valid subsystem in V2.6.3 and it's now back
+  - wrong logic for verifying --procopts Z only allowed in -top mode
+  - -oA was calling printMini1Counters() instead of printBriefCounters()
+  - renamed printVerbose() to printTerm() because it makes more sense
+  - when reading diskstats, make sure leading space before 'sd' as there is
+    with $diskFilter in formatit.ph
+  - fixed printing process data that got broken in plot format
+  - made brief fields 1 column wider for lustre/infiniband in brief mode
+  - lustre client names didn't make it into header with -sLL was specified using
+    old option format
+  - discovered the cvt() routine wasn't being used everywhere in printBrief()
+  - found/fixed bug that's been there almost forever!  if you play back a file
+    recorded with -sZc but force collectl to only process -sZ it got fatal errors.
+    Just goes to show how many combinations of conditions there really are!
+  - fixed problem (I hope) where extra 'RECORD' separators were getting printed
+    for empty intervals
+  - fixed code that checks for another instance using IB since it wasn't dealing
+    with -s using both + and - in it such as a daemon that has -s+YZ-x
+  - couldn't play back process data on a PC without --passwd since /etc/passwd
+    not there
+  - wasn't dividing lustre client OST details by 1024
+  - discovered/fixed file header entry for switch options which only showed switches 
+    and not options.  since a read-only field it shouldn't have hurt anything.
 
 2.6.4 June 11, 2008
   - fixed references to gzerror() to be in string context and so error text correct

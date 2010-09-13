@@ -19,8 +19,8 @@
 #        NOTE - output from 256/512 are prefaced with %%% if from collectl.pl
 #               and ### if from formatit.ph
 # 1024 - show list of SLABS to be monitored
-# 2048 - playback preprocessing analysis
-# 4096 - print raw data as processed in playback mode, with timestamps
+# 2048 - playback preprocessing 
+# 4096 - 
 # 8192 - show creation of RAW, PLOT and EXPORT files
 
 # debug tricks
@@ -64,7 +64,6 @@ use Time::Local;
 use IO::Socket;
 use IO::Select;
 
-$Passwd=       '/etc/passwd';
 $Cat=          '/bin/cat';
 $Grep=         '/bin/grep';
 $Egrep=        '/bin/egrep';
@@ -99,7 +98,7 @@ if ($PerlVers lt '5.08.00')
   print "See /opt/hp/collectl/docs/FAQ-collectl.html for details.\n";
 }
 
-$Version=  '2.6.4';
+$Version=  '3.0.0-4';
 $Copyright='Copyright 2003-2008 Hewlett-Packard Development Company, L.P.';
 $License=  "collectl may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
@@ -166,7 +165,7 @@ $OstNames=$MdsNames=$LusDiskNames=$LusDiskDir='';
 $NumLustreCltOsts=$NumLusDisks=$MdsFlag=0;
 $NumSlabs=$SlabGetProc=$SlabSkipHeader=$newSlabFlag=0;
 $wideFlag=$coreFlag=$newRawFlag=0;
-$totalCounter=0;
+$totalCounter=$separatorCounter=0;
 $NumCpus=$NumDisks=$NumNets=$DiskNames=$NetNames=$HZ='';
 $NumOst=$NumFans=$NumPwrs=$NumTemps=0;
 $OFMax=$SBMax=$DQMax=$FS=$ScsiInfo=$HCAPortStates='';
@@ -194,7 +193,7 @@ $Interval=     10;
 $Interval2=    60;
 $Interval3=   300;
 $LimSVC=       30;
-$LimIOS=       10;
+$LimIOS=       10 ;
 $LimLusKBS=   100;
 $LimLusReints=1000;
 $LimBool=       0;
@@ -205,9 +204,10 @@ $LustreSvcLunMax=10;
 $LustreMaxBlkSize=512;
 $LustreConfigInt=1;
 $InterConnectInt=900;
-$HeaderRepeat=20;
+$TermHeight=24;
 $DefNetSpeed=10000;
 $IbDupCheckFlag=1;
+$TimeHiResCheck=1;
 
 # Standard locations
 $SysIB='/sys/class/infiniband';
@@ -215,7 +215,7 @@ $SysIB='/sys/class/infiniband';
 # These aren't user settable but are needed to build the list of ALL valid
 # subsystems
 $SubsysDet=   "CDEFJLNTXYZ";
-$SubsysExcore="y";
+$SubsysExcore="fy";
 
 # These are the subsystems allowed in brief mode
 $BriefSubsys="cdfFijlmnstxy";    # note - use of y requires SAME intervals!
@@ -243,14 +243,14 @@ $limIOS=$LimIOS;
 $limBool=$LimBool;
 $limLusKBS=$LimLusKBS;
 $limLusReints=$LimLusReints;
-$headerRepeat=$HeaderRepeat;
+$termHeight=$TermHeight;
 
 # On LINUX and only if associated with a terminal and we can find 'resize', 
-# use the value of LINES to set header repeat.
+# use the value of LINES to set $headerRepeat but also subtract room for header
 if (!$PcFlag && !$daemonFlag && $Resize ne '' && defined($ENV{TERM}) && $ENV{TERM}=~/xterm/)
 {
   `$Resize`=~/LINES.*?(\d+)/m;
-  $headerRepeat=$1-2;  # leave room for header
+  $termHeight=$1;
 }
 
 # let's also see if there is a terminal attached.  this is currently only 
@@ -267,25 +267,33 @@ $briefFlag=1;
 $showPHeaderFlag=$showMergedFlag=$showHeaderFlag=$showSlabAliasesFlag=$showRootSlabsFlag=0;
 $verboseFlag=$vmstatFlag=$alignFlag=0;
 $quietFlag=$utcFlag=0;
-$address=$beginTime=$endTime=$filename=$flush='';
+$address=$beginTime=$endTime=$filename=$flush=$fileRoot='';
 $limits=$lustreSvcs=$runTime=$subOpts=$playback=$playbackFile=$rollLog='';
 $groupFlag=$msgFlag=$niceFlag=$plotFlag=$sshFlag=$wideFlag=$rawFlag=$ioSizeFlag=0;
 $userOptions=$userInterval=$userSubsys='';
 $export=$expName=$expDir=$expOpts=$topOpts=$topType='';
-$rawtooFlag=$autoFlush=$allFlag=0;
+$homeFlag=$rawtooFlag=$autoFlush=$allFlag=0;
 $procOpts=$slabOpts='';
 $procFilt=$slabFilt='';
+$procAnalFlag=$procAnalyzed=0;
+$lastLogPrefix=$passwdFile='';
+$nfsOpts=$lustOpts='';
 
 # Since --top has optionals arguments, we need to see if it was specified without
 # one and stick in the defaults noting -1 means to use the window size for size
+$topFlag=0;
 for (my $i=0; $i<scalar(@ARGV); $i++)
 {
   if ($ARGV[$i]=~/--to/)
   {
+    $topFlag=1;
     splice(@ARGV, $i+1, 0, 'time,-1')    if $i==(scalar(@ARGV)-1) || $ARGV[$i+1]=~/^-/;
     last;
   }
 }
+
+$scrollEnd=0;
+$headerRepeat=(!$topFlag) ? $termHeight-2 : 5;
 
 # now that we've made it through first call fo Getopt, disable pass_through so
 # we can catch any errors in parameter names.
@@ -305,6 +313,7 @@ GetOptions('align!'     => \$alignFlag,
            'flush=i'    => \$flush,
            'G!'         => \$groupFlag,
            'group!'     => \$groupFlag,
+           'home!'      => \$homeFlag,
            'i=s'        => \$userInterval,
            'interval=s' => \$userInterval,
 	   'h!'         => \$hSwitch,
@@ -313,15 +322,16 @@ GetOptions('align!'     => \$alignFlag,
            'l=s'        => \$limits,
            'limits=s'   => \$limits,
 	   'L=s'        => \$lustreSvcs,
-	   'lustresvc=s'=> \$lustreSvcs,
+	   'lustsvcs=s' => \$lustreSvcs,
 	   'm!'         => \$msgFlag,
            'messages!'  => \$msgFlag,
            'o=s'        => \$userOptions,
            'options=s'  => \$userOptions,
 	   'O=s'        => \$subOpts,
-           'subopts=s'  => \$subOpts,
+           'subopts=s'  => \$subOptsX,
 	   'N!'         => \$niceFlag,
            'nice!'      => \$niceFlag,
+           'passwd=s'   => \$passwdFile,
 	   'p=s'        => \$playback,
            'playback=s' => \$playback,
 	   'P!'         => \$plotFlag,
@@ -337,8 +347,6 @@ GetOptions('align!'     => \$alignFlag,
 	   'S!'         => \$sshFlag,
            'ssh!'       => \$sshFlag,
 	   'top=s'      => \$topOpts,
-           'T=s'        => \$timeOffset,
-           'timezone=s' => \$timeOffset,
            'utc!'       => \$utcFlag,
 	   'v!'         => \$vSwitch,
            'version!'   => \$vSwitch,
@@ -347,18 +355,24 @@ GetOptions('align!'     => \$alignFlag,
 	   'w!'         => \$wideFlag,
            'x!'         => \$xSwitch,
            'helpextend!'=> \$xSwitch,
-	   'Y=s'        => \$slabFilt,
+	   'Y=s'        => \$slabFiltX,
 	   'slabfilt=s' => \$slabFilt,
-	   'Z=s'        => \$procFilt,
+	   'Z=s'        => \$procFiltX,
 	   'procfilt=s' => \$procFilt,
 
            'all!'          => \$allFlag,
            'export=s'      => \$export,
            'expdir=s'      => \$expDir,
+	   'from=s'        => \$fromTime,
+	   'thru=s'        => \$thruTime,
 	   'headerrepeat=i'=> \$headerRepeat,
            'hr=i'          => \$headerRepeat,
-           'verbose!'      => \$verboseFlag,
-           'vmstat!'       => \$vmstatFlag,
+           'lustopts=s'    => \$lustOpts,
+           'nfsopts=s'     => \$nfsOpts,
+           'offsettime=s'  => \$offsetTime,
+           'procanalyze!'  => \$procAnalFlag,
+	   'procopts=s'    => \$procOpts,
+           'rawtoo!'       => \$rawtooFlag,
            'showsubsys!'   => \$showSubsysFlag,
            'showoptions!'  => \$showOptionsFlag,
            'showsubopts!'  => \$showSuboptsFlag,
@@ -366,9 +380,9 @@ GetOptions('align!'     => \$alignFlag,
            'showplotheader!'  =>\$showPHeaderFlag,
 	   'showslabaliases!' =>\$showSlabAliasesFlag,
 	   'showrootslabs!'   =>\$showRootSlabsFlag,
-           'rawtoo!'       => \$rawtooFlag,
-	   'procopts=s'    => \$procOpts,
 	   'slabopts=s'    => \$slabOpts,
+           'verbose!'      => \$verboseFlag,
+           'vmstat!'       => \$vmstatFlag,
            ) or error("type -h for help");
 
 #    O p e n    A    S o c k e t  ?
@@ -439,7 +453,29 @@ showOptions()      if $showOptionsFlag;
 showSubopts()      if $showSuboptsFlag;
 showSlabAliases($slabFilt)  if $showSlabAliasesFlag || $showRootSlabsFlag;
 
-#    H a n d l e    V 2 . 0    R e m a p p i n g s    F i r s t
+# These switches/options have changed and will hopeefully be dropped mid 2009
+error('-oP replaced with --passwd')                    if $userOptions=~/P/;
+error('-b and -e replaced with --from/--thru')         if $beginTime ne '' || $endTime ne '';
+error('-Y and -Z renamed to --slabfilt/--procfilt')    if defined($slabFiltX)||defined($procFiltX);
+error('--subopts split into --nfsopts/lustopts')       if defined($subOptsX);
+error('-sLL replaced with -sL --lustopts O')           if $userSubsys=~/LL/;
+
+# allow either -O or --nfs/lust opts and make sure all 3 are self-consistent
+error('-O or --nfsopts/--lustopts but not both')       if $subOpts ne '' && ($lustOpts ne '' || $nfsOpts ne '');
+error('invalid value for --nfsopts')                   if $nfsOpts ne '' && $nfsOpts!~/^[23C]+$/;
+error('invalid value for --lustopts')                  if $lustOpts ne '' && $lustOpts!~/^[BDMORcom]+$/;
+
+# if -sf, one of these 2 needs to contain a 2 or the default of 3
+# Ultimately $subOpts needs to be the same as the combination of nfs/lust opts
+if ($userSubsys ne '' && $userSubsys=~/f/i)
+{
+  $subOpts.='3'    if $subOpts ne '' && $subOpts!~/[23]/;
+  $nfsOpts.='3'    if $subOpts eq '' && $nfsOpts!~/[23]/;
+}
+$subOpts="$nfsOpts$lustOpts"                           if $nfsOpts ne '' || $lustOpts ne '';
+$nfsOpts=$lustOpts=$subOpts;
+$nfsOpts=~s/[BDMORcom]//g   if $nfsOpts ne '';
+$lustOpts=~s/[23C]//g       if $lustOpts ne '';
 
 if ($vmstatFlag)
 {
@@ -467,11 +503,6 @@ $options= $userOptions;
 $interval=($userInterval ne '') ? $userInterval : $Interval;
 $subsys=  ($userSubsys ne '')   ? $userSubsys   : $SubsysCore;
 
-# Other mappings
-$showHeaderFlag=1    if $debug & 4096;
-error("--showheader in collection mode only supported on linux")
-    if $PcFlag && $playback eq '';
-
 #    S u b s y s  /  I n t e r v a l    R e s o l u t i o n
 
 # This needs to get done as soon a possible...
@@ -491,38 +522,6 @@ if (!$daemonFlag)
 
   $SubsysDef=$SubsysDefInt;
   $subsys=$SubsysDef       if $userSubsys eq '';
-
-  # If only doings slabs/processes, set the primary interval to be the
-  # same as the secondary one (if specified) or else we'll see interval
-  # headers for all the primaries
-  $interval=$Interval="$1:$1"    if $subsys=~/^[yz]$/gi && $interval=~/:(\d+)/;
-}
-
-# --top forces -ot if not in playback mode.  if no process interval
-# specified set it to the monitoring on.  also note at this point
-# $headerRepeat has been set to the terminal height -2.  Also note if
-# the user specified -s, we need to leave to use part of the screen
-# height for it BUT is also specified a size with --top, THAT piece
-# is not used for -s.
-if ($topOpts ne '')
-{
-  ($topType, $numTop)=split(/,/, $topOpts);
-  $topType='time'          if $topType eq '';
-  $subsysSize=($userSubsys ne '') ? length($userSubsys)*3+1 : 0;
-  $numTop=$headerRepeat-$subsysSize    if !defined($numTop) || $numTop==-1;
-  error("only --top flt make sense with --procopt m")
-      if $topType ne 'flt' && $procOpts=~/m/;
-  error("--top flt does not make sense with --procopt i")
-      if $topType eq 'flt' && $procOpts=~/i/;
-  error("only valid types for --top are flt, io, ioc, ioall and time")
-      if $topType!~/^time$|^io$|^ioc$|^ioall$|^flt$/;
-
-  if ($playback eq '')
-  {
-    $options.='t';
-    $subsys=($userSubsys eq '') ? 'Z' : "${userSubsys}Z";
-    $interval.=":$interval"    if $interval!~/:/;
-  }
 }
 
 # This is tricky as the main logic for checking intervals lives further
@@ -576,7 +575,97 @@ if ($subsys=~/[+-]/)
   }
   $subsys=$temp;
 }
+
+# note that --procanalyze and --top can change $subsys
 setOutputFormat();
+
+#    S p e c i a l    F o r m a t s
+
+if ($procAnalFlag)
+{
+  error("--procanalyze requires -p")              if $playback eq '';
+  error("--procanalyze requires -f")              if $filename eq '';
+  error("--procanalyze doesn't support --utc")    if $utcFlag;
+
+  # No default from playback file in this mode, so go by whatever user 
+  # specificed with -s and if no 'Z, stick one in there and then make
+  # user $userSubsys and $subsys agree so initFormat() won't diddle
+  # the values.
+  $procAnalOnlyFlag=($userSubsys!~/Z/) ? 1 : 0;
+  $userSubsys.='Z'    if $procAnalOnlyFlag;
+  $subsys=$userSubsys;
+  $plotFlag=1;
+}
+
+# We have to wait for '$subsys' to be defined before handling top and it
+# felt right to keep the code together with --procanalyze.
+
+# --top forces $homeFlag if not in playback mode.  if no process interval
+# specified set it to the monitoring one.
+if ($topOpts ne '')
+{
+  # --top does NOT support detail data other than Z
+  $temp=$SubsysDet;
+  $temp=~s/Z//;
+  error("--top does not support detail data, how about a second window?")
+      if $subsys=~/[$temp]/;
+
+  # Don't diddle original setting in '$userSubsys', use a copy!
+  # Subtle - the verbose flag wouldn't have been set if ONLY processes and it should be
+  # Similarly, Z should not be considered when looking to see is same columns
+  # in verbose mode.
+  my $tempSubsys=$userSubsys;
+  $tempSubsys=~s/Z//;
+  $verboseFlag=1     if $tempSubsys eq '';
+  $sameColsFlag=1    if $verboseFlag && length($tempSubsys)==1;
+  $briefFlag=($verboseFlag) ? 0 : 1;
+
+  my $subsysSize=0;
+  if ($tempSubsys ne '' && $playback eq '')
+  {
+    if (!$verboseFlag || $sameColsFlag)
+    {
+      # in brief or single-subsys verbose mode the area size if fixed by --hr
+      $subsysSize=$headerRepeat+2;
+    }
+    else
+    {
+      # ...but multi-subsys verbose mode it's driven by the number of subsystems
+      $subsysSize=length($tempSubsys)*3;
+    }
+    $scrollEnd=$subsysSize+1;
+  }
+
+  ($topType, $numTop)=split(/,/, $topOpts);
+  $topType='time'          if $topType eq '';
+
+  $termHeight=12    if $playback ne '';
+  $numTop=$termHeight-$scrollEnd-2    if !defined($numTop) || $numTop==-1;
+  #print "HEIGHT: $termHeight  SUBSIZE: $subsysSize  HR: $headerRepeat NUMTOP: $numTop\n";
+
+  error("not enough lines in window for display")
+      if $numTop<1;
+  error("--top flt does not make sense with --procopt i")
+      if $topType eq 'flt' && $procOpts=~/i/;
+  error("only valid types for --top are flt, io, ioc, ioall and time")
+      if $topType!~/^time$|^io$|^ioc$|^ioall$|^flt$/;
+
+  if ($playback eq '')
+  {
+    $homeFlag=1;
+    $subsys="${tempSubsys}Z";
+    $interval.=":$interval"    if $interval!~/:/;
+  }
+
+  error("--top only reports timestamps for interactive, non-process data")
+      if $options=~/[dDT]/ && ($playback ne '' || $subsys eq 'Z');
+}
+
+# These checks can only be done after setOutputFormat()
+error("--top only reports timestamps for single subsystem verbose data")
+      if $options=~/[dDT]/ && $numTop && ($playback ne '' || !$sameColsFlag);
+#error("time formatting options only apply to non-top processes when filtering")
+#      if $options=~/[dDT]/ && $subsys eq 'Z' && ($numTop || $procFilt eq '');
 
 #    E x p o r t    M o d u l e s
 
@@ -631,8 +720,9 @@ $utcFlag=1    if $options=~/U/;
 
 # should I migrate a lot of other simple tests here?
 error("you cannot specify -f with --top")                  if $topOpts ne '' && $filename ne '';
-
-error('-OT only makes sense with --top or -sZ')            if $subOpts=~/W/ && $subsys!~/Z/ && !$topType;
+error("--home does not apply to -p")                       if $homeFlag && $playback ne '';
+error("--home and -sZ doesn't make sense.  use --top")     if $homeFlag && $subsys=~/Z/ && $topOpts eq '';
+error('--procopts only makes sense with --top or -sZ')     if $procOpts ne '' && $subsys!~/Z/ && !$topType;
 
 error('--headerrepeat must be an integer')                 if $headerRepeat!~/^[\-]?\d+$/;
 error('--headerrepeat must be >= -1')                      if $headerRepeat<-1;
@@ -643,18 +733,24 @@ error("--rawtoo requires -P or --export")                  if $rawtooFlag && !$p
 error("--rawtoo and -P requires -f")                       if $rawtooFlag && $plotFlag && $filename eq '';
 error("--rawtoo cannot be used with -p")                   if $rawtooFlag && $playback ne '';
 error("-ou/--utc only apply to -P format")                 if $utcFlag && !$plotFlag;
-error("can't mix -ou with other formats")                  if $utcFlag && $options=~/[dDT]/;
+error("can't mix UTC time with other time formats")        if $utcFlag && $options=~/[dDT]/;
 error("-oz only applies to -P files")                      if $options=~/z/ && !$plotFlag;
 error("--sep cannot be a '%'")                             if defined($SEP) && $SEP eq '%';
 error("--sep only applies to plot format")                 if defined($SEP) && !$plotFlag;
 error("--sep much be 1 character or a number")             if defined($SEP) && length($SEP)>1 && $SEP!~/^\d+$/;
 
 error('--showheader not allowed with -f')                  if $filename ne '' && $showHeaderFlag;
+error("--showheader in collection mode only supported on linux")
+                                                           if $PcFlag && $playback eq '' && $showHeaderFlag;
 error('--showmergedheader not allowed with -f')            if $filename ne '' && $showMergedFlag;
 error('--showplotheader not allowed with -f')              if $filename ne '' && $showPHeaderFlag;
 
 error("--align require HiRes time module")                 if $alignFlag && !$hiResFlag;
 
+error("--passwd only allow in playback mode")              if $passwdFile ne '' && $playback eq '';
+error("can't find file specified with --passwd")           if $passwdFile ne '' && !-e $passwdFile;
+
+$passwdFile='/etc/passwd'    if $passwdFile eq '';
 $allThreadFlag=($procOpts=~/t/) ? 1 : 0;
 
 # The separator is either a space if not defined or the character supplied if 
@@ -829,17 +925,17 @@ if ($limits ne '')
 }
 
 # options
-error("invalid option")    if $options ne "" && $options!~/^[\^12aAcdDFGgHimnpPtTuxXz]+$/g;
+error("invalid option")    if $options ne "" && $options!~/^[\^12aAcdDFGgimnPTuUxXz]+$/g;
 error("-oi only supported interactively with -P to terminal")    
     if $options=~/i/ && ($playback ne '' || !$plotFlag || $filename ne '');
 $miniDateFlag=($options=~/d/i) ? 1 : 0;
 $miniTimeFlag=($options=~/T/)  ? 1 : 0;
 error("use only 1 of -o dDT") 
     if ($miniDateFlag && $miniTimeFlag) || ($options=~/d/ && $options=~/D/);
-error("-ot only applies to terminal output")
-                             if $options=~/t/ && $filename ne "";
-error("-ot cannot be used with -A")
-                             if $options=~/t/ && $sockFlag;
+error("--home only applies to terminal output")
+                             if $homeFlag && $filename ne "";
+error("--home cannot be used with -A")
+                             if $homeFlag && $sockFlag;
 error("option $1 only apply to -P")
                              if !$plotFlag && $options=~/([12ac])/;
 error("-oa conflicts with -oc") 
@@ -869,14 +965,14 @@ $FS=".${precision}f";
 
 # where to look for nfs client/server data
 $procNfs="/proc/net/rpc/nfs";
-$procNfs.="d"    if $subOpts!~/C/;
+$procNfs.="d"    if $nfsOpts!~/C/;
 
 # playback mode specific
 error('--showmerged only applied to playback mode')    if $playback eq '' && $showMergedFlag;
 if ($playback ne "")
 {
-  error("-T must be in hours with optional leading '-'")
-      if defined($timeOffset) && $timeOffset!~/^-?\d+/;
+  error("--offsettime must be in seconds with optional leading '-'")
+      if defined($offsetTime) && $offsetTime!~/^-?\d+/;
 
   $playback=~s/['"]//g;    # in case quotes passed through from script
   error("--align only applies to record mode")    if $alignFlag;
@@ -920,12 +1016,23 @@ if ($playback ne "")
 # end time
 $purgeDays=0;
 
-# if specified make sure valid
-error("-b and -e only apply to -p")
-    if $playback eq "" && ($beginTime ne "" || $endTime ne "");
-checkTime("-b", $beginTime)    if $beginTime ne "";
-checkTime("-e", $endTime)      if $endTime ne "";
- 
+if (defined($fromTime) || defined($thruTime))
+{
+  error("--from/--thru only apply to -p")
+      if $playback eq '';
+  error("do not specify 2 times with --thru")
+      if defined($thruTime) && index($thruTime, '-')!=-1;
+  error("do not specify 2 times with --from and also use --thru")
+      if defined($fromTime) && defined($thruTime) && index($fromTime, '-')!=-1;
+
+  ($fromTime, $thruTime)=split(/-/, $fromTime)
+      if !defined($thruTime);
+  $fromTime="0$fromTime"          if defined($fromTime) && $fromTime=~/^\d:/;
+  $thruTime="0$thruTime"          if defined($thruTime) && $thruTime=~/^\d:/;
+  checkTime('from', $fromTime)    if defined($fromTime);
+  checkTime('thru', $thruTime)    if defined($thruTime);
+}
+
 $endSecs=0;
 if ($runTime ne "")
 {
@@ -1022,8 +1129,8 @@ if ($rollLog ne '')
   logmsg("I", "First log rollover will be: $rollFirst");
 }
 
-# for option 't' we do some vt100 cursor control
-if ($options=~/t/)
+# for --home we do some vt100 cursor control
+if ($homeFlag)
 {
   $home=sprintf("%c[H", 27);     # top of display
   $clr=sprintf("%c[J", 27);      # clear to end of display
@@ -1060,8 +1167,8 @@ if ($playback ne '')
   $numProcessed=0;
   $elapsedSecs=0;
   $preprocFlags=preprocessPlayback($playback);
+
   $lastPrefix=$prefixPrinted='';
-  $saveSubOpts=$subOpts;    # in case specified
   while ($file=glob($playback))
   {
     # Unfortunately we need a more unique global name for the file we're doing
@@ -1088,6 +1195,7 @@ if ($playback ne '')
     $numProcessed++;
     $file=~/(.*-\d{8})-\d{6}\.raw[p]*/;
     $prefix=$1;
+    $fileRoot=basename($prefix);
     if ($prefix ne $lastPrefix)
     {
       if ($msgFlag && defined($preprocMessages{$prefix}))
@@ -1117,7 +1225,8 @@ if ($playback ne '')
     error("-sj or -sJ with -P also requires CPU details so add C or remove J.")
 	if $subsys=~/j/i && $subsys!~/C/ && $plotFlag;
 
-    error("this data file does not contain 'io' data")    if $topType eq 'io' && !$processIOFlag;
+    error("data file does not contain 'io' data")       if $topType eq 'io' && !$processIOFlag;
+    error("data file does not contain process data")    if $procAnalFlag && $recSubsys!~/Z/;
 
     # Need to reset the globals for the intervals that gets recorded in the header.
     # Note the conditional on the assignments for i2 and i3.  This is because they SHOULD be
@@ -1143,44 +1252,32 @@ if ($playback ne '')
       next;
     }
 
-    # generally, -O is ignored during playback other than to let us know the 
-    # type of nfs data, but in the case of lustre, we actually use it to 
-    # control potentially several ways the data can be displayed.  
-    # therefore if specified by the user, override any of the lustre settings 
-    # associated with the data.
-    if ($saveSubOpts=~/[comBDMR]/)
-    {
-      $temp=$saveSubOpts;
-      $temp=~s/[^comBDMR]//g;     # remove ALL but lustre switches from -O
-      $subOpts=~s/[comBDMR]//g;   # now remove ALL lustre switches from -O
-      $subOpts.=$temp;
-    }
-
-    # on the off chance that lustre data was collected with -O by not played
-    # back, clear the lustre settings or else we're screw up the default
+    # on the off chance that lustre data was collected with --lustopts but not
+    # played back, clear the lustre settings or else we're screw up the default
     # playback mode.
-    $subOpts=~s/[BDMR]//g    if $subsys!~/l/i;
+    $lustOpts=''    if $subsys!~/l/i;
 
-    # conversely, if data was collected using lustre -O options but lustre
+    # conversely, if data was collected using --lustOpts but lustre
     # wasn't active during the time this file was collected, the header will
     # indicate this log does NOT contain any lustre data but the -s will and 
-    # so we need to turn off any -O lustre switches or else 'checkSubOpts()' 
+    # so we need to turn off any -lustOpts or else 'checkSubsysOpts()' 
     # will report a conflict.
-    $subOpts=~s/B//g       if $subOpts=~/B/    && $CltFlag==0 && $OstFlag==0;
-    $subOpts=~s/D//g       if $subOpts=~/D/    && $MdsFlag==0 && $OstFlag==0;
-    $subOpts=~s/[MR]//g    if $subOpts=~/[MR]/ && $CltFlag==0;
+    $lustOpts=~s/B//g       if $lustOpts=~/B/    && $CltFlag==0 && $OstFlag==0;
+    $lustOpts=~s/D//g       if $lustOpts=~/D/    && $MdsFlag==0 && $OstFlag==0;
+    $lustOpts=~s/[MR]//g    if $lustOpts=~/[MR]/ && $CltFlag==0;
 
-    # Now we can check for valid/consistent sub-options
-    checkSubOpts();          # Make sure valid
+    # Now we can check for valid/consistent sub-options (not sure this is still
+    # necessary, but it shouldn't hurt).
+    checkSubsysOpts();       # Make sure valid
     setOutputFormat();       # use same values as for interactive mode
 
     # We need to set the 'coreFlag' based on whether or not any core 
-    # subsystems in in playback file.
-    $coreFlag=($recSubsys=~/[a-z]/) ? 1 : 0;
+    # subsystems will be processed.
+    $coreFlag=($subsys=~/[a-z]/) ? 1 : 0;
 
     # if a specific time offset wasn't selected, find difference between 
     # time collectl wrote out the log and the time of the first timestamp.
-    if (!defined($timeOffset) && $recSecs ne '')
+    if (!defined($offsetTime) && $recSecs ne '')
     {
       $year=substr($recDate, 0, 4);
       $mon= substr($recDate, 4, 2);
@@ -1191,15 +1288,10 @@ if ($playback ne '')
       $locSecs=timelocal($sec, $min, $hour, $day, $mon-1, $year-1900);
       $timeAdjust=$locSecs-$recSecs;
     }
-    elsif (defined($timeOffset))
+    elsif (defined($offsetTime))
     {
-      $timeAdjust=$timeOffset*3600;    # user override of default
+      $timeAdjust=$offsetTime;    # user override of default
     }
-    else
-    {
-      $timeAdjust=0;   # logs generated with pre-V1.5.3 do anything without -T
-    }
-    printf "Adjust Time By: %d hours\n", $timeAdjust/3600   if $debug & 1;
 
     if ($subsys=~/D/ && $recSubsys=~/d/ && $recSubsys!~/c/)
     {
@@ -1239,31 +1331,31 @@ if ($playback ne '')
     {
       print "Prefix: $prefix  Host: $Host\n"    
 	  if ($debug & 1) && !$logToFileFlag;
-      $headersPrinted=$headersPrintedProc=$totalCounter=$prcFileCount=0;
+      $headersPrinted=$headersPrintedProc=$totalCounter=$separatorCounter=$prcFileCount=0;
       $newOutputFile=($filename ne '') ? 1 : 0;
       $playback{$key}=1;
     }
     $prcFileCount++    if $subsys=~/Z/;
     #print "NEW PREFIX: $newPrefixDate  NEW FILE: $newOutputFile\n";
 
-    # set begin/end dates to that of collection file if none specified.  Note
+    # set from/thru dates to that of collection file if none specified.  Note
     # that since the first interval is never reported, but rather used for base
     # point, we need to reduce begin time by 1 interval (if possible) so that 
     # the first interval reported matches the time we chose.
-    $beginSecs=$endSecs=0;
-    if ($beginTime ne "")
+    $fromSecs=$thruSecs=0;
+    if (defined($fromTime))
     {
       $temp=$recDate;
       $temp=~s/-.*//;    # get rid of time
-      $beginTime="$temp-$beginTime"    if $beginTime!~/-/;
-      $beginSecs=getSeconds($beginTime)-$interval;
+      $fromTime="$temp-$fromTime"    if $fromTime!~/-/;
+      $fromSecs=getSeconds($fromTime)-$interval;
     }
-    if ($endTime ne "")
-    {
+    if (defined($thruTime))
+    { 
       $temp=$recDate;
       $temp=~s/-.*//;    # get rid of time
-      $endTime="$temp-$endTime"        if $endTime!~/-/;
-      $endSecs=getSeconds($endTime);
+      $thruTime="$temp-$thruTime"        if $thruTime!~/-/;
+      $thruSecs=getSeconds($thruTime).'.999';   # to catch fractional times
     }
 
     if ($zInFlag)
@@ -1312,16 +1404,8 @@ if ($playback ne '')
       $newOutputFile=0;
     }
 
-    # When playing back process data, if possible use /etc/passwd to translate
-    # UIDs to username if the same host OR use the one specified in collectl.conf
-    # if -OB.  Otherwise we just report the value.
-    if ($ZFlag)
-    {
-      $passwdFile='';
-      $passwdFile='/etc/passwd'    if $myHost eq $Host;
-      $passwdFile=$Passwd          if $options=~/P/;
-      loadUids($passwdFile)        if $passwdFile ne '';
-    }
+    # When playing back process data, use /etc/passwd unless --passwd specified
+    loadUids($passwdFile)    if $ZFlag;
 
     # when processing data for a new prefix/date and printing on a terminal
     # we need to print totals from previous file(s) if there were any and 
@@ -1330,18 +1414,17 @@ if ($playback ne '')
     {
       if ($options=~/A/ && $numProcessed>1)
       {
-        printMini1Counters('A');
-        printMini1Counters('T');
+        printBriefCounters('A');
+        printBriefCounters('T');
       }
       $elapsedSecs=0;
       resetBriefCounters();
     }
-
-    # if a begin time, we start out in skip mode.
+    
+    # if a from time, we start out in skip mode.
     # we need to init $newSeconds so debugging won't gen uninits on 1st pass
     $firstTime=1;
-    $skip=($beginSecs) ? 1 : 0;
-
+    $skip=($fromSecs) ? 1 : 0;
     undef($fileFrom);
     $fileThru=0;
     $newMarkerWritten=0;
@@ -1379,8 +1462,8 @@ if ($playback ne '')
         $lastSeconds=$newSeconds;
         $newSeconds=$1+$timeAdjust;
         $newInterval=1;
-  	$skip=0    if $beginSecs && $newSeconds>=$beginSecs;
-        last       if $endSecs   && $newSeconds>$endSecs;
+  	$skip=0    if $fromSecs && $newSeconds>=$fromSecs;
+        last       if $thruSecs && $newSeconds> $thruSecs;
 
         # track thru times for each file to be used for totals/averages
         # in terminal mode
@@ -1424,7 +1507,7 @@ if ($playback ne '')
       # the end of the file without -e, the THRU date is pointing to the 
       # start of the next interval which has no data.
       $playbackSecs=$fileThru-$fileFrom-$interval;
-      $playbackSecs+=$interval    if $endSecs && $newSeconds>$endSecs;
+      $playbackSecs+=$interval    if $thruSecs && $newSeconds>$thruSecs;
       $elapsedSecs+=$playbackSecs;
       #print "PLAYBACK SECS: $playbackSecs  PREFIX SECS: $elapsedSecs\n";
     }
@@ -1436,12 +1519,15 @@ if ($playback ne '')
     logmsg("E", "Error reading '$file'\n")    if $bytes==-1;
   }
 
+  # Always print last set of summary data...
+  printProcAnalyze()    if $procAnalFlag;
+
   # if printing to terminal, be sure to print averages & totals for last file
   # processed
   if ($options=~/A/ && $filename eq '')
   {
-    printMini1Counters('A');
-    printMini1Counters('T');
+    printBriefCounters('A');
+    printBriefCounters('T');
   }
 
   `stty echo`    if !$PcFlag && $termFlag;   # in -M1, we turned it off
@@ -1454,7 +1540,7 @@ if ($playback ne '')
 ###########################
 
 # Would be nice someday to migrate all record-specific checks here
-error("-T only applies to playback mode")    if defined($timeOffset);
+error("-offsettime only applies to playback mode")    if defined($offsetTime);
 
 # need to load even if interval is 0, but don't allow for -p mode
 error("threads only currently supported in 2.6 kernels")
@@ -1466,6 +1552,7 @@ loadPids($procFilt)     if $subsys=~/Z/;
 $message="V$Version Beginning execution on $myHost...";
 logmsg("I", $message);
 logsys($message);
+checkHiRes()    if $daemonFlag;    # check for possible HiRes/glibc incompatibility
 
 # initialize. noting if the user had only selected subsystems not supported
 # on this platform, initRecord() will have deselected them!
@@ -1489,17 +1576,17 @@ loadSlabs($slabFilt)    if $subsys=~/y/i;
 initFormat();
 $recVersion=$Version;
 
-# Since we have to check subOpts against data in recorded file, let's
-# not do it twice, but we have to do it AFTER initFormat()
-checkSubOpts();
+# Since we have to check subsystem specific options against data in recorded 
+# file, let's not do it twice, but we have to do it AFTER initFormat()
+checkSubsysOpts();
 
 #    L a s t    M i n u t e    V a l i d a t i o n
 
 # These can only be done after initRecord()
-error("-sL only applies to MDS services when used with -OD")
-    if $subsys=~/L/ && $NumMds && $subOpts!~/D/;
-error("-OD only applies to HP-SFS")
-    if $subOpts=~/D/ && $sfsVersion eq '';
+error("-sL only applies to MDS services when used with --lustopts D")
+    if $subsys=~/L/ && $NumMds && $lustOpts!~/D/;
+error("--lustopts D only applies to HP-SFS")
+    if $lustOpts=~/D/ && $sfsVersion eq '';
 
 if ($options=~/x/i)
 {
@@ -1527,7 +1614,7 @@ if ($subsys=~/l/i && $verboseFlag)
   $sameColsFlag=0    if $CltFlag+$OstFlag+$MdsFlag>1;
 }
 
-# demonize if necessary
+# daemonize if necessary
 if ($daemonFlag)
 {
   # We need to make sure no terminal I/O
@@ -1572,6 +1659,8 @@ error("interval2 only applies to -s y,Y or Z")
     if defined($interval2) && $interval2 ne '' && $subsys!~/[yYZ]/;
 error("interval3 only applies to -sE")     
     if defined($interval3)  && $subsys!~/E/;
+error("interval2 must be >= interval1")
+      if defined($interval) && defined($interval2) && $interval>$interval2;
 $interval2=$Interval2   if !defined($interval2);
 $interval3=$Interval3   if !defined($interval3);
 $interval=$interval2    if $origInterval=~/^:/ || ($subsys=~/^[yz]+$/i && $interval!=0);
@@ -1583,6 +1672,8 @@ if ($interval!=0)
   {
     error("interval2 must be >= main interval")
 	if $interval2<$interval;
+    error("interval2 must be the same as interval1 in --top mode")
+        if $numTop && $interval!=$interval2;
     $limit2=$interval2/$interval;
     error("interval2 must be a multiple of main interval")
 	if $limit2!=int($interval2/$interval);
@@ -1687,8 +1778,6 @@ print "waiting for $temp second sample...\n"    if $filename eq "";
 $counted2=$limit2-1    if $subsys=~/[yYZ]/;
 $counted3=$limit3-1    if $subsys=~/E/;
 
-print "Subsys: $subsys  SubOpts: $subOpts  Options: $options\n"    if $debug & 1;
-
 # Figure out how many intervals we want to check for lustre config changes,
 # noting that in the debugging case where the interval is 0, we calculate it
 # based on a day's worth of seconds.
@@ -1697,6 +1786,9 @@ $lustreCheckIntervals=($interval!=0) ?
     int($lustreConfigInt/$interval) : int($count/(86400/$lustreConfigInt));
 $lustreCheckIntervals=1    if $lustreCheckIntervals==0;
 print "Lustre Check Intervals: $lustreCheckIntervals\n"    if $debug & 8;
+
+# Looks like only HP-SFS should skip leading 7 fields of client OST data
+my $lustreCltOstSkip=($sfsVersion ne '') ? 7 : 0;
 
 # Same thing (sort of) for interconnect interval
 $interConnectCounter=0;
@@ -1710,6 +1802,10 @@ if ($options=~/i/)
   my $temp=buildCommonHeader(0, undef);
   printText($temp);
 }
+
+# Wait until the last minute to set up the scrolling region so if we crap out
+# earlier we haven't screwed up the terminal.
+printf "%c[3;%dr", 27, $scrollEnd    if $scrollEnd;
 
 #    M a i n    P r o c e s s i n g    L o o p
 
@@ -1871,7 +1967,7 @@ for (; $count!=0 && !$doneFlag; $count--)
     getProc(0, "/proc/sys/fs/file-nr", "fs-fnr")        if $filenrFlag;
   }
 
-  if ($lFlag || $LFlag || $LLFlag)
+  if ($lFlag || $LFlag || $lustOpts=~/O/)
   {
     # Check to see if any services changed and if they did, we may need
     # a new logfile as well.
@@ -1884,7 +1980,7 @@ for (; $count!=0 && !$doneFlag; $count--)
     # This data actually applies to both MDS and OSS servers and if
     # both services are running on the same node we're only going to
     # want to collect it once.
-    if ($subOpts=~/D/ && ($NumMds || $OstFlag))
+    if ($lustOpts=~/D/ && ($NumMds || $OstFlag))
     {
       my $diskNum=0;
       foreach my $diskname (@LusDiskNames)
@@ -1910,7 +2006,7 @@ for (; $count!=0 && !$doneFlag; $count--)
 
         # for versions of SFS prior to 2.2, there are only 9 buckets of BRW data.
         getProc(2, "$dirspec/brw_stats", "OST-b_$ostNum", 4, $numBrwBuckets)
-	  if $subOpts=~/B/;
+	  if $lustOpts=~/B/;
       }
     }
 
@@ -1927,28 +2023,28 @@ for (; $count!=0 && !$doneFlag; $count--)
       $fsNum=0;
       foreach $subdir (@lustreCltDirs)
       {
-	# For vanilla -sl we only need read/write info, but lets grab 
-        # metadata file we're at it.  In the case of -OR, we also want readahead stats
+	# For vanilla -sl we only need read/write info, but lets grab metadata file 
+        # we're at it.  In the case of --lustopts R, we also want readahead stats
         getProc(11, "/proc/fs/lustre/llite/$subdir/stats", "LLITE:$fsNum", 1, 19);
         getProc(0,  "/proc/fs/lustre/llite/$subdir/read_ahead_stats", "LLITE_RA:$fsNum", 1)
-	    if $subOpts=~/R/;
+	    if $lustOpts=~/R/;
 	$fsNum++;
       }
 
       # RPC stats are optional for both clients and servers
-      if ($subOpts=~/B/)
+      if ($lustOpts=~/B/)
       {
         for ($index=0; $index<$NumLustreCltOsts; $index++)
         {
           getProc(2, "$lustreCltOstDirs[$index]/rpc_stats", "LLITE_RPC:$index", 8, 11);
         }
       }
-      # Client LL data
-      if ($LLFlag)
+      # Client OST detail data
+      if ($lustOpts=~/O/)
       {
         for ($index=0; $index<$NumLustreCltOsts; $index++)
         {
-          getProc(12, "$lustreCltOstDirs[$index]/stats", "LLDET:$index ", 7);
+          getProc(12, "$lustreCltOstDirs[$index]/stats", "LLDET:$index ", $lustreCltOstSkip);
         }
       }
     }
@@ -2249,8 +2345,9 @@ record(1, sprintf(">>> %.3f <<<\n", $fullTime), undef, 1)     if $recFlag1;
 
 # close logs cleanly and turn echo back on because in -M1 we turned it off.
 closeLogs();
-unlink $PidFile    if $daemonFlag;
-`stty echo`        if !$PcFlag && $termFlag;
+unlink $PidFile       if $daemonFlag;
+`stty echo`           if !$PcFlag && $termFlag;
+printf("%c[r", 27)    if $numTop && $userSubsys ne '';
 logmsg("I", "Terminating...");
 logsys("Terminating...");
 
@@ -2271,8 +2368,8 @@ sub preprocSwitches
 	  if $switch=~/^-al|^-ad|^-be|^-co|-^de|^-de|^-en|^-fl|^-he|^-no|^-in|^-ra/;
       error("invalid switch '$switch'.  did you mean -$switch?  if not use '$use'")
 	  if $switch=~/^-li|^-lu|^-me|-^ni|^-op|^-su|^-ro|^-ru|^-ti|^-wi|^-sl|^-pr/;
-      $switches.="$switch ";
     }
+    $switches.="$switch ";
   }
   return($switches);
 }
@@ -2295,7 +2392,7 @@ sub preprocessPlayback
 {
   my $filespec=shift;
   my ($selected, $header, $i);
-  my ($lastPrefix, $thisSubSys, $thisSubOpt, $thisInterval, $mergedInterval);
+  my ($lastPrefix, $thisSubSys, $thisInterval, $mergedInterval);
   my ($lastSubSys, $lastSubOpt, $lastNfs, $lastLustreConfig, $lastLustreSubSys);
   my $preprocFlags=0;
   local ($configChange, $filePrefix, $file);
@@ -2346,9 +2443,16 @@ sub preprocessPlayback
     # Read header - cleanup code in newlog: see call to getHeader in newLog()
     $header=getHeader($file);
     $header=~/SubSys:\s+(\S+)/;
-    $thisSubSys=$headerSubSys=$1;
+    $thisSubSys=$1;
+
+    # Be sure to account for BOTH old and new subopt formats
     $header=~/SubOpts:\s+(\S*)\s+Options:/;  # could be blank
-    $thisSubOpt=$1;
+    my $subOpts=$1;
+    my $thisNfsOpts=($header=~/NfsOpts: (\S*)\s*Interval/)   ? $1 : $subOpts;
+    my $thisLustOpts=($header=~/LustOpts: (\S*)\s*Services/) ? $1 : $subOpts;
+    $thisNfsOpts=~s/[BDMORcom]//g;    # in case it came from SubOpts remove lustre stuff
+    $thisLustOpts=~s/[23C]//g;        # ditto for nfs stuff
+
     $header=~/Interval:\s+(\S+)/;
     $thisInterval=$1;
 
@@ -2360,7 +2464,7 @@ sub preprocessPlayback
       next;
     }
 
-    # we need to merge intervals is user has selected her own AND set a flag so
+    # we need to merge intervals if user has selected her own AND set a flag so
     # changeConfig() will update %playbackSettings{} correctly
     if ($userInterval ne '')
     {
@@ -2389,22 +2493,13 @@ sub preprocessPlayback
       }
     }
 
-    print "File: $file  SubSys: $thisSubSys  SubOpt: $thisSubOpt\n"
+    print "File: $file  FileSubSys: $thisSubSys  NfsOpts: $thisNfsOpts  LustOpts: $thisLustOpts\n"
 	if $debug & 2048;
 
     # note that -s and -L override anything in the files.
     $thisSubSys=$userSubsys          if $userSubsys ne '';
     $lastLustreConfig=$lustreSvcs    if $lustreSvcs ne '';
     $lastLustreConfig.='|||';
-
-    # The one exception to the rule above is you cannot have conflicts between -sL
-    # and -sLL.  It's safest (and easiest) to make as a separate test.
-    if ( (($userSubsys=~/LL/ && $headerSubSys=~/^[^L]*L[^L]*$/) ||
-	($headerSubSys=~/LL/ && $userSubsys=~/^[^L]*L[^L]*$/)))
-    {
-        $preprocErrors{$file}="E:it mixes -sL and -sLL with other files of same prefix";
-	next;
-    }
 
     # it's only if the prefix for this file is the same as the last that
     # we have to do all our interval merging and consistency checks.
@@ -2420,9 +2515,9 @@ sub preprocessPlayback
       $mergedInterval='';
 
       # this returns client/server and version or null string
-      $thisNfs=checkNfs("", $thisSubSys, $thisSubOpt);
+      $thisNfs=checkNfs("", $thisSubSys, $thisNfsOpts);
 
-      ($thisLustreConfig, $thisLustreSubSys)=checkLustre("", $header, "", $thisSubSys);
+      ($thisLustreConfig, $lastLustOpts)=checkLustre('', $header, '', $thisLustOpts);
     }
     else    # subsequent files (if any) for same prefix-date
     {
@@ -2431,10 +2526,10 @@ sub preprocessPlayback
       $thisSubSys=checkSubSys($lastSubSys, $thisSubSys)
 	  if $userSubsys eq '' && ($thisSubSys ne $lastSubSys);
 
-      $thisNfs=checkNfs($thisNfs, $thisSubSys, $thisSubOpt);
+      $thisNfs=checkNfs($thisNfs, $thisSubSys, $thisNfsOpts);
 
-      ($thisLustreConfig, $thisLustreSubSys)=
-	  checkLustre($lastLustreConfig, $header, $thisLustreSubSys, $thisSubSys);
+      ($thisLustreConfig, $lastLustOpts)=
+	  checkLustre($lastLustreConfig, $header, $lastLustOpts, $thisLustOpts);
     }
     $lastPrefix=$filePrefix;
     $lastSubSys=$thisSubSys;
@@ -2568,42 +2663,49 @@ sub checkSubSys
   return($lastSubSys);  # has new sub-systems appended
 }
 
-sub checkSubOpts
+sub checkSubsysOpts
 {
-  # sub-options
-  error("invalid sub-option")                     if $subOpts ne '' && $subOpts!~/[23BCDMLRcom]/;
-  error("invalid slab option '$slabOpts'")        if $slabOpts ne '' && $slabOpts!~/^[sS]/;
+  error("invalid slab option '$slabOpts'")    if $slabOpts ne '' && $slabOpts!~/^[sS]+$/;
 
-  error("-OP only applies to processes")          if $subOpts=~/P/ && $subsys!~/Z/;
-  error("-OC only supported with -s f/F")         if $subOpts=~/C/ && $subsys!~/f/i;
+  # When in playback, $nfsOpts is set to header values and we don't know what
+  # the user typed (not do we care)
+  if ($nfsOpts ne '' && $playback eq '')
+  {
+    error("--nfsopts does not apply to -P")   if $plotFlag;
+    error("--nfsopts only applies to nfs")    if $subsys!~/f/i;
+  }
 
   if ($procOpts ne '')
   {
     error("invalid process option '$procOpts'")                if $procOpts!~/^[imprtwz]+$/;
     error("process options i and m are mutually exclusive")    if $procOpts=~/i/ && $procOpts=~/m/;
-    error("--procopts z can only be used with --top")          if !$numTop;
+    error("--procopts z can only be used with --top")          if !$numTop && $procOpts=~/z/;
   }
 
   # it's possible this is not recognized as running a particular type of service
   # from the 'flag's if that service is isn't yet started and so we need
   # to check $lustreSvcs too.  It's just easier to do it this way...
+  error("--lustsvcs only applies to lustre")    if $lustreSvcs ne '' && $subsys!~/l/i;
   my $cltFlag=($CltFlag || $lustreSvcs=~/c/) ? 1 : 0;
   my $mdsFlag=($MdsFlag || $lustreSvcs=~/m/) ? 1 : 0;
   my $ostFlag=($OstFlag || $lustreSvcs=~/o/) ? 1 : 0;
 
-  # These are lustre only
-  error("-Oc only applies to Lustre Clts")        if $subOpts=~/c/ && !$cltFlag;
-  error("-Oo only applies to Lustre OSTs")        if $subOpts=~/o/ && !$ostFlag;
-  error("-Om only applies to Lustre MDSs")        if $subOpts=~/m/ && !$mdsFlag;
-  error("-OB only applies to Lustre Clts/Osts")   if $subOpts=~/B/ && $ostFlag==0 && $cltFlag==0;
-  error("-OB for client details requires -sLL")   if $subOpts=~/B/ && $subsys=~/L/ && $subsys!~/LL/ && $cltFlag;
-  error("-OD only applies to Lustre OSTs/MDSs")   if $subOpts=~/D/ && $ostFlag==0 && $mdsFlag==0;
-  error("-OM only applies to Lustre Clients")     if $subOpts=~/M/ && !$cltFlag;
-  error("-OM does not apply to -sLL")             if $subOpts=~/M/ && $subsys=~/LL/;
-  error("-OR only applies to Lustre Clients")     if $subOpts=~/R/ && $cltFlag==0;
-  error("-OR does not apply to -sLL")             if $subOpts=~/R/ && $subsys=~/LL/;
-
-  $subOpts.='3'    if $subsys=~/f/i && $subOpts!~/[23]/;
+  error("--lustopts only applies to lustre")                 if $lustOpts ne '' && $subsys!~/l/i;
+  error("--lustopts B only applies to Lustre Clts/Osts")     if $lustOpts=~/B/ && !$ostFlag && !$cltFlag;
+  error("--lustopts D only applies to Lustre OSTs/MDSs")     if $lustOpts=~/D/ && !$ostFlag && !$mdsFlag;
+  error("--lustopts M only applies to Lustre Clients")       if $lustOpts=~/M/ && !$cltFlag;
+  error("--lustopts R only applies to Lustre Clients")       if $lustOpts=~/R/ && !$cltFlag;
+  error("--lustopts O only applies to client detail data")   if $lustOpts=~/O/ && (!$cltFlag || $subsys!~/L/);
+  error("you cannot mix --lustopts 'B' with 'M'")            if $lustOpts=~/B/ && $lustOpts=~/M/;
+  error("you cannot mix --lustopts 'B' with 'R'")            if $lustOpts=~/B/ && $lustOpts=~/R/;
+  error("--lustopts c only applies to client data")          if $lustOpts=~/c/ && !$cltFlag;
+  error("--lustopts m only applies to mds data")             if $lustOpts=~/m/ && !$mdsFlag;
+  error("--lustopts o only applies to oss data")             if $lustOpts=~/o/ && !$ostFlag;
+  error("--lustopts c|m|o cannot be mixed with anything else")
+      if $lustOpts=~/[com]/ && length($lustOpts)>1;
+    
+  # Force if not already specified, but ONLY for details
+  $lustOpts='BO'    if $cltFlag && $subsys=~/L/ && $lustOpts=~/B/ && $lustOpts!~/O/;
 }
 
 sub checkNfs
@@ -2613,7 +2715,7 @@ sub checkNfs
   my $subopt= shift;
   my $temp;
 
-  print "checkNfs(): LastNfs: $lastNfs  SubSys: $subsys  SubOPT: $subopt\n"
+  print "checkNfs(): LastNfs: $lastNfs  SubSys: $subsys  SubOpt: $subopt\n"
       if $debug & 2048;
 
   $temp='';
@@ -2636,22 +2738,22 @@ sub checkNfs
 
 sub checkLustre
 {
-  my $lastConfig=shift;
-  my $header=    shift;
-  my $lastSubSys=shift;
-  my $thisSubSys=shift;
+  my $lastConfig= shift;
+  my $header=     shift;
+  my $lastLustOpts=shift;
+  my $thisLustOpts=shift;
   my ($temp, $thisConfig, $thisMdss, $thisOsts, $thisClts);
-  my ($tempSubSys, $services, $mdss, $osts, $clts);
+  my ($services, $mdss, $osts, $clts);
 
-  print "checkLustre() -- LastConfig: $lastConfig  LastSubsys: $lastSubSys  ThisSubSys: $thisSubSys\n"
+  print "checkLustre() -- LastConfig: $lastConfig  LastOpts: $lastLustOpts  ThisOpts: $thisLustOpts\n"
       if $debug & 2048;
 
   ($services, $mdss, $osts, $clts)=split(/\|/, $lastConfig);
   $services=$osts=$mdss=$clts=''    if $lastConfig eq '';   # first time through
 
-  #    F i r s t    C h e c k    L u s t r e    S e r v i c e s
+  #    C h e c k    L u s t r e    S e r v i c e s
 
-  # Remember, if set -L trumps everything!
+  # Remember, if set --lustsvcs trumps everything!
   if ($lustreSvcs eq '')
   {
     $thisConfig='';
@@ -2696,27 +2798,32 @@ sub checkLustre
     $services=$lustreSvcs;
   }
 
-  #    F i n a l l y    S e e    I f    ' L L '
+  #    C h e c k    O p t i o n s
 
-  # ...but only if -s not specified
-  if ($subsys eq '')
+  # For now we only care about clients
+  my $errorText='';
+  if (($thisConfig=~/c/ || $lustreSvcs=~/c/) && $thisLustOpts ne '')
   {
-    $thisSubSys=~/(L+)/;
-    $thisSubSys=defined($1) ? $1 : '';
+    # This file needs to be consistent with respect to OST level detail
+    # because if it was requested and this file doesn't know the OSTs
+    # they can't even be faked!
+    $errorText="requested BRW/OST details but none in file"
+        if $lustOpts=~/B/ && $thisLustOpts!~/B/;
 
     # This one is really pretty rare but we gotta check it...
-    if ($lastSubSys ne $thisSubSys)
+    $errorText="mixing files with/without B of the same prefix"
+        if $thisLustOpts=~/B/ && $lastLustOpts!~/B/;
+
+    # Be sure to return OLD state or else all kinds of other things will break
+    if ($errorText ne '')
     {
-      $preprocErrors{$file}="E:mixing -sL and -sLL with other files of same prefix"
-	  if $lastSubSys ne '' && $thisSubSys ne '';
-    }
-    else
-    {
-      $lastSubSys=$thisSubSys    if $lastSubSys eq '';
+      $preprocErrors{$file}="E:$errorText";
+      print ">>>>>>>>>>>>> Preproc Error: $errorText\n"    if $debug & 2048;
+      return(($lastConfig, $lastLustOpts));
     }
   }
 
-  return(("$services|$mdss|$osts|$clts", $lastSubSys));
+  return(("$services|$mdss|$osts|$clts", $thisLustOpts));
 }
 
 sub setNames
@@ -2837,9 +2944,9 @@ sub getProc
     elsif ($type==8)
     {
       if ($line=~/^rpc/)                    { record(2, "$tag$line"); next; }
-      if ($subOpts!~/C/ && $line=~/^net/)   { record(2, "$tag$line"); next; }
-      if ($subOpts=~/2/ && $line=~/^proc2/) { record(2, "$tag$line"); next; }
-      if ($subOpts=~/3/ && $line=~/^proc3/) { record(2, "$tag$line"); next; }
+      if ($nfsOpts!~/C/ && $line=~/^net/)   { record(2, "$tag$line"); next; }
+      if ($nfsOpts=~/2/ && $line=~/^proc2/) { record(2, "$tag$line"); next; }
+      if ($nfsOpts=~/3/ && $line=~/^proc3/) { record(2, "$tag$line"); next; }
     }
 
     # /proc/diskstats & /proc/partitions
@@ -2850,7 +2957,7 @@ sub getProc
     {
       if ($line=~/cciss\/c\d+d\d+ /)   { record(2, "$tag $line"); next; }
       if ($line=~/hd[ab] /)            { record(2, "$tag $line"); next; }
-      if ($line=~/sd[a-z]+ /)          { record(2, "$tag $line"); next; }
+      if ($line=~/ sd[a-z]+ /)         { record(2, "$tag $line"); next; }
       if ($line=~/dm-\d+ /)            { record(2, "$tag $line"); next; }
     }
 
@@ -2877,15 +2984,16 @@ sub getProc
       if ($line=~/^ost_write/)  { record(2, "$tag $line"); last; }
     }
 
-    # /proc/*/status
+    # /proc/*/status - save it all!
     elsif ($type==13)
     {
+      if ($line=~/^Tgid/)       { record(2, "$tag $line", undef, 1); next; }
       if ($line=~/^Uid/)        { record(2, "$tag $line", undef, 1); next; }
       if ($line=~/^Vm/)
-      { 
-	record(2, "$tag $line", undef, 1);
-	last    if $line=~/^VmLib/;  # stop reading when we hit last VM variable
-	next; 
+      {
+        record(2, "$tag $line", undef, 1);
+        last    if $line=~/^VmLib/;  # stop reading when we hit last VM variable
+        next;
       }
     }
 
@@ -3113,6 +3221,8 @@ sub newLog
   my ($dirname, $basename, $command, $fullname, $mode);
   my (@disks, $dev, $numDisks, $i, $oldHeader, $oldSubsys, $timesecs, $timezone);
 
+  print "NewLog -- Playback: $playback  File: $filename  Raw: $rawFlag  Plot: $plotFlag\n"    if $debug & 1;
+
   if ($recDate eq '')
   {
     # We need EXACT seconds associated with the timestamp of the filename.
@@ -3217,7 +3327,7 @@ sub newLog
                          !defined($newFiles{$filename}) &&
 			 plotFileExists($filename);
 
-  # -ou is special in that we're never going to have muliple source files generate
+  # -ou is special in that we're never going to have multiple source files generate
   # the same output file so 'a' doesn't mean anything in this context.  Furthermore
   # if the output file already exists and its update time is less than that of the
   # source file, the source file has changed since the output file was created and
@@ -3257,7 +3367,7 @@ sub newLog
     # the default filename may only have a datestamp put time back in.
     my $rawFilename=$filename;
     $rawFilename=~s/$dateonly$/$datetime/;
-    print "Create raw rile:   $rawFilename\n"    if $debug & 8192;
+    print "Create raw file:   $rawFilename\n"    if $debug & 8192;
 
     # Unlike plot files, we ALWAYS compress when compression lib exists
     $ZRAW=Compress::Zlib::gzopen("$rawFilename.raw.gz", $zmode) or
@@ -3284,6 +3394,12 @@ sub newLog
   {
     print "Create plot files: $filename.*\n"    if $debug & 8192;
 
+    # Indicates something needs to be printed (is there an easier way to tell)?
+    printProcAnalyze($filename)    if $procAnalyzed;
+
+    print "Writing file(s): $mode$filename\n"    if $msgFlag && !$daemonFlag;
+    print "Subsys: $subsys\n"    if $debug & 1;
+
     # Open 'tab' file in plot mode if processing at least 1 core variable (or extended core)
     $temp="$SubsysCore$SubsysExcore";
     if ($subsys=~/[$temp]/)
@@ -3295,13 +3411,10 @@ sub newLog
       $headersPrinted=$headersPrintedProc=0;
     }
 
-    print "Writing file(s): $mode$filename\n"    if $msgFlag && !$daemonFlag;
-    print "Subsys: $subsys\n"    if $debug & 1;
-
     open BLK, "$mode$filename.blk" or 
-	  logmsg("F", "Couldn't open '$filename.blk'")   if !$zFlag && ($LFlag || $LLFlag) && $subOpts=~/D/;
+	  logmsg("F", "Couldn't open '$filename.blk'")   if !$zFlag && $LFlag && $lustOpts=~/D/;
     $ZBLK=Compress::Zlib::gzopen("$filename.blk.gz", $zmode) or
-  	  logmsg("F", "Couldn't open BLK gzip file")     if  $zFlag && ($LFlag || $LLFlag) && $subOpts=~/D/;
+  	  logmsg("F", "Couldn't open BLK gzip file")     if  $zFlag && $LFlag && $lustOpts=~/D/;
 
     open CPU, "$mode$filename.cpu" or 
 	  logmsg("F", "Couldn't open '$filename.cpu'")   if !$zFlag && $CFlag;
@@ -3309,9 +3422,9 @@ sub newLog
 	  logmsg("F", "Couldn't open CPU gzip file")     if  $zFlag && $CFlag;
 
     open CLT, "$mode$filename.clt" or 
-	  logmsg("F", "Couldn't open '$filename.clt'")   if !$zFlag && ($LFlag || $LLFlag) && $reportCltFlag;
+	  logmsg("F", "Couldn't open '$filename.clt'")   if !$zFlag && $LFlag && $reportCltFlag;
     $ZCLT=Compress::Zlib::gzopen("$filename.clt.gz", $zmode) or
-	  logmsg("F", "Couldn't open CLT gzip file")     if  $zFlag && ($LFlag || $LLFlag) && $reportCltFlag;
+	  logmsg("F", "Couldn't open CLT gzip file")     if  $zFlag && $LFlag && $reportCltFlag;
 
     # if only doing exceptions, we don't need this file.
     if ($options!~/x/)
@@ -3363,13 +3476,14 @@ sub newLog
           logmsg("F", "Couldn't open NET gzip file")     if  $zFlag && $NFlag;
 
     open OST, "$mode$filename.ost" or 
-	  logmsg("F", "Couldn't open '$filename.ost'")   if !$zFlag && ($LFlag || $LLFlag) && $reportOstFlag;
+	  logmsg("F", "Couldn't open '$filename.ost'")   if !$zFlag && $LFlag && $reportOstFlag;
     $ZOST=Compress::Zlib::gzopen("$filename.ost.gz", $zmode) or
-          logmsg("F", "Couldn't open OST gzip file")     if  $zFlag && ($LFlag || $LLFlag) && $reportOstFlag;
+          logmsg("F", "Couldn't open OST gzip file")     if  $zFlag && $LFlag && $reportOstFlag;
 
     # These next  guys are special because they're not really detail files per se, 
-    # Furthermore, if --rawtoo we don't create proc/slab files
-    if (!$rawtooFlag)
+    # Furthermore, if --rawtoo OR --procanal and not -sZ not specified by user, 
+    # we don't create proc/slab files
+    if (!$rawtooFlag && !$procAnalOnlyFlag)
     {
       print "Creating PRC and/or SLB\n"    if $debug & 8192;
       open PRC, "$mode$filename.prc" or 
@@ -3437,6 +3551,10 @@ sub newLog
       logmsg('E', "Couldn't open '$dirname' for purging");
     }
   }
+  # Save as a global for later use.  Could probably avoid passing back the name
+  # on error below, but I'm afraid to change it if I don't have to.
+  $lastLogPrefix=$filename;
+
   return 1;
 }
 
@@ -3484,7 +3602,8 @@ sub buildCommonHeader
   $commonHeader.="# Host:       $Host  DaemonOpts: $DaemonOptions\n";
   $commonHeader.="# Distro:     $Distro\n"    if $Distro ne '';
   $commonHeader.=$timeZoneInfo  if defined($timeZoneInfo);
-  $commonHeader.="# SubSys:     $tempSubsys SubOpts: $subOpts Options: $options  Interval: $tempInterval NumCPUs: $NumCpus $Hyper Flags: $flags\n";
+  $commonHeader.="# SubSys:     $tempSubsys SubOpts: $subOpts Options: $options NfsOpts: $nfsOpts ";
+  $commonHeader.=              "Interval: $tempInterval NumCPUs: $NumCpus $Hyper Flags: $flags\n";
   $commonHeader.="# HZ:         $HZ  Arch: $SrcArch PageSize: $PageSize\n";
   $commonHeader.="# Cpu:        $CpuVendor Speed(MHz): $CpuMHz Cores: $CpuCores  Siblings: $CpuSiblings\n";
   $commonHeader.="# Kernel:     $Kernel  Memory: $Memory  Swap: $Swap\n";
@@ -3503,7 +3622,7 @@ sub buildCommonHeader
     $commonHeader.="# Lustre:   ";
     $commonHeader.="  CfsVersion: $cfsVersion"       if $cfsVersion ne '';
     $commonHeader.="  SfsVersion: $sfsVersion"       if $sfsVersion ne '';
-    $commonHeader.="  Services: $lustreSvcs";
+    $commonHeader.="  LustOpts: $lustOpts Services: $lustreSvcs";
     $commonHeader.="\n";
 
     $commonHeader.="# LustreServer:   NumMds: $NumMds MdsNames: $MdsNames  NumOst: $NumOst OstNames: $OstNames\n"
@@ -3513,7 +3632,7 @@ sub buildCommonHeader
 
     # more stuff for Disk Stats
     $commonHeader.="# LustreDisks:    Num: $NumLusDisks  Names: $LusDiskNames\n"
-	if ($subOpts=~/D/);
+	if ($lustOpts=~/D/);
   }
   $commonHeader.='#'x80;
   $commonHeader.="\n";
@@ -3523,6 +3642,10 @@ sub buildCommonHeader
 
 sub writeInterFileMarker
 {
+  # I was torn between putting this test one the one place this routine 
+  # is called or keeping it cleaner back there and so put it here.
+  return    if $procAnalOnlyFlag;
+
   # for now, only need one for process data
   my $marker="# >>> NEW LOG <<<\n";
   if ($subsys=~/Z/ && !$rawtooFlag)
@@ -3555,25 +3678,18 @@ sub setOutputFormat
 {
   # By default, brief has been initialized to 1 and verbose to 0 but in these
   # cases we switch to verbose automatically
-  $verboseFlag=1    if $subsys!~/^[$BriefSubsys]+$/ || $subOpts=~/[BDM]/;
+  $verboseFlag=1    if $subsys!~/^[$BriefSubsys]+$/ || $lustOpts=~/[BDM]/;
 
   # except as where noted below, columns in verbose mode are assumed different
   $sameColsFlag=($verboseFlag) ? 0 : 1;
 
-  # Now let's deal with a few special cases where we're in verbose but the cols 
-  # are the same after all, such as a single subsystem or '-sCj'
+  # Now let's deal with a few special cases where we're in verbose mode but 
+  # the cols  are the same after all, such as a single subsystem or '-sCj'
   $sameColsFlag=1    if $verboseFlag && (length($subsys)==1 || $subsys=~/^[Cj]+$/);
 
   # As usual, lustre complicates things since we can get multiple lines of
-  # output.  Therefore we need to see how many lustre options there actually
-  # are and clear the flag if more than 1.
-  my $numOpts=0;
-  for (my $i=0; $subsys=~/l/i && $i<7; $i++)
-  {
-    my $char=substr('comBDMR', $i, 1);
-    $numOpts++    if $subOpts=~/$char/;
-  }
-  $sameColsFlag=0    if $numOpts>1;
+  # output and if more than 1 clear the flag.
+  $sameColsFlag=0    if length($lustOpts)>1;
 
   # time doesn't print when not all columns the same AND not something that
   # was exported since they's on their own for formatting
@@ -3583,7 +3699,7 @@ sub setOutputFormat
     $miniDateTime=$miniFiller='';
   }
   $briefFlag=($verboseFlag) ? 0 : 1;
-  print "SET OUTPUT -- Verbose: $verboseFlag   SameCols: $sameColsFlag\n"    if $debug & 1;
+  print "SET OUTPUT -- Subsys: $subsys Verbose: $verboseFlag SameCols: $sameColsFlag\n"    if $debug & 1;
 }
 
 # Control C Processing
@@ -3661,9 +3777,9 @@ sub flushBuffers
     }
 
     $ZLOG-> gzflush(2)<0 and flushError('log', $ZLOG)     if $subsys=~/[a-z]/;
-    $ZBLK-> gzflush(2)<0 and flushError('blk', $ZBLK)     if ($LFlag || $LLFlag) && $subOpts=~/D/;
+    $ZBLK-> gzflush(2)<0 and flushError('blk', $ZBLK)     if $LFlag && $lustOpts=~/D/;
     $ZCPU-> gzflush(2)<0 and flushError('cpu', $ZCPU)     if $CFlag;
-    $ZCLT-> gzflush(2)<0 and flushError('clt', $ZCLT)     if ($LFlag || $LLFlag) && $CltFlag;
+    $ZCLT-> gzflush(2)<0 and flushError('clt', $ZCLT)     if $LFlag && $CltFlag;
     $ZDSK-> gzflush(2)<0 and flushError('dsk', $ZDSK)     if $DFlag && $options!~/x/;    # exception only file?
     $ZDSKX->gzflush(2)<0 and flushError('dskx',$ZDSKX)    if $DFlag && $options=~/x/i;
     $ZELN-> gzflush(2)<0 and flushError('eln', $ZELN)     if $XFlag && $NumXRails;
@@ -3671,7 +3787,7 @@ sub flushBuffers
     $ZENV-> gzflush(2)<0 and flushError('env', $ZENV)     if $EFlag;
     $ZNFS-> gzflush(2)<0 and flushError('nfs', $ZNFS)     if $FFlag;
     $ZNET-> gzflush(2)<0 and flushError('net', $ZNET)     if $NFlag;
-    $ZOST-> gzflush(2)<0 and flushError('ost', $ZOST)     if ($LFlag || $LLFlag) && $OstFlag;
+    $ZOST-> gzflush(2)<0 and flushError('ost', $ZOST)     if $LFlag && $OstFlag;
     $ZTCP-> gzflush(2)<0 and flushError('tcp', $ZTCP)     if $TFlag;
     $ZSLB-> gzflush(2)<0 and flushError('slb', $ZSLB)     if $YFlag && !$rawtooFlag;
     $ZPRC-> gzflush(2)<0 and flushError('prc', $ZPRC)     if $ZFlag && !$rawtooFlag;
@@ -3687,13 +3803,13 @@ sub flushBuffers
     if ($FFlag)   { select NFS;  $|=1; print NFS ""; $|=0; }
     if ($NFlag)   { select NET;  $|=1; print NET ""; $|=0; }
     if ($TFlag)   { select TCP;  $|=1; print TCP ""; $|=0; }
-    if ($XFlag && $NumXRails)                 { select ELN;  $|=1; print ELN ""; $|=0; }
-    if ($XFlag && $NumHCAs)                   { select IB;   $|=1; print IB  ""; $|=0; }
-    if ($YFlag && !$rawtooFlag)               { select SLB;  $|=1; print SLB ""; $|=0; }
-    if ($ZFlag && !$rawtooFlag)               { select PRC;  $|=1; print PRC ""; $|=0; }
-    if (($LFlag || $LLFlag) && $CltFlag)      { select CLT;  $|=1; print CLT ""; $|=0; }
-    if (($LFlag || $LLFlag) && $OstFlag)      { select OST;  $|=1; print OST ""; $|=0; }
-    if (($LFlag || $LLFlag) && $subOpts=~/D/) { select BLK;  $|=1; print BLK ""; $|=0; }
+    if ($XFlag && $NumXRails)                  { select ELN;  $|=1; print ELN ""; $|=0; }
+    if ($XFlag && $NumHCAs)                    { select IB;   $|=1; print IB  ""; $|=0; }
+    if ($YFlag && !$rawtooFlag)                { select SLB;  $|=1; print SLB ""; $|=0; }
+    if ($ZFlag && !$rawtooFlag)                { select PRC;  $|=1; print PRC ""; $|=0; }
+    if ($LFlag && $CltFlag)                    { select CLT;  $|=1; print CLT ""; $|=0; }
+    if ($LFlag && $OstFlag)                    { select OST;  $|=1; print OST ""; $|=0; }
+    if ($LFlag && $lustOpts=~/D/)              { select BLK;  $|=1; print BLK ""; $|=0; }
 
     if ($options=~/x/i)
     {
@@ -3791,6 +3907,7 @@ sub setFlags
   $fFlag=($subsys=~/f/) ? 1 : 0;  $FFlag=($subsys=~/F/) ? 1 : 0;
   $iFlag=($subsys=~/i/) ? 1 : 0;
   $jFlag=($subsys=~/j/) ? 1 : 0;  $JFlag=($subsys=~/J/) ? 1 : 0;
+  $lFlag=($subsys=~/l/) ? 1 : 0;  $LFlag=($subsys=~/L/) ? 1 : 0;  
   $mFlag=($subsys=~/m/) ? 1 : 0;
   $nFlag=($subsys=~/n/) ? 1 : 0;  $NFlag=($subsys=~/N/) ? 1 : 0;
   $sFlag=($subsys=~/s/) ? 1 : 0;
@@ -3798,15 +3915,6 @@ sub setFlags
   $xFlag=($subsys=~/x/) ? 1 : 0;  $XFlag=($subsys=~/X/) ? 1 : 0;
   $yFlag=($subsys=~/y/) ? 1 : 0;  $YFlag=($subsys=~/Y/) ? 1 : 0;
                                   $ZFlag=($subsys=~/Z/) ? 1 : 0;
-
-  # Special
-  $LLFlag=0;
-  $lFlag=($subsys=~/l/) ? 1 : 0;  $LFlag=($subsys=~/L/) ? 1 : 0;  
-  if ($subsys=~/LL/)
-  {
-    $LFlag=0;
-    $LLFlag=1;
-  }
 
   # NOTE - the definition of 'core' as slightly changed and maybe should be
   # changed to be 'summary' to better reflect what we're trying to do.  
@@ -3845,7 +3953,8 @@ sub getSeconds
   return(timelocal($ss, $mm, $hh, $day, $mon-1, $year-1900));
 }
 
-# print error and exit if bad datetime
+# print error and exit if bad datetime without going crazy over all the
+# possible purmutations of a bad date/time format
 sub checkTime
 {
   my $switch=  shift;
@@ -3855,18 +3964,44 @@ sub checkTime
   # Make sure format correct. minimal being HH:MM. supply date and/or ":ss"
   $datetime.=":00"    if $datetime!~/\d{2}:\d{2}:\d{2}/;
 
-  if ($datetime!~/-/)
+  if (length((split(/:/,$datetime))[0])!=4)
   {
     ($day, $mon, $year)=(localtime(time))[3,4,5];
     $date=sprintf("%d%02d%02d", $year+1900, $mon+1, $day);
-    $datetime="$date-$datetime";
+    $datetime="$date:$datetime";
   }
 
-  error("$switch must be in [yyyymmdd-]hh:mm[:ss] format")
-      if ($datetime=~/-/ && $datetime!~/\d{8}-\d{2}:\d{2}:\d{2}/);
+  error("'$switch' must be in [yyyymmdd:]hh:mm[:ss] format")
+      if ($datetime=~/-/ && $datetime!~/\d{8}:\d{2}:\d{2}:\d{2}/);
 
-  ($hh, $mm, $ss)=split(/:/, (split(/-/, $datetime))[1]);
-  error("$switch specifies invalid time")     if ($hh>23 || $mm >59 || $ss>59);
+  ($date, $hh, $mm, $ss)=split(/:/, $datetime);
+  error("time portion of '$switch' incomplete")    if !defined($ss);
+  error("'$switch' specifies invalid date")        if length($date)!=8;
+  error("'$switch' specifies invalid time")        if ($hh>23 || $mm >59 || $ss>59);
+}
+
+sub checkHiRes
+{
+  if ($TimeHiResCheck && $hiResFlag && -e '/lib/libc.so.6')
+  {
+    my $hiResVersion=Time::HiRes->VERSION;
+    $hiResVersion=~/(\d+)\.(\d+)/;
+    my $hiResMajor=$1;
+    my $hiResMinor=$2;
+    
+    my $glibcAnnounce=`'/lib/libc.so.6'`;
+    if ($hiResMajor==1 && $hiResMinor<91 &&
+	$glibcAnnounce=~/GNU C Library stable release version (\d+)\.(\d+)/)
+    {
+      my $glibcMajor=$1;
+      my $glibcMinor=$2;
+      if ($glibcMajor==2 && ($glibcMinor==4 || $glibcMinor==5))
+      {
+        logmsg('W', "WARNING - Your versions of Time::HiRes and glibc are incompatible.");
+	logmsg('W', "          See /opt/hp/collectl/docs/RELEASE-collectl 'Restrictions' for details.");
+      }
+    }
+  }
 }
 
 sub closeLogs
@@ -3909,8 +4044,8 @@ sub closeLogs
   {
     $temp="$SubsysCore$SubsysExcore";
     $ZLOG-> gzclose()     if $plotFlag && $subsys=~/[$temp]+/;
-    $ZBLK-> gzclose()     if ($LFlag || $LLFlag) && $plotFlag && $subOpts=~/D/;
-    $ZCLT-> gzclose()     if ($LFlag || $LLFlag) && $plotFlag && CltFlag;
+    $ZBLK-> gzclose()     if $LFlag && $plotFlag && $lustOpts=~/D/;
+    $ZCLT-> gzclose()     if $LFlag && $plotFlag && CltFlag;
     $ZCPU-> gzclose()     if $CFlag && $plotFlag;
     $ZDSK-> gzclose()     if $DFlag && $plotFlag && $options!~/x/;
     $ZDSKX->gzclose()     if $DFlag && $plotFlag && $options=~/x/i;
@@ -3919,7 +4054,7 @@ sub closeLogs
     $ZENV-> gzclose()     if $EFlag && $plotFlag;
     $ZNFS-> gzclose()     if $FFlag && $plotFlag;
     $ZNET-> gzclose()     if $NFlag && $plotFlag;
-    $ZOST-> gzclose()     if ($LFlag || $LLFlag) && $plotFlag && $OstFlag;
+    $ZOST-> gzclose()     if $LFlag && $plotFlag && $OstFlag;
     $ZTCP-> gzclose()     if $TFlag && $plotFlag;
     $ZSLB-> gzclose()     if $YFlag && $plotFlag && !$rawtooFlag;
     $ZPRC-> gzclose()     if $ZFlag && $plotFlag && !$rawtooFlag;
@@ -4073,13 +4208,13 @@ sub loadConfig
       $Port=$value             if $param=~/^Port/;
       $Timeout=$value          if $param=~/^Timeout/;
       $MaxZlibErrors=$value    if $param=~/^ZMaxZlibErrors/;
-      $Passwd=$value           if $param=~/^Passwd/;
       $LustreSvcLunMax=$value  if $param=~/^LustreSvcLunMax/;
       $LustreMaxBlkSize=$value  if $param=~/^LustreMaxBlkSize/;
       $LustreConfigInt=$value  if $param=~/^LustreConfigInt/;
       $InterConnectInt=$value  if $param=~/^InterConnectInt/;
-      $HeaderRepeat=$value     if $param=~/^HeaderRepeat/;
+      $TermHeight=$value       if $param=~/^TermHeight/;
       $DefNetSpeed=$value      if $param=~/^DefNetSpeed/;
+      $TimeHiResCheck=$value   if $param=~/^TimeHiResCheck/;
     }
   }
   close CONFIG;
@@ -4428,6 +4563,12 @@ sub loadUids
   my $passwd=shift;
   my (@passwd, $line, $user, $uid);
 
+  if (!-e $passwd)
+  {
+    print "WARNING - UID translation file '$passwd' doesn't exist.  consider using --passwd\n";
+    return;
+  }
+
   @passwd=`$Cat $passwd`;
   foreach $line (@passwd)
   {
@@ -4680,7 +4821,6 @@ sub showDefaults
   printText("  Port          = $Port\n");
   printText("  Timeout       = $Timeout\n");
   printText("  MaxZlibErrors = $MaxZlibErrors\n");
-  printText("  Passwd        = $Passwd\n");
   printText("  Libraries     = $Libraries\n")    if defined($Libraries);
   exit;
 }
@@ -4702,43 +4842,36 @@ sub error
   }
 
 my $help=<<EOF;
-These are a subset of the basic switches and even the descripions are abbreviated.
-To see all type 'collectl --helpext'.  To get started just type 'collectl'
+This is a subset of the most common switches and even the descriptions are
+abbreviated.  To see all type 'collectl -x', to get started just type 'collectl'
 
 usage: collectl [switches]
-      --all                   report summary data for ALL subsystems except slabs
   -c, --count      count      collect this number of samples and exit
   -f, --filename   file       name of directory/file to write to
-  -i, --interval   int        collection interval in seconds [default=10]
-  -o, --options    options    list of miscellaneous options to control output format
-                              see --showoptions for full list
+  -i, --interval   int        collection interval in seconds [default=1]
+  -o, --options    options    misc formatting options, --showoptions for all
                                 d|D - include date in output
                                   T - include time in output
                                   z - turn off compression of plot files
-  -O, --subopts    subopts    list of sub-options that get applied to subsystems
-                              see --showsubopts for full list
-                                NFS = [23C], Lustre = [BDMR]
   -p, --playback   file       playback results from 'file'
   -P, --plot                  generate output in 'plot' format
-  -s, --subsys     subsys     record/playback data from one or more subsystems
-                                values = [cdfilmnstxyCDEFLLNTXYZ] defaults = [$SubsysCore]
-                                also see --all above
-  --iosize                    brief format: include I/O sizes for disks/networks/interconnects
-  --verbose                   display output in verbose format (this mode can get automatically
-                              selected in some cases where brief doesn't make sense)
-
+  -s, --subsys     subsys     specify one or more subsystems [default=cdn]
+      --verbose               display output in verbose format (automatically
+                              selected when brief doesn't make sense)
 
 Various types of help
   -h, --help                  print this text
   -v, --version               print version
   -V, --showdefs              print operational defaults
-  -x, --helpext               extended help, some commands repeated in more detail
+  -x, --helpextend            extended help, more details descritions too
 
   --showoptions               show all the options
-  --showsubopts               show all the suboptions
   --showsubsys                show all the subsystems
+  --showsubopts               show all substem specific options
+
   --showheader                show file header that 'would be' generated
-  --showslabaliases           for the new 'slub' slabs, show the aliases using non-root names
+  --showplotheader            show plot headers that 'would be' generated
+  --showslabaliases           for SLUB allocator, show non-root aliases
   --showrootslabs             same as --showslabaliases but use 'root' names
 
 $Copyright
@@ -4751,72 +4884,53 @@ exit;
 sub extendHelp
 {
 my $extended=<<EOF2;
-These switches are for more advanced usage
+This is the complete list of switches, more details in man page
 
-  --align          [core|proc]  align on time boundary (see man page for details)
-  -A, --address    addr         write output to socket opened on this address:port
-  -b, --begin      time         in playback mode, don't start at this date/time
-                                time actually in '[date-]time' format
+      --align      [core|proc]  align on time boundary
+      --all                     selects 'all' summary subsystems except slabs
+  -A, --address    addr         write output to socket
   -C, --config     file         use alternate collectl.conf file
-  -d, --debug      debug        see source for details or try -d 1 to get started
+  -c, --count      count        collect this number of samples and exit
+  -d, --debug      debug        see source for details or try -d1 to get started
   -D, --daemon                  run as a daemon
-  -e, --end        time         in playback mode, don't process after this date/time
+      --from       time         time from which to playback data, -thru optional
+                                   [yyyymmdd:]hh:mm[:ss][-[yyyymmdd:]hh:mm[:ss]]
+  -f, --filename   file         name of directory/file to write to
   -F, --flush      seconds      number of seconds between output buffer flushes
-  -G, --group                   write process and slab data to separate, rawp file
+  -G, --group                   write process/slab data to separate, rawp file
   -h, --help                    print basic help
-      --hr,--headerrepeat num   repeat headers every 'num' lines of output, only once if 0
-                                  or never if -1
-  -i, --interval   int[:pi:ei]] collection interval in seconds [default=10]
+      --home                    move cursor to top before printing interval data
+      --hr,--headerrepeat num   repeat headers every 'num' lines, once or never
+  -i, --interval   int[:pi:ei]] collection interval in seconds
+                                  [defaults: interactive=1, daemon=10]
                                   pi is process interval [default=60]
-                                  ei is environmental interval [defailt=300]
-  -l, --limits     limits       override default exception limits name:val[-name:val]
-                                see man page for details
-  -L, --lustresvc  services     if specified, force monitoring/reporting on these lustre services
-                                   c - client, m - mds, o - oss
-  -m, --messages                write progress/errors in log file in -f directory or terminal
+                                  ei is environmental interval [default=300]
+      --iosize                  include I/O sizes as appropriate in brief format
+  -l, --limits     limits       override default exceptions name:val[-name:val]
+  -m, --messages                write messages to log file and/or terminal
   -N, --nice                    give yourself a 'nicer' priority
-EOF2
-printText($extended);
-showOptions(1);
-showSubopts(1);
-my $eof2a=<<EOF2a;
+      --offsettime secs         seconds by which to offset times during playback
+  -o, --options                 misc formatting options, --showoptions for all
       --quiet                   do note echo warning messages on the terminal
-  -r, --rolllogs   time,d,m     roll logs at 'time', retaining for 'd' days, every 'm' minutes
-                                [default days=7, minutes=1440 (once a day)]
-  -R, --runtime    duration     time to run in <num><units> format where unit is w,d,h,m,s
+      --procanalyze             analyze process data, generating prcs file
+  -p, --playback   file         playback results from 'file'
+  -P, --plot                    generate output in 'plot' format
+      --procanalyze             analyze process data, generating prcs file
+  -r, --rolllogs   time,d,m     roll logs at 'time', retaining for 'd' days, 
+                                  every 'm' minutes [default: d=7,m=1440]
+  -R, --runtime    duration     time to run in <number><units> format
+                                  where unit is w,d,h,m,s
       --sep        separator    specify an alternate plot format separator
       --ssh                     started by ssh so disconnect if caller exits
-EOF2a
-printText($eof2a);
-showSubsys(1);
-my $eof2b=<<EOF2b;
-  -T, --timezone   hours        number of hours by which to offset times during playback
-                                or blank to print times in the timezone where recorded
-  --top            [type][,num] show top 'num' consumers of a resource for each interval
-                                where type can be 'time', 'io' or 'flt'.  Can also mix with -s.
-                                (def=time,window height)
+  -s, --subsys     subsys       record/playback data from one or more subsystems
+                                  --showsubsys for details
+      --thru       time         time thru which to playback data (see --from)
+      --top        [type][,num] show top 'num' consumers of a resource and can
+                                  also mix with -s.  type='time','io' or 'flt'
+                                  [def=time,window height]
+      --verbose                 display output in verbose format (automatically
+                                selected when brief doesn't make sense)
   -w, --wide                    print wide field contents (don't use K/M/G)
-  --slabfilt       slabs        restricts which slabs are listed, where 'slab's is of the
-                                form: 'slab[,slab...].  if 'slab' is a filename (you CAN mix them), 
-                                it must contain a list of slabnames, one per line
-  --procfilt       procs        restricts which procs are listed, where 'procs' is of the
-                                form: <type><match>[[,<type><match>],...].  Be sure to quote
-                                if embedded spaces
-                                  c - any substring in command name
-                                  C - command name starts with this string
-                                  f - full path of command (including args) contains string
-                                  p - pid
-                                  P - parent pid
-                                  u - any processes owned by this user's UID
-                                  U - any processes owned by this user
-                                NOTE1:  if 'procs' is actually a filename, that file will be 
-                                        read and all lines concatenated together, comma separted,
-                                        as if typed in as an argument of --procfilt.  Lines 
-                                        beginning with # will be ignored as comments and blank 
-                                        lines skipped.
-                                NOTE2:  if any type fields are immediatly followed by a plus sign,
-                                        any threads associated with that process will also be reported.
-                                        see man page for important restrictions
 
 Synonyms
   --utc = -oU
@@ -4833,18 +4947,18 @@ Various types of help
   -h, --help                  print this text
   -v, --version               print version
   -V, --showdefs              print operational defaults
-  -x, --helpext               extended help, some commands repeated in more detail
+  -x, --helpext               extended help
 
-  --showoptions               show all the display options
-  --showsubopts               show all the subsystem options
+  --showoptions               show all the options
+  --showsubopts               show all substem specific options
   --showsubsys                show all the subsystems
-  --showheader                show file header that 'would be' generated and exit
-  --showplotheader            show plot headers that 'would be' generated and exit
-  --showslabaliases           for the new 'slub' slabs, show the aliases using non-root names
-  --showrootslabs             same as --showslabaliases but use 'root' names
 
-EOF2b
-printText($eof2b);
+  --showheader                show file header that 'would be' generated
+  --showplotheader            show plot headers that 'would be' generated
+  --showslabaliases           for SLUB allocator, show non-root aliases
+  --showrootslabs             same as --showslabaliases but use 'root' names
+EOF2
+printText("$extended\n");
 printText("$Copyright\n");
 printText("$License\n");
 exit;
@@ -4853,36 +4967,40 @@ exit;
 sub showSubsys
 {
   my $subsys=<<EOF3;
-  -s, --subsys     subsys       only record/playback data from subsystem string
-                                [default=$SubsysCore] where:
-                                  c - cpu
-                                  d - disk
-                                  f - nfs
-                                  i - inodes
-				  j - interrupts by CPU
-                                  l - lustre
-                                  m - memory
-                                  n - network
-                                  s - sockets
-                                  t - tcp
-                                  x - interconnect (currently supported: Infiniband and Quadrics)
-                                  y - slabs
-                                as an alternative format you can say '-s +[$SubsysExcore$SubsysDet]'
-                                where '+xxx' adds major subsystems to '$SubsysCore'
-                                  C -  individual CPUs, including interrupts if -sj or -sJ
-                                  D -  individual Disks
-                                  E -  environmental (fans, temps, etc)
-                                  F -  nsf detail data
-				  J -  interrupts by CPU by interrupt number
-                                  L -  lustre
-                                  LL - ost level lustre details (clients & OSTs)
-                                  N -  individual Networks
-                                  T -  tcp details (lots of data!)
-                                  X -  interconnect ports/rails (Infiniband/Quadrics)
-                                  Y -  slabs
-                                  Z -  processes (sorry, but P was already taken)
-                                you can also specify '-s -[$SubsysCore]', with/without
-                                the '+' option to remove default subsystems
+The following subsystems can be specified in any combinations with -s or 
+--subsys in both record and playbackmode.  [default=$SubsysCore]
+
+These generate summary, which is the total of ALL data for a particular type
+  c - cpu
+  d - disk
+  f - nfs
+  i - inodes
+  j - interrupts by CPU
+  l - lustre
+  m - memory
+  n - network
+  s - sockets
+  t - tcp
+  x - interconnect (currently supported: Infiniband and Quadrics)
+  y - slabs
+ 
+These generate detail data, typically but not limited to the device level
+
+  C -  individual CPUs, including interrupts if -sj or -sJ
+  D -  individual Disks
+  F -  nsf data
+  J -  interrupts by CPU by interrupt number
+  L -  lustre
+  N -  individual Networks
+  T -  tcp details (lots of data!)
+  X -  interconnect ports/rails (Infiniband/Quadrics)
+  Y -  slabs/slubs
+  Z -  processes
+
+An alternative format lets you add and/or subtract subsystems to the defaults by
+immediately following -s with a + and/or -
+  eg: -s+YZ-x adds slabs & processes and removes interconnet summary data
+      -s-n removes network summary data
 EOF3
 printText($subsys);
 exit    if !defined($_[0]);
@@ -4891,49 +5009,45 @@ exit    if !defined($_[0]);
 sub showOptions
 {
   my $options=<<EOF4;
-  -o, --options    options      list of miscellaneous options to control output format
-                                NOTE - most CAN be used with -p
+Various combinations can be specified with -o or --options, both interactively
+and in playback mode, in far too many combinations to describe.  In general if
+they make sense together they probably work!
 
-                                terminal output date/time format
-                                  d - preface output with 'mm/dd hh:mm:ss'
-                                  D - preface outout with 'ddmmyyyy hh:mm:ss'
-                                  T - preface output with time only
-                                  U - preface output with UTC time
-                                  m - when reporting times, include milli-secs
+Date and Time
+  d - preface output with 'mm/dd hh:mm:ss'
+  D - preface outout with 'ddmmyyyy hh:mm:ss'
+  T - preface output with time only
+  U - preface output with UTC time
+  m - when reporting times, include milli-secs
 
-                                terminal output headers
-			          see --headerrepeat
-                                  i - include file header in output
-                                  t - start at top of page before printing interval headers
-                                   
-                                terminal output numerical formats
-                                  g - include/substitute 'g' for decimal point for numbers > 1G
-                                  G - include decimal point (when it will fit) for numbers > 1G
+Numerical Formats
+  g - include/substitute 'g' for decimal point for numbers > 1G
+  G - include decimal point (when it will fit) for numbers > 1G
 
-                                statistics
-                                  A - show averages and totals after each playback file processed
-				      NOTE - does NOT work in verbose mode
+Statistics (-p only, brief mode)
+  A - show averages and totals after each file processed
 
-                                filtering
-                                  x - report exceptions only (see man page)
-                                  X - record all values + exceptions in plot format (see manpage)
+Exception Reporting
+  x - report exceptions only (see man page)
+  X - record all values + exceptions in plot format (see manpage)
  
-                                These modify the results before displaying
-                                  F - use cumulative totals for maj/min faults in proc
-                                      data instead of rates
-                                  n - do NOT normalize rates to units/second
-                                  P - for process playback on different nodes, use
-                                      alternative passwd file (see man page)
+Modify results before display (do NOT effect collection)
+  F - use cumulative totals for maj/min faults in proc data instead of rates
+  n - do NOT normalize rates to units/second
 
-                                plot file naming/creation
-                                  a - if plotfile exists, append [default=skip -p file]
-                                  c - always create new plot file
-                                  u - create unique plot file names - include time
+Plot File Naming/Creation
+  a - if plotfile exists, append [default=skip -p file]
+  c - always create new plot file
+  u - create unique plot file names - include time
 
-                                plot file data format
-                                  1 - plot format with 1 decimal place of precision
-                                  2 - plot format with 2 decimal places of precision
-                                  z - don't compress output file(s)
+Plot Data Format
+  1 - plot format with 1 decimal place of precision
+  2 - plot format with 2 decimal places of precision
+  z - don't compress output file(s)
+
+File Header Information
+  i - include file header in output
+                                   
 EOF4
 printText($options);
 exit    if !defined($_[0]);
@@ -4942,32 +5056,67 @@ exit    if !defined($_[0]);
 sub showSubopts
 {
   my $subopts=<<EOF5;
-  -O, --subopts    subopts      list of sub-options that get applied to subsystems
-                                NFS
-                                  2 - record nfs V2 statistics
-                                  3 - record nfs V3 statistics [default]
-                                  C - collect nfs client data (requires -s f/F)
-                                Lustre
-                                  B - only for OST's and clients, collect buffer/rpc stats
-                                  D - collect lustre disk stats (MDS and OSS only)
-                                  M - collect lustre client metadata
-                                  R - collect lustre client readahead stats
+These options are all subsystem specific and all take one or more arguments.
+Options typically effect the type of data collectl and filters effect the way
+it is displayed.  In the case of lustre there are also 'services'
 
-      --procopts   options      Processes
-                                  i - show io counters in display
-                                  m - show memory breakdown and faults in display
-                                  p - never look for new pids or threads to match processing
-                                      criteria - (also improves performance)
-                                  r - show root command name for a narrower display
-                                      this can be combined with w
-                                  t - include ALL threads (can be a lot of overhead if many
-                                      active threads)
-                                  w - make format wider by including process arguments
-                                  z - exlude any processes with 0 in sort field
+Lustre
+  --lustopts
+      B - only for OST's and clients, collect buffer/rpc stats
+      D - collect lustre disk stats (HPSFS: MDS and OSS only)
+      M - collect lustre client metadata
+      O - collect lustre OST level stats (detail mode only and not MDS)
+      R - collect lustre client readahead stats
 
-      --slabopts   options      Slabs
-                                  s - only show slabs with non-zero allocations
-                                  S - only show slabs that have changed since last interval
+  --lustsvc: force monitoring/reporting of these lustre services
+      c - client
+      m - mds
+      o - oss
+
+NFS
+  --nfsopts [default is V3 server]
+      2 - record nfs V2 statistics
+      3 - record nfs V3 statistics
+      C - collect nfs client data  
+
+Processes
+   --procopts
+      i - show io counters in display
+      m - show memory breakdown and faults in display
+      p - never look for new pids or threads to match processing criteria
+            This also improves performance!
+      r - show root command name for a narrower display, can be combined with w
+      t - include ALL threads (can be a lot of overhead if many active threads)
+      w - make format wider by including process arguments
+      z - exclude any processes with 0 in sort field
+
+   --procfilt: restricts which procs are listed, where 'procs' is of the
+      Format: <type><match>[[,<type><match>],...], and valid types are any
+      combinations of:
+      c - any substring in command name
+      C - command name starts with this string
+      f - full path of command (including args) contains string
+      p - pid
+      P - parent pid
+      u - any processes owned by this user's UID
+      U - any processes owned by this user
+
+      NOTE1:  if 'procs' is actually a filename, that file will be read and all
+              lines concatenated together, comma separted, as if typed in as an
+              argument of --procfilt.  Lines beginning with # will be ignored
+              as comments and blank lines will be skipped.
+      NOTE2:  if any type fields are immediatly followed by a plus sign, any 
+              threads associated with that process will also be reported.
+              see man page for important restrictions
+
+Slab Options and Filters
+   --slabopts
+      s - only show slabs with non-zero allocations
+      S - only show slabs that have changed since last interval
+
+   --slabfilt: restricts which slabs are listed, where 'slab's is of the form: 
+               'slab[,slab...].  if 'slab' is a filename (you CAN mix them), 
+               it must contain a list of slabnames, one per line
 
 EOF5
 

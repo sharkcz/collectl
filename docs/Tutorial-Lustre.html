@@ -93,13 +93,11 @@ $ collectl -sL -oTm
 </pre></div>
 
 Just to take it one step futher, it turns out that lustre actually tracks client I/O by
-individual OSTs and sometimes that is more interesting, so there is a special mode
-for lustre in which you can specific <i>LL</i> which you should think of as 
-meaning <i>show me even more details</i> and as you can see in the following we now
-see the individual OSTs associated with each file system.
+individual OSTs and sometimes that is more interesting, so there is a special option
+for lustre clients, <i>--lustopts O</i>.
 
 <div class=terminal-wide14><pre>
-$ collectl -sL -oTm
+$ collectl -sL --lustopts O -oTm
 # LUSTRE CLIENT DETAIL
 #            Filsys  Ost      Reads ReadKB  Writes WriteKB
 15:19:17.007 spfs1  OST0000      0      0       0       0
@@ -114,7 +112,7 @@ also requesting date/time stamps be included.  Here we see the cache hits/misses
 added to the brief display for the client.
 
 <div class=terminal-wide14><pre>
-$ collectl -s l -OR -oD
+$ collectl -s l --lustopts R -oD
 #                  <-------------Lustre Client-------------->
 #Date    Time       Reads KBRead Writes KBWrite   Hits Misses
 20080319 15:20:12       0      0      0       0      0      0
@@ -124,19 +122,19 @@ $ collectl -s l -OR -oD
 or you can look at it in verbose format like this:
 
 <div class=terminal-wide14><pre>
-$ collectl -s l -OR --verbose
+$ collectl -s l --lustopts R --verbose
 # LUSTRE CLIENT SUMMARY: READAHEAD
 # Reads ReadKB  Writes WriteKB  Pend  Hits Misses NotCon MisWin LckFal  Discrd ZFile ZerWin RA2Eof HitMax
       0      0       0       0     0     0      0      0      0      0      0      0      0      0      0
       0      0       0       0     0     0      0      0      0      0      0      0      0      0      0
 </pre></div>
 
-Lustre also tracks client metadata, which you can request by specifying <i>-OM</i> and 
-BRW stats which are selected by <i>-OB</i>.  However both are so wide they only 
+Lustre also tracks client metadata, which you can request by specifying <i>--lustopts M</i> and 
+BRW stats which are selected by <i>--lustopts B</i>.  However both are so wide they only 
 have a verbose form and the following shows both being displayed at the same time.
 
 <div class=terminal-wide14><pre>
-$ collectl -s l -OBM
+$ collectl -s l --lustopts BM
 # LUSTRE CLIENT SUMMARY: RPC-BUFFERS (pages) METADATA
 #Rds  RdK   1P   2P   4P   8P  16P  32P  64P 128P 256P Wrts WrtK   1P   2P   4P   8P  16P  32P  64P 128P 256P
    0    0    0    0    0    0    0    0    0    0    0    0    0    0    0    0    0    0    0    0    0    0
@@ -145,7 +143,7 @@ $ collectl -s l -OBM
 </pre></div>
 
 And if that's not enough, these even have a detailed mode of display and you can look 
-at them by filesystem or OST.  You can specify any combinations of B,M and R with -O
+at them by filesystem or OST.  You can specify any combinations of B,M and R with --lustopts
 to show the associated data in both summary or detail formats, though only <i>readahead</i>
 appears in the brief display.  All others will force verbose format.
 

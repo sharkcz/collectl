@@ -100,7 +100,7 @@ In fact, if we know there are never going to be any new http process appearing
 (collectl looks for new processes that match selection strings by default):
 
 <pre>
-# time ./collectl.pl -sZ -Zchttp -i0 -c8640 -OP -f /tmp
+# time ./collectl.pl -sZ -Zchttp -i0 -c8640 --procopts p  -f /tmp
 real    0m5.080s
 user    0m3.930s
 sys     0m1.130s

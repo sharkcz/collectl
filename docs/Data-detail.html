@@ -58,36 +58,36 @@ will be included which is the aggregate number of interrupts for each CPU.
 <p>
 <div class=terminal-wide14><pre>
 # DISK STATISTICS (/sec)
-#           <---------reads---------><---------writes---------><--------averages--------> Pct
-#Name        Ops Merged KBytes  Size   Ops Merged KBytes  Size  RWSize  QLen  Wait SvcTim Util
+#          <---------reads---------><---------writes---------><--------averages--------> Pct
+#Name       KBytes Merged  IOs Size  KBytes Merged  IOs Size  RWSize  QLen  Wait SvcTim Util
 </pre></div>
 
 <table>
 <tr><td><b>Name</b></td>
 <td>Name of the disk the statistics are being reported for.</td></tr>
 
-<tr><td><b>Ops</b></td>
-<td>Number of reads/sec</td></tr>
+<tr><td><b>KBytes<b></td>
+<td>KB read/sec</td></tr>
 
 <tr valign=top><td><b>Merged</b></td>
 <td>Read requests merged per second when being dequeued.
 These statistics are not available in older kernels which
 only record disk statistics in /proc/stat.</td></tr>
 
-<tr><td><b>KBytes<b></td>
-<td>KB read/sec</td></tr>
+<tr><td><b>IOs</b></td>
+<td>Number of reads/sec</td></tr>
 
 <tr><td><b>Size<b></td>
 <td>Average read I/O size in KBytes</td></tr>
 
-<tr><td><b>Ops</b></td>
-<td>Number of writes/sec</td></tr>
+<tr><td><b>KBytes<b></td>
+<td>KB written/sec</td></tr>
 
 <tr valign=top><td><b>Merged</b></td>
 <td>Write requests merged per second when being dequeued.</tr></tr>
 
-<tr><td><b>KBytes<b></td>
-<td>KB written/sec</td></tr>
+<tr><td><b>IOs</b></td>
+<td>Number of writes/sec</td></tr>
 
 <tr><td><b>Size<b></td>
 <td>Average write I/O size in KBytes</td></tr>
@@ -114,17 +114,17 @@ of I/Os</td></tr>
 <p>
 <div class=terminal><pre>
 # INFINIBAND STATISTICS (/sec)
-#HCA    OpsIn  OpsOut   KB-In  KB-Out  IOSizeI IOSizeO  Errors
+#HCA    KBIn   PktIn  SizeIn   KBOut  PktOut SizeOut  Errors
 </pre></div>
 
 <table>
 <tr><td><b>HCA</b></td><td>HCA instance name</td></tr>
-<tr><td><b>OpsIn</b></td><td>Received packets/sec.</td></tr>
-<tr><td><b>OpsOut</b></td><td>Transmitted packets/sec.</td></tr>
-<tr><td><b>KB-In</b></td><td>KB received/sec.</td></tr>
-<tr><td><b>KB-Out</b></td><td>KB transmitted/sec.</td></tr>
-<tr><td><b>IOSizeI</b></td><td>Average incoming packet size in KB</td></tr>
-<tr><td><b>IOSizeO</b></td><td>Average outgoing packet size in KB</td></tr>
+<tr><td><b>KBIn</b></td><td>KB received/sec.</td></tr>
+<tr><td><b>PktIn</b></td><td>Received packets/sec.</td></tr>
+<tr><td><b>SizeIn</b></td><td>Average incoming packet size in KB</td></tr>
+<tr><td><b>KBOut</b></td><td>KB transmitted/sec.</td></tr>
+<tr><td><b>PktOut</b></td><td>Transmitted packets/sec.</td></tr>
+<tr><td><b>SizeOut</b></td><td>Average outgoing packet size in KB</td></tr>
 <tr valign=top><td><b>Errs</b></td><td>Count of current errors.  Since these are typically infrequent, it
 is felt that reporting them as a rate would result in either not seeing them OR
 round-off hiding their values.</td></tr>
@@ -156,26 +156,27 @@ generating this interrut</td></tr>
 There are several formats the lustre detail data can take based on whether you're
 looking at a client or an OSS (there is not any MDS specific detail data, though it does
 share the same disk-level buffer size data as the OSS).  Furthermore, if one specifies
-the <i>-sLL</i> form of the detail switch OST level details will be reported where
-appropriate.
+<i>--lustopts I</i> client OST level details will be reported.
+
 <p>
 <b>Lustre Client</b>, <i>collectl -sL</i>
 <div class=terminal><pre>
 # LUSTRE CLIENT DETAIL
-#Filsys   Reads ReadKB  Writes WriteKB
+#Fil  KBRead  Reads KBWrite  Writes
 </pre></div>
 <table>
 <tr><td valign=top><b>Filsys</b></td><td>Name of the filesystem these stats apply to</td></tr>
+<tr><td valign=top><b>KBRead</b></td><td>KBs read/sec</td></tr>
 <tr><td valign=top><b>Reads</b></td> <td>Reads/sec</td></tr>
-<tr><td valign=top><b>ReadKB</b></td><td>KBs read/sec</td></tr>
+<tr><td valign=top><b>KBWrite</b></td><td>KBs written/sec</td></tr>
 <tr><td valign=top><b>Writes</b></td><td>Writes/sec</td></tr>
-<tr><td valign=top><b>WriteKB</b></td><td>KBs written/sec</td></tr>
+<tr><td valign=top><b>
 </table>
 <p>
-<b>Lustre Client</b>, <i>collectl -sLL</i>
+<b>Lustre Client</b>, <i>collectl -sL --lustopts O</i>
 <div class=terminal><pre>
 # LUSTRE CLIENT DETAIL
-#Filsys  Ost    Reads ReadKB  Writes WriteKB
+#Filsys  Ost    KBRead  Reads KBWrite Writes
 </pre></div>
 The data here is the same as that reported for the standard client side lustre data except
 now it is broken down by OST within the file system.
@@ -183,44 +184,44 @@ now it is broken down by OST within the file system.
 <table>
 <tr><td valign=top><b>Filsys</b></td><td>Name of the filesystem these stats apply to</td></tr>
 <tr><td valign=top><b>Ost</b></td>   <td>OST name within the filesystem</td></tr>
+<tr><td valign=top><b>KBRead</b></td><td>KBs read/sec</td></tr>
 <tr><td valign=top><b>Reads</b></td> <td>Reads/sec</td></tr>
-<tr><td valign=top><b>ReadKB</b></td><td>KBs read/sec</td></tr>
+<tr><td valign=top><b>KBWrite</b></td><td>KBs written/sec</td></tr>
 <tr><td valign=top><b>Writes</b></td><td>Writes/sec</td></tr>
-<tr><td valign=top><b>WriteKB</b></td><td>KBs written/sec</td></tr>
 </table>
 <p>
-<b>Lustre Client RPB-Buffer Stats</b>, <i>collectl -sLL -OB</i>
+<b>Lustre Client RPB-Buffer Stats</b>, <i>collectl -sL --lustopts BO</i>
 <div class=terminal><pre>
 # LUSTRE CLIENT DETAIL: RPC-BUFFERS (pages)
-#Filsys  Ost   Rds  RdK   1K   2K   ...   Wrts WrtK   1K   2K   ...
+#Filsys  Ost   RdK  Rds   1K   2K   ...   WrtK Wrts   1K   2K   ...
 </pre></div>
 This form also includes the reads/writs within the filesystem, but also add the sizes of
-the RPM buffers.  Since these numbers always apply to OSTs you need to use the <i>-sLL</i>
-form of the subsystem switch.
+the RPM buffers.  Since these numbers always apply to OSTs you need to include <i>--lustopts O/i>
+or the the details will be summarized by filesystem and not OST.
 <p>
 <table>
 <tr><td valign=top><b>Filsys</b></td><td>Name of the filesystem these stats apply to</td></tr>
 <tr><td valign=top><b>Ost</b></td><td>OST name within the filesystem</td></tr>
-<tr><td valign=top><b>Rds</b></td><td>Reads/sec</td></tr>
 <tr><td valign=top><b>RdK</b></td><td>KBs read/sec</td></tr>
+<tr><td valign=top><b>Rds</b></td><td>Reads/sec</td></tr>
 <tr><td valign=top><b>nK</b></td><td>Number of pages of of this size read</td></tr>
-<tr><td valign=top><b>Wrts</b></td><td>Writes/sec</td></tr>
 <tr><td valign=top><b>WrtK</b></td><td>KBs written/sec</td></tr>
+<tr><td valign=top><b>Wrts</b></td><td>Writes/sec</td></tr>
 <tr><td valign=top><b>nK</b></td><td>Number of pages of of this size written</td></tr>
 </table>
 <p>
-<b>Lustre Client Metadata</b>, <i>collectl -sL -OM</i>
+<b>Lustre Client Metadata</b>, <i>collectl -sL --lustopts M</i>
 <div class=terminal-wide14><pre>
 # LUSTRE CLIENT DETAIL: METADATA
-#Filsys   Reads ReadKB  Writes WriteKB  Open Close GAttr SAttr  Seek Fsync DrtHit DrtMis
+#Filsys   KBRead  Reads KBWrite  Writes  Open Close GAttr SAttr  Seek Fsync DrtHit DrtMis
 </pre></div>
 <p>
 <table>
 <tr><td valign=top><b>Filsys</b></td><td>Name of the filesystem these stats apply to</td></tr>
+<tr><td valign=top><b>KBRead</b></td><td>KBs read/sec</td></tr>
 <tr><td valign=top><b>Reads</b></td><td>Reads/sec</td></tr>
-<tr><td valign=top><b>ReadKB</b></td><td>KBs read/sec</td></tr>
+<tr><td valign=top><b>KBWrite</b></td><td>KBs written/sec</td></tr>
 <tr><td valign=top><b>Writes</b></td><td>Writes/sec</td></tr>
-<tr><td valign=top><b>WriteKB</b></td><td>KBs written/sec</td></tr>
 <tr><td valign=top><b>Open</b></td><td>Opens/sec</td></tr>
 <tr><td valign=top><b>Close</b></td><td>Closes/sec</td></tr>
 <tr><td valign=top><b>GAttr</b></td><td>Get Attributes/sec</td></tr>
@@ -231,18 +232,18 @@ form of the subsystem switch.
 <tr><td valign=top><b>DrtMis</b></td><td>Dirty Misses/sec</td></tr>
 </table>
 <p>
-<b>Lustre Client Readhead</b>, <i>collectl -sL -OR</i>
+<b>Lustre Client Readhead</b>, <i>collectl -sL --lustopts R</i>
 <div class=terminal-wide14><pre>
 # LUSTRE CLIENT DETAIL: READAHEAD
-#Filsys   Reads ReadKB  Writes WriteKB  Pend  Hits Misses NotCon MisWin LckFal  Discrd ZFile ZerWin RA2Eof HitMax
+#Filsys   KBRead Reads  KBWrite Writes  Pend  Hits Misses NotCon MisWin LckFal  Discrd ZFile ZerWin RA2Eof HitMax
 </pre></div>
 <p>
 <table>
 <tr><td valign=top><b>Filsys</b></td><td>Name of the filesystem these stats apply to</td></tr>
+<tr><td valign=top><b>KBRead</b></td><td>KBs read/sec</td></tr>
 <tr><td valign=top><b>Reads</b></td><td>Reads/sec</td></tr>
-<tr><td valign=top><b>ReadKB</b></td><td>KBs read/sec</td></tr>
+<tr><td valign=top><b>KBWrite</b></td><td>KBs written/sec</td></tr>
 <tr><td valign=top><b>Writes</b></td><td>Writes/sec</td></tr>
-<tr><td valign=top><b>WriteKB</b></td><td>KBs written/sec</td></tr>
 <tr><td valign=top><b>Pend</b></td><td>Pending issued pages</td></tr>
 <tr><td valign=top><b>Hits</b></td><td>Hits</td></tr>
 <tr><td valign=top><b>Misses</b></td><td>Misses</td></tr>
@@ -259,49 +260,49 @@ form of the subsystem switch.
 <b>Lustre OSS</b>, <i>collectl -sL</i>
 <div class=terminal><pre>
 # LUSTRE FILESYSTEM SINGLE OST STATISTICS
-#Ost          Read Ops   Read KB      Write Ops   Write KB
+#Ost           KBRead   Reads    KBWrite  Writes
 </pre></div>
 <table>
 <tr><td valign=top><b>Ost</b></td><td>OST name</td></tr>
-<tr><td valign=top><b>Read Ops</b></td><td>Reads/sec</td></tr>
-<tr><td valign=top><b>Read KB</b></td><td>KBs read/sec</td></tr>
-<tr><td valign=top><b>Write Ops</b></td><td>Writes/sec</td></tr>
-<tr><td valign=top><b>Write KB</b></td><td>KBs written/sec</td></tr>
+<tr><td valign=top><b>KBRead</b></td><td>KBs read/sec</td></tr>
+<tr><td valign=top><b>Reads</b></td><td>Reads/sec</td></tr>
+<tr><td valign=top><b>KBWrite</b></td><td>KBs written/sec</td></tr>
+<tr><td valign=top><b>Writes</b></td><td>Writes/sec</td></tr>
 </table>
 <p>
 
-<b>Lustre OSS RPC Buffers</b>, <i>collectl -sL -OB</i>
+<b>Lustre OSS RPC Buffers</b>, <i>collectl -sL --lustopts B</i>
 <div class=terminal><pre>
 # LUSTRE FILESYSTEM SINGLE OST STATISTICS
-#Ost            Rds  RdK   1P   2P  ...  Wrts WrtK   1P   2P  ...
+#Ost            RdK  Rds   1P   2P  ...  WrtK Wrts   1P   2P  ...
 </pre></div>
 <table>
 <tr><td valign=top><b>Filsys</b></td><td>Name of the filesystem these stats apply to</td></tr>
 <tr><td valign=top><b>Ost</b></td><td>OST name within the filesystem</td></tr>
-<tr><td valign=top><b>Rds</b></td><td>Reads/sec</td></tr>
 <tr><td valign=top><b>RdK</b></td><td>KBs read/sec</td></tr>
+<tr><td valign=top><b>Rds</b></td><td>Reads/sec</td></tr>
 <tr><td valign=top><b>nP</b></td><td>Number of pages of of this size read</td></tr>
-<tr><td valign=top><b>Wrts</b></td><td>Writes/sec</td></tr>
 <tr><td valign=top><b>WrtK</b></td><td>KBs written/sec</td></tr>
+<tr><td valign=top><b>Wrts</b></td><td>Writes/sec</td></tr>
 <tr><td valign=top><b>nP</b></td><td>Number of pages of of this size written</td></tr>
 </table>
 <p>
-<b>Lustre OSS and MDS Disk Buffers</b>, <i>collectl -sL -OD</i>
+<b>Lustre OSS and MDS Disk Buffers</b>, <i>collectl -sL --lustopts D</i>
 <p>
 This display is very similar the the RPC buffers in that the sizes of different size
 I/O requests are reported.  In this case there are requests send to the disk driver.
 Note that this report is only available for HP's SFS.
 <div class=terminal><pre>
 # LUSTRE DISK BLOCK LEVEL DETAIL (units are 512 bytes)
-#DISK Rds  RdK 0.5K   1K   2K   ...   Wrts WrtK 0.5K   1K   2K   ...
+#DISK RdK  Rds 0.5K   1K   2K   ...   WrtK Wrts 0.5K   1K   2K   ...
 </pre></div>
 <table>
 <tr><td valign=top><b>Disk</b></td><td>Name of the disk these stats apply to</td></tr>
-<tr><td valign=top><b>Rds</b></td><td>Reads/sec</td></tr>
-<tr><td valign=top><b>RdK</b></td><td>KBs read/sec</td></tr>
+<tr><td valign=top><b>RdK</b></td><td>Reads/sec</td></tr>
+<tr><td valign=top><b>Rds</b></td><td>KBs read/sec</td></tr>
 <tr><td valign=top><b>nK</b></td><td>Number of blocks of of this size read</td></tr>
-<tr><td valign=top><b>Wrts</b></td><td>Writes/sec</td></tr>
-<tr><td valign=top><b>WrtK</b></td><td>KBs written/sec</td></tr>
+<tr><td valign=top><b>WrtK</b></td><td>Writes/sec</td></tr>
+<tr><td valign=top><b>Wrts</b></td><td>KBs written/sec</td></tr>
 <tr><td valign=top><b>nK</b></td><td>Number of blocks of of this size written</td></tr>
 </table>
 
@@ -310,7 +311,7 @@ Note that this report is only available for HP's SFS.
 <p>
 <div class=terminal-wide14><pre>
 # NETWORK STATISTICS (/sec)
-#Num    Name  InPck  InErr OutPck OutErr   Mult   ICmp   OCmp    IKB    OKB  ISize  OSize
+#Num    Name  KBIn  PktIn SizeIn  MultI   CmpI  ErrIn  KBOut PktOut  SizeO   CmpO ErrOut
 </pre></div>
 <p>
 <table>
@@ -320,38 +321,38 @@ Note that this report is only available for HP's SFS.
 <tr><td><b>Name</b></td>
 <td>Name of the interface</td></tr>
 
-<tr><td><b>InPck</b></td>
-<td>Incoming packets/sec</td></tr>
-
-<tr><td><b>InErr</b></td>
-<td>Incoming errors/sec</td></tr>
-
-<tr><td><b>OutPck</b></td>
-<td>Outgoing packets/sec</td></tr>
-
-<tr><td><b>OutErr</b></td>
-<td>Outgoing errors/sec</td></tr>
-
-<tr><td><b>Mult</b></td>
-<td>Outgoing multicast packets/sec</td></tr>
-
-<tr><td><b>ICmp</b></td>
-<td>Incoming compressed packets/sec</td></tr>
-
-<tr><td><b>OCmp</b></td>
-<td>Outgoing compressed packets/sec</td></tr>
-
-<tr><td><b>IKB</b></td>
+<tr><td><b>KBIn</b></td>
 <td>Incoming KB/sec</td></tr>
 
-<tr><td><b>OKB</b></td>
-<td>Outgoing KB/sec</td></tr>
+<tr><td><b>PktIn</b></td>
+<td>Incoming packets/sec</td></tr>
 
-<tr><td><b>ISize</b></td>
+<tr><td><b>SizeI</b></td>
 <td>Average incoming packet size in bytes</td></tr>
 
-<tr><td><b>OSize</b></td>
+<tr><td><b>MultI</b></td>
+<td>Incoming multicast packets/sec</td></tr>
+
+<tr><td><b>CmpI</b></td>
+<td>Incoming compressed packets/sec</td></tr>
+
+<tr><td><b>ErrIn</b></td>
+<td>Incoming errors/sec</td></tr>
+
+<tr><td><b>KBOut</b></td>
+<td>Outgoing KB/sec</td></tr>
+
+<tr><td><b>PktOut</b></td>
+<td>Outgoing packets/sec</td></tr>
+
+<tr><td><b>SizeO</b></td>
 <td>Average outgoing packet size in bytes</td></tr>
+
+<tr><td><b>CmpO</b></td>
+<td>Outgoing compressed packets/sec</td></tr>
+
+<tr><td><b>ErrOut</b></td>
+<td>Outgoing errors/sec</td></tr>
 </table>
 <p>
 <h3>NFS Data, <i>collectl -sF</i></h3>

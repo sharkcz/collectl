@@ -26,16 +26,6 @@
   <li><a href="#run7">What are the differences between --rawtoo and --sexpr</a></li>
   <li><a href="#run8">How can I pass collectl data to other applications like CMU?</a></li>
 </ul>
-<h2>Lustre Specific</h2>
-<ul>
-  <li><a href="#lus1">Tell me again about the differences between -sL and -sLL</a></li>
-  <li><a href="#lus2">I just collected client data with -OBMR so how to I create details?</a></li>
-  <li><a href="#lus3">I tried to play back a lustre client raw file with -sL and it told
-      me I need -sLL for -OB</a></li>
-  <li><a href="#lus4">I tried to playback the same file using -sLL and it told me -OM
-      does not apply to -sLL</a></li>
-  <li><a href="#lus5">So how do I play it back the file described in the last 2 questions?</a></li>
-</ul>
 <h2>Operational Problems</h2>
 <ul>
   <li><a href="#ops1">Why won't collectl run as a service?</a></li>
@@ -51,6 +41,7 @@
   <li><a href="#ops11">Why can't I see Process I/O statistics?</a></li>
   <li><a href="#ops12">I'm getting an error that <i>formatit.ph</i> can't be found</a></li>
   <li><a href="#ops13">When I use an interval >4 seconds I'm getting non-uniform sample times</li>
+  <li><a href="#ops14">I'm getting <i>settimer</i> messages on the console and in dmesg</li>
 </ul>
 
 <h1>General Questions</h1>
@@ -235,53 +226,6 @@ The arguments to readS take the following form:
 Detailed customization instructions for use of data returned by <i>readS</i> 
 within CMU or other applications is beyond the scope of this FAQ.
 
-<h1>Lustre Specific</h1>
-
-<a name="lus1"></a>
-<h2>Tell me again about the differences between -sL and -sLL</h2>
-<p>
-The easiest way to think about this is that -sL provides details and
--sLL provides more details.  Lustre data is oriented around filesystems
-and filesystems are built on top of one or more OSTs.  Therefore, at
-the client level -sL provides details at the filesystem level and -sLL 
-provides data at the OST level.  In the case of an OSS, it's already
-at the OST level and so there's really no lower level of detail.  As a
-matter of convenience, -sLL does the same as -sL on an OSS.  An MDS only
-generates detail level data at the disk block level and -sL and -sLL 
-on it both provide the same details.
-
-<a name="lus2"></a>
-<h2>I just collected client data with -OBMR so how to I create details?</h2>
-<p>
-The thing to remember is that you can either generate filesystem details
-or ost details but not both.  Since M&R apply to filesystems and B to OSTs,
-you would playback the raw data file with <i>-sL -OMR</i> to generate M&R
-date or with <i>-sLL -OB</i> to generate rpc-buffer details at the OST
-level.
-
-<a name="lus3"></a>
-<h2>I tried to play back a lustre client raw file with -sL and it told
-   me I need -sLL for -OB</h2>
-<p>
-By design, <i>collectl</i> tries to play back data using the same switches
-that were used when you collected it.  This error message would be 
-generated if you collected data using -OBM and tried to play it back by
-only specifying -sL, in which case it would take -OBM as the default,
-and -oB is incompatible with -sL. 
-
-<a name="lus4"></a>
-<h2>I tried to playback the same file using -sLL and it told me -OM
-   does not apply to -sLL</h2>
-<p>
-As in the previous case, by only specifying -sLL it would again take -OBM
-as the default and this time -OM is incompatible with -sLL.
-
-<a name="lus5"></a>
-<h2>So how do I play it back the file described in the last 2 questions?</h2>
-<p>
-The trick here is to <i>always</i> specify -O and include those subsystem options
-that are compatible with your -s switch.
-
 <h1>Operational Problems</h1>
 
 <a name="ops1"></a>
@@ -456,6 +400,11 @@ of glibc that changed the granularity of timers from micro-seconds to nanosecond
 therefore went from 32 to 64 bits.  Guess what, 4.3 seconds is > 32 bits!  Once I
 reported this to the author of HiRes he immediately (whithin hours) release version
 1.91 which addressed the problem.  A newer version of HiRes should be the remedy.
+
+<a name="ops14"></a>
+<h2>I'm getting <i>settimer</i> messages on the console and in dmesg</h2>
+This problem is actually another form of the previous one and is related to version 2.5 of
+glibc.  See more details on what this means and how to correct it <a href=HiResTime.html>here</a>.
 
 </body>
 </html>

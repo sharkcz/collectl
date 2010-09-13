@@ -48,12 +48,12 @@ could fit on a single line.  This format always includes the date and time.
      1     0     0     0     0     0     0    98   354    501     1   100     1   0.41  0.12  0.04
 
 # DISK SUMMARY (/sec)
-#Reads  R-Merged  R-KBytes  SizeKB    Writes  W-Merged  W-KBytes  SizeKB
-     0         0         0       0         4        70       296      74
+#KBRead RMerged  Reads SizeKB  KBWrite WMerged Writes SizeKB
+      0       0      0      0        0       0      0      0
 
 # NETWORK SUMMARY (/sec)
-#InPck  InErr OutPck OutErr   Mult   ICmp   OCmp    IKB    OKB  ISize  OSize
-   235      0    207      0      0      0      0     36     44    158    220
+# KBIn  PktIn SizeIn  MultI   CmpI  ErrIn  KBOut PktOut  SizeO   CmpO ErrOut
+    17    121    149      0      0      0     15     88    175      0      0
 </pre>
 </div>
 
@@ -74,19 +74,19 @@ which also forces
       1     0    0    0    0    0    0     0   99
 
 # DISK STATISTICS (/sec)
-#          <-------reads--------><-------writes------><----------averages---------->  Percent
-#Name        Ops  Merged  KBytes   Ops  Merged  KBytes  Request  QueLen   Wait SvcTim    Util
-cciss/c0d0     0       0       0     0       0       0        0       0      0      0       0
-cciss/c0d1     0       0       0     0       0       0        0       0      0      0       0
-cciss/c0d2     0       0       0     0       0       0        0       0      0      0       0
+#          <---------reads---------><---------writes---------><--------averages--------> Pct
+#Name       KBytes Merged  IOs Size  KBytes Merged  IOs Size  RWSize  QLen  Wait SvcTim Util
+cciss/c0d0       0      0    0    0       0      0    0    0       0     0     0      0    0
+cciss/c0d1       0      0    0    0       0      0    0    0       0     0     0      0    0
+cciss/c0d2       0      0    0    0       0      0    0    0       0     0     0      0    0
 
 # NETWORK STATISTICS (/sec)
-#Num    Name  InPck  InErr OutPck OutErr   Mult   ICmp   OCmp    IKB    OKB
-   0     lo:      0      0      0      0      0      0      0      0      0
-   1   eth0:      0      0      0      0      0      0      0      0      0
-   2   eth1:      1      0      1      0      0      0      0      0      0
-   3   eth2:     41      0      6      0      0      0      0      3      0
-   4   eth3:      0      0      0      0      0      0      0      0      0
+#Num    Name   KBIn  PktIn SizeIn  MultI   CmpI  ErrIn  KBOut PktOut  SizeO   CmpO ErrOut
+   0     lo:      0      0      0      0      0      0      0      0      0      0      0
+   1   eth0:      0      2    207      0      0      0      0      0      0      0      0
+   2   eth1:      0      2    207      0      0      0      0      0      0      0      0
+   3   eth2:      1     20     72      0      0      0      0      4    122      0      0
+   4   eth3:      0      0      0      0      0      0      0      0      0      0      0
 </pre>
 </div>
 
@@ -109,11 +109,11 @@ cpu summary as well as detail while we're only showing disk details.
       1     0    0    0    0    0    0     0   99
 
 # DISK STATISTICS (/sec)
-#          <-------reads--------><-------writes------><----------averages---------->  Percent
-#Name        Ops  Merged  KBytes   Ops  Merged  KBytes  Request  QueLen   Wait SvcTim    Util
-cciss/c0d0     0       0       0     2       0      11        4       0     13     13       3
-cciss/c0d1     0       0       0     2       0       3        1       0      6      3       0
-cciss/c0d2     0       0       0     0       0       0        0       0      0      0       0
+#          <---------reads---------><---------writes---------><--------averages--------> Pct
+#Name       KBytes Merged  IOs Size  KBytes Merged  IOs Size  RWSize  QLen  Wait SvcTim Util
+cciss/c0d0       0      0    0    0       0      0    0    0       0     0     0      0    0
+cciss/c0d1       0      0    0    0       0      0    0    0       0     0     0      0    0
+cciss/c0d2       0      0    0    0       0      0    0    0       0     0     0      0    0
 </pre>
 </div>
 
@@ -132,57 +132,56 @@ waiting for 1 second sample...
 
 <h3>When you just don't know...</h3>
 A great way to familiarize yourself with the types of data collectl can
-generate is to try the new (as of Version 2.6.0) <i>--all</i> switch and 
+generate is to do (as of Version 2.6.0) <i>--all --verbose</i> and 
 see all the summary data generated at once,
 excluding processes and slabs.  Since this can be a lot to watch, 
-especially as it scrolls off the screen between samples, the <i>-ot</i>
-which stands for <i>options:top</i> can be your friend.  It will clear the
+especially as it scrolls off the screen between samples, the <i>--home</i>
+can be your friend.  It will clear the
 screen between samples and remove extra lines to give an appearance 
-somewhat like one of the popular <i>top</i> utilies.  Also remember that
-the <i>top option</i> can be used with any display that can be cumbersome to 
-watch scroll by, such as some of the device detail reports.  Try it, you'll
-like it.
+of a continously refreshing screen-based utility.  Try it with different
+combinations of subsystems to reduce the amount of information
+displayed.
 
 <div class=terminal-wide14>
 <pre>
-### RECORD    2 >>> ibdln270 <<< (1207162585.002) (Wed Apr  2 14:56:25 2008) ###
+### RECORD    1 >>> hadesn1 <<< (1214918640.001) (Tue Jul  1 09:24:00 2008) ###
 # CPU SUMMARY (INTR, CTXSW & PROC /sec)
 # USER  NICE   SYS  WAIT   IRQ  SOFT STEAL  IDLE  INTR  CTXSW  PROC  RUNQ   RUN   AVG1  AVG5 AVG15
-    25     0     0     0     0     0     0    74  1062    188     0   453     1   0.90  0.63  0.58
+     0     0     0     0     0     0     0   100  1327    647     1   341     0   0.00  0.00  0.00
 # INTERRUPT SUMMARY
-#    Cpu0   Cpu1   Cpu2   Cpu3
-       47    498    506     12
+#    Cpu0   Cpu1   Cpu2   Cpu3   Cpu4   Cpu5   Cpu6   Cpu7
+      999      0    300      0      0      0     26      0
 # DISK SUMMARY (/sec)
-#Reads  R-Merged  R-KBytes   Writes  W-Merged  W-KBytes
-     0         0         0        6        91       388
+#KBRead RMerged  Reads SizeKB  KBWrite WMerged Writes SizeKB
+      0       0      0      0        0       0      0      0
 # NFS SERVER (/sec)
-#<----------Network-------><----------RPC---------><---NFS V3--->
-#PKTS   UDP   TCP  TCPCONN  CALLS  BADAUTH  BADCLNT   READ  WRITE
-    0     0     0        0      0        0        0      0      0
+#<----------Network-------><----------RPC--------->
+#PKTS   UDP   TCP  TCPCONN  CALLS  BADAUTH  BADCLNT
+    0     0     0        0      0        0        0
 # INODE SUMMARY
-#DCache  ---OpenFiles---           -----SBlock-----   ----DQuot----
-# Unusd  Handles   % Max    Inode  Handles    % Max   Entry   % Max
-   164K        0    0.00     122K        0     0.00       0    0.00
+#    Dentries      File Handles    Inodes
+# Number  Unused   Alloc   % Max   Number
+   42532   39837     510    0.03    39011
 # LUSTRE CLIENT SUMMARY
-# Reads ReadKB  Writes WriteKB
-      0      0       0       0
+# KBRead  Reads  KBWrite Writes
+       0      0        0      0
 # MEMORY STATISTICS
 #<------------------------Physical Memory-----------------------><-----------Swap----------><-Inactive-><Pages/sec>
 #   TOTAL    USED    FREE    BUFF  CACHED    SLAB  MAPPED  COMMIT     TOTAL    USED    FREE     TOTAL     IN    OUT
-   16028M   2964M  13064M 195816K   2128M 407048K 264244K   1136M     6142M       0   6142M     1706M      0    388
+   16053M   1276M  14776M 130816K 403696K 587884K  80992K 130684K    15308M       0  15308M   201028K      0      0
 # NETWORK SUMMARY (/sec)
-#InPck  InErr OutPck OutErr   Mult   ICmp   OCmp    IKB    OKB
-    39      0     58      0      0      0      0      2      7
+# KBIn  PktIn SizeIn  MultI   CmpI  ErrIn  KBOut PktOut  SizeO   CmpO ErrOut
+     1     15    103      0      0      0      0      2    150      0      0
 # SOCKET STATISTICS
 #      <-------------Tcp------------->   Udp   Raw   <---Frag-->
 #Used  Inuse Orphan    Tw  Alloc   Mem  Inuse Inuse  Inuse   Mem
-  364     83      0    99    251     1     35     1      0     0
+   90      8      0     1     11     0      8     0      0     0
 # TCP SUMMARY (/sec)
 # PureAcks HPAcks   Loss FTrans
-         0     21      0      0
+         0      1      0      0
 # INFINIBAND SUMMARY (/sec)
-# OpsIn  OpsOut   KB-In  KB-Out  Errors
-      0       0       0       0       0
+#  KBIn   PktIn  SizeIn   KBOut  PktOut SizeOut  Errors
+      0       0       0       0       0       0       0
 </pre></div>
 
 <p>
@@ -213,17 +212,17 @@ There are a couple of things to remember about playback:
 data will be written to /var/log/collectl by default.</li>
 <li>You can playback a subset of data by inclusion of the -s switch</li>
 <li>Just about any formatting switches you can use interactively you can use during playback</li>
-<li>You can select a subset of the time period with -b and -e</li>
+<li>You can select a subset of the time period with --from and --thru</li>
 </ul>
 
 <h3>Playback Between 2 Time Periods</h3>
 In this example we're not selecting any device details and so the output defaults
 to brief mode and all data is printing on the same line.  We've also chosen to
-display time in msecs.
+display time in msecs and use --from to specify both times.
 
 <div class=terminal-wide15>
 <pre>
-collectl -scdn -p /var/log/collectl/cag-dl380-01-20070830-082013.raw.gz -b 08:29 -e 08:30 -oTm
+collectl -scdn -p /var/log/collectl/cag-dl380-01-20070830-082013.raw.gz --from 08:29-08:30 -oTm
 #             <--------CPU--------><-----------Disks-----------><-----------Network---------->
 #Time         cpu sys inter  ctxsw KBRead  Reads  KBWrit Writes netKBi pkt-in  netKBo pkt-out
 08:29:00.012    0   0   135     38      0      0       2      0      0     11       0       2
@@ -236,17 +235,18 @@ collectl -scdn -p /var/log/collectl/cag-dl380-01-20070830-082013.raw.gz -b 08:29
 </div>
 
 <h3>Same Data File, Shorter Interval, Disk Details</h3>
-As expected this defaults to --verbose mode.
+As expected this defaults to --verbose mode.  Also notice we left off the leading 0
+in the <i>from time</i>.
 
 <div class=terminal-wide14>
 <pre>
-collectl -sD -p /var/log/collectl/cag-dl380-01-20070830-082013.raw.gz -b 08:29 -e 08:29:10 -oD
+collectl -sD -p /var/log/collectl/cag-dl380-01-20070830-082013.raw.gz -from 8:29 --thru 08:29:10 -oD
 # DISK STATISTICS (/sec)
-#                   <-------reads--------><-------writes------><----------averages---------->  Percent
-#         Name        Ops  Merged  KBytes   Ops  Merged  KBytes  Request  QueLen   Wait SvcTim    Util
-08:29:00 c0d0           0       0       0     0       0       2        6       0      6      6       0
-08:29:00 c0d1           0       0       0     0       0       0        0       0      0      0       0
-08:29:00 c0d2           0       0       0     0       0       0        0       0      0      0       0
+#                   <---------reads---------><---------writes---------><--------averages--------> Pct
+#         Name       KBytes Merged  IOs Size  KBytes Merged  IOs Size  RWSize  QLen  Wait SvcTim Util
+08:29:00 c0d0             0      0    0    0       2      0    0    6       6     0     6      6    0
+08:29:00 c0d1             0      0    0    0       0      0    0    0       0     0     0      0    0
+08:29:00 c0d2             0      0    0    0       0      0    0    0       0     0     0      0    0
 </pre>
 </div>
 
@@ -257,7 +257,7 @@ screen real estate.
 
 <div class=terminal-wide15>
 <pre>
-collectl -sms -p /var/log/collectl/cag-dl380-01-20070830-082013.raw.gz -b 08:29 -e 08:30 -oD
+collectl -sms -p /var/log/collectl/cag-dl380-01-20070830-082013.raw.gz --from 08:29-08:30 -oD
 #                  <-----------Memory----------><------Sockets----->
 #Date    Time      free buff cach inac slab  map   Tcp  Udp  Raw Frag
 20070830 08:29:00   64M 529M   2G 483M    0    0    89   17    0    0
@@ -274,7 +274,7 @@ This format is rarely used, but nothing prevents one from doing so.
 
 <div class=terminal-wide12>
 <pre>
-[root@poker]# collectl -P -sms -p /var/log/collectl/cag-dl380-01-20070830-082013.raw.gz -b 08:29 -e 08:30
+[root@poker]# collectl -P -sms -p /var/log/collectl/cag-dl380-01-20070830-082013.raw.gz --from 08:29-08:30
 #Date Time [MEM]Tot [MEM]Used [MEM]Free [MEM]Shared [MEM]Buf [MEM]Cached [MEM]Slab [MEM]Map [MEM]Commit [MEM]SwapTot [MEM]SwapUsed
 [MEM]SwapFree [MEM]Dirty [MEM]Clean [MEM]Laundry [MEM]Inactive [MEM]PageIn [MEM]PageOut [SOCK]Used [SOCK]Tcp [SOCK]Orph [SOCK]Tw  [SOCK]Alloc
 [SOCK]Mem [SOCK]Udp [SOCK]Raw [SOCK]Frag [SOCK]FragMem

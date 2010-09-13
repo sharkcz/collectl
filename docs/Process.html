@@ -242,9 +242,11 @@ with <i>--procopts t</i>
 which requests <i>all selected processes</i> be examined for threads.  You can also
 specify a subset of processes be examined by specifying a + with 
 <i>--procfilt</i> but that's getting into more advanced concepts.
-Finally, in the spirit of saving screen real estate collectl doesn't include command arguments in
+Fnally, in the spirit of saving screen real estate collectl doesn't include command arguments in
 the output but including <i>--procopts w</i> will request a wider display that does include
-them.
+them.  In fact you can get an even narrow display by including <i>--procopts</i> which requests
+only a command's root name be displayed so in the example about we would see <i>perl</i>
+instead if <i>/usr/bin/per</i>.
 <p>
 The following 3 successive displays are the result of
 monitoring a processes named <i>thread.pl</i> which creates a couple of threads 10
@@ -290,6 +292,59 @@ and experioment with the number of lines per process interval you want to
 examine since the default is your screen height and may be too big for 
 playback purposes.
 <p>
+<b>Including non-process data</b><br>
+The native <i>top</i> can natively show other types of data besides the top processes
+and so can collectl.  Just specify those subsystems you are interested in with -s and
+they will be displayed in a scrolling window above the process data - by
+scrolling multiple lines of data, you are able to see history, something the
+linux command cannot do.  You may also want to include timestamps with the
+brief data by using -oT to make it easier to read.
+<p>
+But don't stop with brief data, you can even show verbose data as well.  However
+in the case of multiple subsystems it just isn't practical to show scrolling
+history and so you will only see the latest sample.  If you choose to show
+a single verbose subsystem you will see scrolled data.
+<p>
+Finally, if you want to customize the way the screen real-estate is allocated between 
+the process and other data, you can change the size of the process section
+by including the number of lines to display as the second argument to 
+<i>--top</i>.  You can also control the size of the subsystem data with
+<i>--hr lines</i>, a synonym for <i>--headerrpeat lines</i>.
+<p>
+<h3>Process Analysis</h3>
+If you've run collectl as a daemon and collected process data, you now have a huge pile of
+data and up until version 2.6.5 it wasn't entirely clear what you could do with is short of
+writing some scripts to try and interpret it.  Now you have an alternative and that's to
+playback one or more data files with the <i>--procanalyze</i> switch.  When this switch is
+passed to collectl, it generates a <i>process summary file</i> with the extension of 
+<i>prcs</i> in the same direcory as specified with the -f switch.  This file will contain
+one line for each unique process and the fields will be separated by collectl's field separator
+which by default is a space but something you can also change with the <i>--sep</i> switch.
+<p>
+The fields themselves summarize all the key data elements associated with each process making
+it possible to see the process start/end times, cpu consumption, I/O (if the kernel supports
+I/O stats), page faults and even the ranges of the different types of memory consumed.  And since
+the data elements are separated by a single character delimeter you can easily load the file
+into your favorite spreadsheet and perform deeper analysis (the data is actually not very user 
+friendly as written).
+<p>
+It is also important to remember a couple of things:
+<ul>
+<li>Not all processes show up in the output if they were created and exited between samples</li>
+<li>You can control the time frame that is analyzed by using the -b and -e switches which can be a
+useful thing to do when you're interesed in a specific time period and don't want this file
+too cluttered</li>
+<li>The <i>--procanalyze</i> overrides collectl's default behavior of processing all the data
+that has been collected and so will only generate the <i>prcs</i> file(s).  If you want to
+generate plot data for other subsystems at the same time be sure to include then with -s.
+<li>By default, all data is written in space-separated format which is collectl's standard
+default.  Since command arguments (if any) are also space-separated they will each show up
+in a different spreadsheet cell, which shouldn't be a big deal but if you want the entire
+command string together, you can always use <i>--sep 9</i> to make the data tab-delimited
+or even choose a different separator.</li>
+</ul>
+<p>
+
 <h3>Understanding Processing Overhead</h3>
 This is intended to be a brief description of how process monitoring works with
 the hope that it will help one use the capability more efficiently and avoid unnecessary

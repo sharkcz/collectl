@@ -84,18 +84,18 @@ if <i>--iosize</i> specified</td></tr>
 <div class=terminal>
 <pre>
 #<---------------InfiniBand--------------->
-#  KBin  pktIn Size  KBOut pktOut Size Errs
+#  KBIn  PktIn Size  KBOut PktOut Size Errs
 </pre>
 </div>
 
 <table>
-<tr><td><b>KBin</b></td><td>KB received/sec.</td></tr>
-<tr><td><b>pckIn</b></td><td>Packets received/sec.</td></tr>
-<tr><td><b>size</b></td><td>Average incoming packet size in KB.  This field is only
+<tr><td><b>KBIn</b></td><td>KB received/sec.</td></tr>
+<tr><td><b>PckIn</b></td><td>Packets received/sec.</td></tr>
+<tr><td><b>Size</b></td><td>Average incoming packet size in KB.  This field is only
 included if <i>--iosize</i> included</td></tr>
-<tr><td><b>KBout</b></td><td>KB sent/sec.</td></tr>
-<tr><td><b>pktOut</b></td><td>Packets sent/sec.</td></tr>
-<tr><td><b>size</b></td><td>Average outgoing packet size in KB.  This field is only
+<tr><td><b>KBOut</b></td><td>KB sent/sec.</td></tr>
+<tr><td><b>PktOut</b></td><td>Packets sent/sec.</td></tr>
+<tr><td><b>Size</b></td><td>Average outgoing packet size in KB.  This field is only
 included if <i>--iosize</i> included</td></tr>
 <tr valign=top><td><b>Errs</b></td><td>Count of current errors.  Since these 
 are typically infrequent, it is felt that reporting them as a rate would result 
@@ -112,37 +112,35 @@ personalities) and reports on all it finds, unless specifically selected via -L.
 
 <div class=terminal>
 <pre>
-#<-------Lustre Client------>
-# Reads KBRead Writes KBWrite
+#<--------Lustre Client-------->
+# KBRead  Reads  KBWrite Writes
 </pre>
 </div>
 
 <table>
-<tr><td valign=top><b>Reads</b></td><td>Reads/sec delivered to the client, 
-not necessarily from the lustre
-storage servers.</td></tr>
 <tr><td><b>KBRead</b></td><td>KB/sec delivered to the client.</td></tr>
-<tr><td><b>Writes</b></td><td>Writes/sec delievered to the storage servers.</td></tr>
+<tr><td valign=top><b>Reads</b></td><td>Reads/sec delivered to the client, 
+not necessarily from the lustre storage servers.</td></tr>
 <tr><td><b>KBWrite</b></td><td>KB Writes/sec delievered to the storage servers.</td></tr>
+<tr><td><b>Writes</b></td><td>Writes/sec delievered to the storage servers.</td></tr>
 </table>
 
-<p>The following format of lustre client data is selected by including -OR and
+<p>The following format of lustre client data is selected by including <i>--lustopts R</i> and
 adds readahead statistics to the previous four.
 
 <div class=terminal>
 <pre>
-#<-------------Lustre Client-------------->
-# Reads KBRead Writes KBWrite   Hits Misses
+#<---------------Lustre Client--------------->
+# KBRead  Reads  KBWrite Writes   Hits Misses
 </pre>
 </div>
 
 <table>
-<tr><td valign=top><b>Reads</b></td><td>Reads/sec delivered to the client, 
-not necessarily from the lustre
-storage servers.</td></tr>
 <tr><td><b>KBRead</b></td><td>KB/sec delivered to the client.</td></tr>
-<tr><td><b>Writes</b></td><td>Writes/sec delievered to the storage servers.</td></tr>
+<tr><td valign=top><b>Reads</b></td><td>Reads/sec delivered to the client, 
+not necessarily from the lustre storage servers.</td></tr>
 <tr><td><b>KBWrite</b></td><td>KB Writes/sec delievered to the storage servers.</td></tr>
+<tr><td><b>Writes</b></td><td>Writes/sec delievered to the storage servers.</td></tr>
 <tr><td><b>Hits</b></td><td>Number of reads/sec from the lustre prefetch cache.</td></tr>
 <tr><td><b>Misses</b></td><td>Number of misses/sec from the prefetch cache which must then 
 be satisfied by reading from the storage servers.</td></tr>
@@ -206,19 +204,19 @@ cache as buffered I/O uses this memory to cache the data.</td></tr>
 <div class=terminal>
 <pre>
 #<---------------Network--------------->
-#netKBi pkt-in size netKBo pkt-out size
+#  KBIn  PktIn Size KBOut  PktOut  Size
 </pre>
 </div>
 
 <table>
-<tr valign=top><td><b>netKBi</b></td><td>KB received/sec over all real network interfaces and therefore 
+<tr valign=top><td><b>KBIn</b></td><td>KB received/sec over all real network interfaces and therefore 
 excludes 'lo' and 'sit'.</td></tr>
-<tr><td><b>pkt-in</b></td><td>Packets received/sec over all real network interfaces.</td></tr>
-<tr><td><b>size</b></td><td>Average incoming packet size in bytes.  This field is only included
+<tr><td><b>PktIn</b></td><td>Packets received/sec over all real network interfaces.</td></tr>
+<tr><td><b>Size</b></td><td>Average incoming packet size in bytes.  This field is only included
 if <i>--iosize</i> specified</td></tr>
-<tr><td><b>netKBo</b></td><td>KB sent/sec over all real network interfaces.</td></tr>
-<tr><td><b>pkt-out</b></td><td>Packets sent/sec over all real network interfaces.</td></tr>
-<tr><td><b>size</b></td><td>Average outgoing packet size in bytes.  This field is only included
+<tr><td><b>KBOut</b></td><td>KB sent/sec over all real network interfaces.</td></tr>
+<tr><td><b>PktOut</b></td><td>Packets sent/sec over all real network interfaces.</td></tr>
+<tr><td><b>Size</b></td><td>Average outgoing packet size in bytes.  This field is only included
 if <i>--iosize</i> specified</td></tr>
 </table>
 

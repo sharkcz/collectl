@@ -1,13 +1,12 @@
 <html>
 <head>
 <link rel=stylesheet href="style.css" type="text/css">
-<title>Operation Modes and Output Formats</title>
+<title>Operation Modes</title>
 </head>
 
 <body>
-<center><h1>Operational Modes and Formats</h1></center>
+<center><h1>Operational Modes</h1></center>
 <p>
-<h3>Operational Modes</h3>
 Depending on which combination of switches are selected, collectl will run in
 one of 3 main modes with various options for added flexibility.
 The most basic mode, which you get if you don't select one of the other 2,
@@ -64,81 +63,6 @@ it is they are trying to do.</td></tr>
 the specified file in Plot Format.  Note that here too -s will force specific subsystems 
 to be displayed.</td></tr>
 </table>
-
-<p>
-<h3>Output Formats</h3>
-By design, collectl gathers more data than is possible to display in an efficient, easy to read,
-compact form.  However, most user want their data displayed in such a form for easy
-interpretation.  Therefore, collectl will attempt to display all data in a single line, often
-choosing a subset of the complete data for each subsystem.  If the user has selected too
-many systems, each line may exceed the display width and wrap.  When this happens either make the
-terminal window wider (maybe even using a smaller font) or choose less subsystems.
-This is referred to as <i>brief</i> format and is collectl's display format of choice and
-therefore the default.  <i>Verbose</i> mode displays more information and results in multiple
-lines of output.
-<p>
-Collectl will try its best to select a format consistent with the user's selection
-criteria, using <i>brief</i> mode whenever possible unless explicitly told no to do so.
-However there are several instances
-when this mode doesn't make sense.  For example, detail data will always be displayed in
-<i>verbose</i> mode since it takes multiple lines for each sample.  When this occurs, collectl
-will automatically use <i>verbose</i> which can also be manually forced for non-detail 
-data using <i>--verbose</i>.
-<p>
-One should note that these formats are not just for interactive use and can also applied
-to playback mode as well.
-<p>
-An additional feature of <i>brief</i> output is <i>subtotal</i> mode.  If one enters a <CR> at
-any time, the next line of ouput will be the subtotals (or averages on non-counters)
-of all columns since
-the start of collectl OR the last time the counters were zeroed.  To zero the
-counters enter <i>Z</i> followed by a <i>carriage return</i>.  
-Furthermore, if you type <i>A</i> followed by a <i>carriage return</i>, the averages
-will be reported.  The averages/totals can also be displayed during playback
-in brief mode by specifying <i>-oA</i>.
-<p>
-To get a better idea of what the output actually looks like, see the <a href=Examples.html>examples</a>.
-<p>
-<H3>Roll Your Own!</h3>
-If you want to write your own display format - for perl programmers only -
-use  <i>--custom name:subsys</i> in which you specify the name of the file to be
-<i>required</i> by perl, noting that the extension <i>ph</i> is assumed if not
-specified, and a list of subsystems that contain the desired data.
-You should also note that the entry point for the routine must match the name of the
-file.  This feature hasn't been used by anyone but me (to my knowledge) and so hasn't
-had much exercise.
-<p>
-To actually write this routine one needs to know a little bit about how
-collectl works, but only a little.  Based on the subsystems specified, data is
-read from /proc, so be sure to specify the correct subsystems from which you
-want to report data.  At the beginning of the next cycle, the values are
-calculated and assigned to a whole slew of global variables.  At this point the
-<i>print</i> routines are called and if <i>--custom</i> was specified the appropriate
-formatting routine is called instead of collectl's internal one and so when 
-you use this capability you will not get any other output!
-To determine what to do in a custom
-display, you need only read through the print commands in the <i>formatit.ph</i>
-file and select the variables of your choice, often just cutting/pasting/editing
-various	 <i>print</i> statements.  To get a rate/sec instead of an
-absolute count, be sure to divide by $intSecs, noting that you can still force
-an absolute value via -n since that always forces $intSecs to 1.
-<p>
-Here is an example of a very simply custom formatting routine that simply reports
-the system cpu time and the disk read/writes in KB.
-
-<div class=terminal>
-<pre>
-sub mjs {
-    printf("%6d  %6d  %6d\\n",
-    $sysP[$NumCpus], $dskReadKBTot/$intSecs, $dskWriteKBTot/$intSecs);
-}
-1;
-</pre>
-</div>
-
-To run this routine once a second, simply execute the command:
-<pre>
-collectl --custom mjs:cd
 
 </body>
 </html>

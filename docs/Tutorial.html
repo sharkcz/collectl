@@ -220,8 +220,8 @@ fact, if I run collectl as <i>collectl -scfn</i> I see:
 
 I can clearly see the network traffic but why don't I see any nfs activity?
 That's because by default collectl shows <i>server</i> activity rather
-than the client and so we need to add the option -OC to the command which
-now looks like <i>collectl -scfn -OC</i> and produces the following:
+than the client and so we need to add the option <i>--nfsopts C</i> to the command which
+now looks like <i>collectl -scfn ---nfsopts C</i> and produces the following:
 
 <div class=terminal>
 <pre>

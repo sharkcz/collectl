@@ -216,8 +216,13 @@ sub sexprRaw
 
     if ($MdsFlag)
     {
-      $lusSumString.="$pad(lusmds (close $lustreMdsCloseLast) (getattr $lustreMdsGetattrLast) ";
-      $lusSumString.="(reint $lustreMdsReintLast) (sync $lustreMdsSyncLast))\n";
+      my $getattrPlus=$lustreMdsGetattrLast+$lustreMdsGetattrLockLast+$lustreMdsGetxattrLast;
+      my $setattrPlus=$lustreMdsReintSetattrLast+$lustreMdsSetxattrLast;
+      my $varName=($cfsVersion lt '1.6.5') ? 'reint' : 'unlink';
+      my $varVal= ($cfsVersion lt '1.6.5') ? $lustreMdsReintLast : $lustreMdsReintUnlinkLast;
+
+      $lusSumString.="$pad(lusmds (getattrP $getattrPlus) (setattrP $setattrPlus) ";
+      $lusSumString.="(sync $lustreMdsSyncLast) ($varName $varVal))\n";
     }
   }
 
@@ -481,9 +486,14 @@ sub sexprRate
 
     if ($MdsFlag)
     {
-      $lusSumString.=sprintf("$pad(lusmds (close %d) (getattr %d) (reint %d) (sync %d)\n", 
-		$lustreMdsClose/$intSecs, $lustreMdsGetattr/$intSecs, 
-		$lustreMdsReint/$intSecs, $lustreMdsSync/$intSecs);
+      my $getattrPlus=$lustreMdsGetattr+$lustreMdsGetattrLock+$lustreMdsGetxattr;
+      my $setattrPlus=$lustreMdsReintSetattr+$lustreMdsSetxattr;
+      my $varName=($cfsVersion lt '1.6.5') ? 'reint' : 'unlink';
+      my $varVal= ($cfsVersion lt '1.6.5') ? $lustreMdsReint : $lustreMdsReintUnlink;
+
+      $lusSumString.=sprintf("$pad(lusmds (getattrP %d) (setattr %d) (sync %d) ($varName %d)\n", 
+		$getattrPlus/$intSecs, $setattrPlus/$intSecs, 
+		$lustreMdsSync/$intSecs, $varVal/$intSecs);
     }
   }
 

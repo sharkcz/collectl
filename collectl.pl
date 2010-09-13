@@ -90,6 +90,7 @@ $numBrwBuckets=$cfsVersion=$sfsVersion='';
 $Resize=$IpmiCache=$IpmiTypes=$ipmiExec='';
 $i1DataFlag=$i2DataFlag=$i3DataFlag=0;
 $lastSecs=$interval2Print=0;
+$diskRemapFlag=$diskChangeFlag=0;
 
 # Find out ASAP if we're linux or WNT based as well as whether or not XC based
 $PcFlag=($Config{"osname"}=~/MSWin32/) ? 1 : 0;
@@ -109,7 +110,7 @@ if ($PerlVers lt '5.08.00')
   print "See /opt/hp/collectl/docs/FAQ-collectl.html for details.\n";
 }
 
-$Version=  '3.3.2-1';
+$Version=  '3.3.4-5';
 $Copyright='Copyright 2003-2009 Hewlett-Packard Development Company, L.P.';
 $License=  "collectl may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
@@ -174,8 +175,9 @@ require "Sys/Syslog.pm"    if !$PcFlag;
 
 # Load include files and optional PMs if there
 require "$BinDir/formatit.ph";
-$zlibFlag= (eval {require "Compress/Zlib.pm" or die}) ? 1 : 0;
-$hiResFlag=(eval {require "Time/HiRes.pm" or die}) ? 1 : 0;
+$zlibFlag=     (eval {require "Compress/Zlib.pm" or die}) ? 1 : 0;
+$hiResFlag=    (eval {require "Time/HiRes.pm" or die}) ? 1 : 0;
+$diskRemapFlag=(eval {require "$BinDir/diskremap.ph" or die}) ? 1 : 0;
 
 # may be overkill, but we want to throttle max errors/day to prevent runaway.
 $zlibErrors=0;
@@ -238,6 +240,9 @@ $DefNetSpeed=10000;
 $IbDupCheckFlag=1;
 $TimeHiResCheck=1;
 $PasswdFile='/etc/passwd';
+$DiskMaxValue=-1;    # disabled
+$DiskFilter='cciss/c\d+d\d+ |hd[ab] | sd[a-z]+ |xvd[a-z] |dm-\d+ |emcpower';
+$DiskFilterFlag=0;   # only set when filter set in collectl.conf
 
 # Standard locations
 $SysIB='/sys/class/infiniband';
@@ -1701,8 +1706,9 @@ if ($playback ne '')
         if ($timestampCounter==1)
         {
           # If a second (or more) file for same host, are their timstamps consecutive?
-          # If NOT consecutive (or first file for a host), init 'last' variables
-          $consecutiveFlag=($sameHostFlag && $thisSeconds==$newSeconds) ? 1 : 0;
+          # If NOT consecutive (or first file for a host), init 'last' variables, noting
+          # we also need to init if there was a disk configuration change.
+          $consecutiveFlag=($sameHostFlag && $thisSeconds==$newSeconds && !$diskChangeFlag) ? 1 : 0;
           $newSeconds=$thisSeconds;
           if (!$consecutiveFlag)
           {
@@ -2610,6 +2616,16 @@ for (; $count!=0 && !$doneFlag; $count--)
     intervalEnd(sprintf("%.3f", $fullTime))
   }
 
+  # If there was a disk configuration change and writing to plot files (changes
+  # can't be detected when writing to raw file), create new log files.
+  if ($diskChangeFlag && $plotFlag && $filename ne '')
+  {
+    logmsg('I', 'Creating new log file')                                          if $options=~/u/;
+    logmsg('W', 'all data mixed in same file! use -ou to force unique files!')    if $options!~/u/;
+    newLog($filename, "", "", "", "", "");
+  }
+  $diskChangeFlag=0;
+
   # If -S specified, see if our parent's pid went away and if so, we're done
   last    if $sshFlag && !-e "/proc/$myPpid";
 
@@ -2696,7 +2712,7 @@ sub preprocessPlayback
   my $playbackref=shift; 
   my ($selected, $header, $i);
   my ($lastPrefix, $thisSubSys, $thisInterval, $lastInterval, $mergedInterval);
-  my ($lastSubSys, $lastSubOpt, $lastNfs, $lastLustreConfig, $lastLustreSubSys);
+  my ($lastSubSys, $lastSubOpt, $lastNfs, $lastDisks, $lastLustreConfig, $lastLustreSubSys);
   my $preprocFlags=0;
   local ($configChange, $filePrefix, $file);
 
@@ -2750,11 +2766,12 @@ sub preprocessPlayback
 
     # We finally dropped SubOpts and nfsOpts from the header in V3.2.1-5, but not LustOpts
     my $subOpts=($header=~/SubOpts:\s+(\S*)\s+Options:/) ? $1 : '';
-    my $thisNfsOpts=($header=~/NfsOpts: (\S*)\s*Interval/)   ? $1 : $subOpts;
+    my $thisNfsOpts= ($header=~/NfsOpts: (\S*)\s*Interval/)   ? $1 : $subOpts;
+    my $thisDisks=   ($header=~/DiskNames: (.*)/) ? $1 : '';
     my $thisLustOpts=($header=~/LustOpts: (\S*)\s*Services/) ? $1 : $subOpts;
     $thisNfsOpts=~s/[BDMORcom]//g;    # in case it came from SubOpts remove lustre stuff
     $thisLustOpts=~s/[234C]//g;       # ditto for nfs stuff
-   
+
     $header=~/Interval:\s+(\S+)/;
     $thisInterval=$1;
 
@@ -2822,16 +2839,20 @@ sub preprocessPlayback
       $thisNfs=checkNfs("", $thisSubSys, $thisNfsOpts);
 
       ($thisLustreConfig, $lastLustOpts)=checkLustre('', $header, '', $thisLustOpts);
+
+      $lastDisks=checkDisks('', $thisDisks)    if $thisSubSys=~/D/;
     }
     else    # subsequent files (if any) for same prefix-date
     {
       # subsystem checks
       $newPrefix=0;
       $thisSubSys=checkSubSys($lastSubSys, $thisSubSys);
-      $thisNfs=checkNfs($thisNfs, $thisSubSys, $thisNfsOpts);
+      $thisNfs=   checkNfs($thisNfs, $thisSubSys, $thisNfsOpts);
 
       ($thisLustreConfig, $lastLustOpts)=
 	  checkLustre($lastLustreConfig, $header, $lastLustOpts, $thisLustOpts);
+
+      $lastDisks=checkDisks($lastDisks, $thisDisks)    if $thisSubSys=~/D/;
     }
     $lastPrefix=$filePrefix;
     $lastSubSys=$thisSubSys;
@@ -3053,8 +3074,7 @@ sub checkNfs
   my $subopt= shift;
   my $temp;
 
-  print "checkNfs(): LastNfs: $lastNfs  SubSys: $subsys  SubOpt: $subopt\n"
-      if $debug & 2048;
+  print "checkNfs(): LastNfs: $lastNfs  SubSys: $subsys  SubOpt: $subopt\n"    if $debug & 2048;
 
   $temp='';
   if ($subsys=~/f/i)
@@ -3072,6 +3092,20 @@ sub checkNfs
   # so we're only going to print a stock message
   $preprocErrors{$filePrefix}="E:confilicting nfs settings with other files of same prefix";
   return($temp);  
+}
+
+sub checkDisks
+{
+  my $lastDisks=shift;
+  my $thisDisks=shift;
+
+  print "checkDisks(): Last: $lastDisks  This: $thisDisks\n"    if $debug & 2048;
+
+  if (($lastDisks ne '') && ($thisDisks ne $lastDisks) && $options!~/u/)
+  {
+    $preprocErrors{$filePrefix}="E:confilicting disk names with other files of same prefix and -sD w/o -ou";
+  }
+  return($thisDisks);
 }
 
 sub checkLustre
@@ -3285,12 +3319,22 @@ sub getProc
     # in formatit.ph!!!
     elsif ($type==9)
     {
-      if ($line=~/cciss\/c\d+d\d+ /)   { record(2, "$tag $line"); next; }
-      if ($line=~/hd[ab] /)            { record(2, "$tag $line"); next; }
-      if ($line=~/ sd[a-z]+ /)         { record(2, "$tag $line"); next; }
-      if ($line=~/xvd[a-z] /)          { record(2, "$tag $line"); next; }
-      if ($line=~/dm-\d+ /)            { record(2, "$tag $line"); next; }
-      if ($line=~/emcpower/)           { record(2, "$tag $line"); next; }
+      # If disk filter NOT specified in collectl.conf, use the following syntax.
+      # Even thought it matches internal constant $DiskFilter, it's a little
+      # faster to as separate if statements
+      if (!$DiskFilterFlag)
+      {
+        if ($line=~/cciss\/c\d+d\d+ /)   { record(2, "$tag $line"); next; }
+        if ($line=~/hd[ab] /)            { record(2, "$tag $line"); next; }
+        if ($line=~/ sd[a-z]+ /)         { record(2, "$tag $line"); next; }
+        if ($line=~/xvd[a-z] /)          { record(2, "$tag $line"); next; }
+        if ($line=~/dm-\d+ /)            { record(2, "$tag $line"); next; }
+        if ($line=~/emcpower/)           { record(2, "$tag $line"); next; }
+      }
+      else
+      {
+        if ($line=~/$DiskFilter/)        { record(2, "$tag $line"); next; }
+      }
     }
 
     # /proc/fs/lustre/llite/fsX/stats
@@ -3543,6 +3587,11 @@ sub record
   dataAnalyze($subsys, $data)   if $type==2 && (!$logToFileFlag || $plotFlag || $export ne '');
 }
 
+# Design note - this is very subtle, but when creating consecutive files via the log rolling
+# mechanism, the last timestamp of one file matches that of the new one.  This tells us NOT
+# to reset 'last' counters during playback.  BUT if newlog() called before new timestamp
+# generated, as when $diskChangeFlag set, this does not happen and so you lose 1 interval
+# during playback.  Not a big deal but worth noting somewhere...
 sub newLog
 {
   my $filename=shift;
@@ -3754,7 +3803,7 @@ sub newLog
 
     # this is already taken care of in playback mode, but when doing -P in
     # collection mode we need to clear this since nobody else does!
-    $printHeaders=0    if $newFiles{$filename}==1;
+    $headersPrinted=0    if $newFiles{$filename}==1;
 
     # Open 'tab' file in plot mode if processing at least 1 core variable (or extended core)
     # OR we're --importing something that prints summary data
@@ -3965,6 +4014,7 @@ sub buildCommonHeader
   # For now, these are the only flags I can think of but clearly they
   # can grow over time...
   my $flags='';
+  $flags.='d'    if $diskChangeFlag;
   $flags.='i'    if $processIOFlag;
   $flags.='s'    if $slubinfoFlag;
 
@@ -4687,6 +4737,9 @@ sub loadConfig
       $DefNetSpeed=$value      if $param=~/^DefNetSpeed/;
       $TimeHiResCheck=$value   if $param=~/^TimeHiResCheck/;
       $PasswdFile=$value       if $param=~/^Passwd/;
+
+      $DiskMaxValue=$value     if $param=~/^DiskMaxValue/;
+      $DiskFilter=$value       if $param=~/^DiskFilter/;
     }
   }
   close CONFIG;
@@ -4711,6 +4764,15 @@ sub loadConfig
   foreach my $bin (split/:/, $ipmitoolPath)
   {
       $Ipmitool=$bin    if -e $bin;
+  }
+
+  if (defined($DiskFilter))
+  {
+    # the leading/trailing /s are just there for ease of reading in collectl.conf
+    $DiskFilterFlag=1;
+    $DiskFilter=~s/^\///;
+    $DiskFilter=~s/\/$//;
+    print "DiskFilter set in $configFile: >$DiskFilter<\n"    if $debug & 1;
   }
 }
 
@@ -5477,6 +5539,7 @@ These generate detail data, typically but not limited to the device level
 
   C -  individual CPUs, including interrupts if -sj or -sJ
   D -  individual Disks
+  E -  environmental (fan, power, temp) [requires ipmitool]
   F -  nsf data
   J -  interrupts by CPU by interrupt number
   L -  lustre

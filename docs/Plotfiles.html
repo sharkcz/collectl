@@ -109,5 +109,79 @@ such as a host name if need be.
 include a unique qualifier along with the directory name with the -f switch to give each set a different
 prefix.
 
+<h3>Daily vs Unique Plot Files</h3>
+Collectl <i>raw</i> files are created every time a new instance of collectl is run or whenever
+collectl is instructed to create new one via <i>-r</i> such as when running as a Daemon.  This
+is why each file name include a <i>time</i> as well as a <i>date</i>.  However
+trying to plot multiple files for any given day can be problematic even for an automation script
+that might help generate plots for you and so by default collectl creates non-timestamped, daily
+plot files.
+<p>
+Whether you choose to create plot files on-the-fly or manually (by playing back existing files),
+if you've not instructed collectl to do anything with unique file, it will simply append new data
+onto an existing file.  One the other hand if you explicitly ask for  <i>unique</i> files, whenever
+a new <i>raw</i> is processed or a new instance of collect is run, a new plot file will be created
+that includes a corresponding timestamp.
+<p>
+The obvious question then becomes, <i>why would you ever choose to create unique files when they're
+such a pain to plot?</i> and there are actually several good reasons you might choose to do so:
+<ul>
+<li>If periodically <i>rsycn</i> plot files to another system, one large file is always changed 
+and must be copied in full.  When there are multiple files only the latest one is ever copied.</li>
+<li>If generating a single plot file from a <i>raw</i> file multiple times/day to be more dynamic,
+collectl always has to process the full raw file, which will take longer as the file grows.  If you
+create multiple raw files only the latest will need to be reprocessed.</li>
+<li>But the <i>main</i> reason, and one that requires more explanation, is dealing with
+configuration changes</li>
+</ul>
+<b>Dealing with configuration changes</b>
+<br>Consider the following situation: you run collectl twice during the same day with the following commands:
+
+<pre>
+collectl -scd  -P -f/tmp
+collectl -scdm -P -f/tmp
+</pre>
+
+or perhaps you even generated <i>raw</i> files first and later play them back, converting them to
+plottable files.  In either case you now want to plot the data.  Since it's all in the same file, the
+headers that are initially written will only tell you there is cpu and disk data in the file!  Collectl
+will have written a second set of headers in the file at the time the second instance was run, but do
+you really want to have to make a pass through the whole file every time you want to generate a plot
+looking for additional data?  Furthermore, there will be less columns of data in the first part of the
+file that the latter, a condition that will probably cause most plotting packages to blow up, so you
+really need unique files.
+<p>
+Another situation that can cause this is when dealing with detail data for dynamic subsystems such as
+Lustre and disks.  Dynamic change detection for Lustre has always been a part collectl but 
+support for dynamic disk configuration changes has been added to collectl V3.3.4.  When a 
+configuration change is detected, it forces collectl to create a new file, whether generating data 
+in <i>raw</i> or <i>plot</i> format.  Furthermore, if you later try to combine disk data from multiple raw
+files into a single plot file that has disk configuration change data in it, collectl won't let you 
+unless you specific -ou forcing the generation of unique files.  Lustre changes can be combined into
+a single plot file by adding in any missing columns and 0-filling them.
+<p>
+<center>
+<i>Caution</i>
+<table width=80%>
+<tr><td>If you are generating non-unique plot files on-the-fly and a 
+configuration change occurs, that new data will simply be appended to the single file.  
+<i>There is nothing collectl can do about this</i>, because it wants to keep all files
+in a consistent name format and will not switch to unique name formatting without
+explicitly being told to do so.</td></tr>
+</table>
+</center>
+<p>
+Configuration changes do not happen often <i>and</i> this is only an issue when generating
+plot files in real-time.  Furthermore, since this only effects detail, because
+the summary data will always accurately reflect the sum of the instance data, this typically
+will not effect anyone but is being stated for completeness.
+<p>
+If after all this you choose to generate real-time, non-unique detailed plot files and find 
+yourself in a situation where you should have, you can always write a script to split the 
+plot files back into individual ones since there is sufficient data in the internal headers
+to do so.  If you have multiple unique files and find single files easier to deal with, you
+can also choose to write a post-processing script that merges these into a single file with
+zero-filled columns where there is missing data.
+
 </body>
 </html>

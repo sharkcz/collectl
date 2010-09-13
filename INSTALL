@@ -15,7 +15,8 @@ cp RELEASE-collectl      $BINDIR/docs
 cp collectl.pl           $BINDIR/sbin/collectl
 cp formatit.ph           $BINDIR/sbin
 cp lexpr.ph sexpr.ph     $BINDIR/sbin
-cp gexpr.ph envrules.std $BINDIR/sbin
+cp gexpr.ph misc.ph      $BINDIR/sbin
+cp envrules.std          $BINDIR/sbin
 cp vmstat.ph readS       $BINDIR/sbin
 cp collectl.conf         $BINDIR/etc
 cp docs/*                $BINDIR/docs

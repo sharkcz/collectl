@@ -1,6 +1,23 @@
 #!/bin/bash
 # Startup script for collectl on distros that support start-stop-daemon
 #
+
+### BEGIN INIT INFO
+# Provides:          collectl
+# Required-Start:    $network +openib
+# Required-Stop:     $network +openib
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Collectl monitors system performance.
+# Description:       Collectl is a light-weight performance monitoring
+#                    tool capable of reporting interactively as well 
+#                    as logging to disk. It reports statistics on 
+#                    cpu, disk, infiniband, lustre, memory, network,
+#                    nfs, process, quadrics, slabs and more in easy 
+#                    to read format.
+#
+### END INIT INFO
+
 # description: Run data collection for a number of subsystems
 #    see /etc/collectl.conf for startup options
 

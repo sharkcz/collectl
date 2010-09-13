@@ -92,28 +92,9 @@ sub initRecord
 
   #    D i s k    C h e c k s
 
-  # Location of data is kernel specific.  Note we're also including device
-  # mapper info when available
-  $procfile=($kernel2_4) ? '/proc/partitions' : '/proc/diskstats';
-  $NumDisks=0;
-  $DiskNames='';
-  $diskFilter="cciss\/c\\d+d\\d+ |hd[ab] | sd[a-z]+ |xvd[a-z] |dm-\\d+|emcpower";
-  @temp=`cat $procfile`;
-  foreach $line (@temp)
-  {
-    next    if $line!~/$diskFilter/;
+  initDisk();
 
-    # if we have more than 5 columns (which should only happen with 2.4 kernels),
-    # we also have performance data here so make a note of it for later.
-    @fields=split(/\s+/, $line);
-    $partDataFlag=1    if $kernel2_4 && scalar(@fields)>5;
-
-    $diskName=$kernel2_4 ? $fields[4] : $fields[3];
-    $dskName[$NumDisks++]=$diskName;
-    $DiskNames.="$diskName ";
-  }
-  $DiskNames=~s/ $//;
-  $DiskNames=~s/cciss\///g;
+  #    I n o d e s
 
   if ($subsys=~/i/)
   {
@@ -209,8 +190,8 @@ sub initRecord
     if ($mellanoxFlag)
     {
       $message='';
-      $message="Open Fabric IB Stats disabled in collectl.conf"    if  -e $SysIB && $PQuery eq '';
-      $message="Voltaire IB Stats disabled in collectl.conf"       if !-e $SysIB && $PCounter eq '';
+      $message="Open Fabric IB Stats disabled in $configFile"    if  -e $SysIB && $PQuery eq '';
+      $message="Voltaire IB Stats disabled in $configFile"       if !-e $SysIB && $PCounter eq '';
       if ($message ne '')
       {
         logmsg("W", $message);
@@ -300,7 +281,7 @@ sub initRecord
           # This is getting even uglier, but if someone chose to duplicate 
           # 'DaemonCommands' and comment one out, we really need to look for
           # the last uncommented one.
-          foreach my $cmd (`$Grep 'DaemonCommands =' /etc/collectl.conf`)
+          foreach my $cmd (`$Grep 'DaemonCommands =' $configFile`)
           {
 	    next    if $cmd=~/^#/;
             $procCmd=$cmd;
@@ -1023,9 +1004,9 @@ sub initFormat
     $NumBud=$1;
 
     $flags=($header=~/Flags:\s+(\S+)/) ? $1 : '';
-    $intFlag=      ($flags=~/I/) ? 1 : 0;
-    $processIOFlag=($flags=~/i/) ? 1 : 0;
-    $slubinfoFlag= ($flags=~/s/) ? 1 : 0;
+    $diskChangeFlag=($flags=~/d/) ? 1 : 0;
+    $processIOFlag= ($flags=~/i/) ? 1 : 0;
+    $slubinfoFlag=  ($flags=~/s/) ? 1 : 0;
     
     $header=~/Memory:\s+(\d+)/;
     $Memory=$1;
@@ -1033,6 +1014,7 @@ sub initFormat
     $header=~/NumDisks:\s+(\d+)\s+DiskNames:\s+(.*)/;
     $NumDisks=$1;
     $DiskNames=$2;
+    @dskName=split(/\s+/, $DiskNames);
 
     $header=~/NumNets:\s+(\d+)\s+NetNames:\s+(.*)/;
     $NumNets=$1;
@@ -1114,9 +1096,6 @@ sub initFormat
 
     # Scsi info is optional
     $ScsiInfo=($header=~/SCSI:\s+(.*)/) ? $1 : '';
-
-    # Now we can safely load dskNames array
-    @dskName=split(/\s+/, $DiskNames);
   }
 
   # Initialize global arrays with sizes of buckets for lustre brw stats and
@@ -1303,7 +1282,7 @@ sub initFormat
   $interval3Counter=0;
   $ipmiFile->{pre}=[];    # in case no --envrules specified
   $ipmiFile->{post}=[];
-  loadEnvRules()    if $ProductName ne '';
+  loadEnvRules()    if $subsys=~/E/ || $envTestFile ne '';
 
   #    A r c h i t e c t u r e    S t u f f
 
@@ -1450,6 +1429,39 @@ sub remapLustreNames
   }
   print "\n"    if $debug & 8;
   return(@maps);
+}
+
+# Called from seveal places because numbering of disks in /proc can change
+# after a lun rescan or a new disk may have showed up
+sub initDisk
+{
+  # Location of data is kernel specific.  Note we're also including device
+  # mapper info when available
+  $NumDisks=0;
+  $DiskNames='';
+  my $procfile=($kernel2_4) ? '/proc/partitions' : '/proc/diskstats';
+  my @temp=`$Cat $procfile`;
+  foreach my $line (@temp)
+  {
+    next    if $line!~/$DiskFilter/;
+
+    # if we have more than 5 columns (which should only happen with 2.4 kernels),
+    # we also have performance data here so make a note of it for later.
+    my @fields=split(/\s+/, $line);
+    $partDataFlag=1    if $kernel2_4 && scalar(@fields)>5;
+
+    # These help identify changes to disk order in /proc/diskstats
+    $dskMaj[$NumDisks]=$fields[1];
+    $dskMin[$NumDisks]=$fields[2];
+
+    my $diskName=$kernel2_4 ? $fields[4] : $fields[3];
+    $diskName=remapDiskName($diskName)    if $diskRemapFlag;
+    $dskName[$NumDisks++]=$diskName;
+    $DiskNames.="$diskName ";
+  }
+  $DiskNames=~s/ $//;
+  $DiskNames=~s/cciss\///g;
+  logmsg("I", "initDisk found $NumDisks disks")    if $Kernel=~/exds/ || $debug & 1;
 }
 
 # Technically this could get called from within the lustreCheck() routines
@@ -2305,6 +2317,17 @@ sub dataAnalyze
     $interval3Print=1;
     my @fields=split(/,/, $data);
 
+    # This very first set removes any entries that are to be ignored, even if valid
+    for (my $i=0; $i<scalar(@{$ipmiFile->{ignore}}); $i++)
+    {
+      my $f1=$ipmiFile->{ignore}->[$i]->{f1};
+      if ($data=~/$f1/)
+      {
+        print "Ignore: $data\n"    if $envDebug;
+	return;
+      }
+    }
+
     # These are applied BEFORE the pattern match below
     print "$data\n"    if $envDebug;
     my $premap=$fields[0];
@@ -2409,7 +2432,7 @@ sub dataAnalyze
         {
 	  incomplete("DISK:".$dskName[$dskIndex], $lastSecs);
 	  $dskIndex++;
-          next;
+          return;
         }
 
         $dskOpsNow=~s/\(//;
@@ -2423,6 +2446,15 @@ sub dataAnalyze
         $dskReadKB[$dskIndex]= fix($dskReadKBNow-$dskReadKBLast[$dskIndex]);
         $dskWrite[$dskIndex]=  fix($dskWriteNow-$dskWriteLast[$dskIndex]);
         $dskWriteKB[$dskIndex]=fix($dskWriteKBNow-$dskWriteKBLast[$dskIndex]);
+
+        # If read/write had bogus value, reset ALL to 0, noting that 1st pass is
+        # initialization and numbers NOT valid so don't generate message
+	if ($DiskMaxValue>0 && ($dskReadKB[$dskIndex]>$DiskMaxValue || $dskWriteKB[$dskIndex]>$DiskMaxValue))
+        {
+          logmsg('E', "Disk readKB/writeKB '$dskRead[$dskIndex]/$dskWriteKB[$dskIndex]' > '$DiskMaxValue' so all reset to 0")
+		    if !$firstPass;
+          $dskOps[$dskIndex]=$dskRead[$dskIndex]=$dskReadKB[$dskIndex]=$dskWrite[$dskIndex]=$dskWriteKB[$dskIndex]=0;
+        }
 
         $dskOpsTot+=    $dskOps[$dskIndex];
         $dskReadTot+=   $dskRead[$dskIndex];
@@ -2442,20 +2474,43 @@ sub dataAnalyze
     else
     {
       # data must be in /proc/partitions OR /proc/diskstats 
-      ($diskname,@dskFields)=(split(/\s+/, $data))[3..14]    if $kernel2_4;
-      ($diskname,@dskFields)=(split(/\s+/, $data))[2..13]    if $kernel2_6;
+      ($major, $minor, $ignore, $diskName,@dskFields)=split(/\s+/, $data)    if $kernel2_4;
+      ($major, $minor, $diskName,@dskFields)=         split(/\s+/, $data)    if $kernel2_6;
 
-      # If a new disk shows up after logging started, and this has only happened with logical
-      # volumes so far, we need to bump the index and initialize 'last' variables.  There is a
-      # BIG assumption here that these show up at the end of the existing device list which we
-      # may have to revisit at some time.
-      if ($dskIndex==$NumDisks)
+      # in playback on the first pass, we need to initialize these values from the raw file itself.
+      if ($firstPass && $playback)
       {
-        logmsg("W", "New disk '$diskname' discovered after logging started");   
-        $dskName[$NumDisks++]=$diskname;
-        for (my $i=0; $i<11; $i++)
+	$dskMaj[$dskIndex]=$major;
+	$dskMin[$dskIndex]=$minor;
+      }
+
+      # If new disk shows up or disk ordering in /proc/diskstats in changes, for 
+      # example after a lun rescan, we need to reinitialize disk name structures.
+      # Furthermore if writing to plot file we need to set a flag so new ones will
+      # get created.
+      if ($dskIndex==$NumDisks || $dskMaj[$dskIndex]!=$major || $dskMin[$dskIndex]!=$minor )
+      {
+        initDisk();
+        $diskName=$dskName[$dskIndex];    # in case new disk
+        $diskChangeFlag=1;    # this also tell 'bogus' check later on to 0 current values
+
+	if ($filename ne '')
         {
-          $dskFieldsLast[$dskIndex][$i]=0;
+          # Since we're seeing this disk for the first time, be sure to init
+          # its 'last' variables to 0 so the next interval's numbers come out right.
+          if ($dskIndex==$NumDisks)
+          {
+            logmsg("W", "New disk '$diskName' discovered after logging started");
+            for (my $i=0; $i<11; $i++)
+            {
+              $dskFieldsLast[$dskIndex][$i]=0;
+            }
+          }
+          else
+          {
+            logmsg('W', "/proc/diskstats ordering changed for '$diskName' ".
+		      "Old: [$dskMaj[$dskIndex],$dskMin[$dskIndex]] New: [$major,$minor]");
+          }
         }
       }
 
@@ -2483,8 +2538,24 @@ sub dataAnalyze
 		  fix($dskFields[10]-$dskFieldsLast[$dskIndex][10]) :
 		  fix($dskFieldsLast[$dskIndex][10]-$dskFields[10]);
 
+      # Disk configuration changed or read/write had bogus value, reset ALL current
+      # values for this disk to 0, noting that 1st pass is initialization and numbers
+      # NOT valid so don't generate message
+      if ($diskChangeFlag ||
+          ($DiskMaxValue>0 && ($dskReadKB[$dskIndex]>$DiskMaxValue || $dskWriteKB[$dskIndex]>$DiskMaxValue)))
+        {
+          # NOTE - the first message only for bogus data and it's a real 'error'
+          logmsg('E', "One of ReadKB/WriteKB of '$dskRead[$dskIndex]/$dskWriteKB[$dskIndex]' > '$DiskMaxValue' for '$diskName'")
+		    if !$diskChangeFlag && !$firstPass;
+          logmsg('W', "Resetting all current performance values for this disk to 0");
+
+          $dskOps[$dskIndex]=$dskRead[$dskIndex]=$dskReadKB[$dskIndex]=$dskWrite[$dskIndex]=$dskWriteKB[$dskIndex]=0;
+          $dskReadMrg[$dskIndex]=$dskWriteMrg[$dskIndex]=$dskWriteTicks[$dskIndex]=0;
+	  $dskInProg[$dskIndex]=$dskTicks[$dskIndex]=$dskWeighted[$dskIndex]=0;
+        }
+
       # Don't include device mapper data in totals
-      if ($diskname!~/^dm-/)
+      if ($diskName!~/^dm-/)
       {
         $dskReadTot+=      $dskRead[$dskIndex];
         $dskReadMrgTot+=   $dskReadMrg[$dskIndex];
@@ -3122,7 +3193,7 @@ sub dataAnalyze
 			  $netTxFifo[$netIndex]+$netTxColl[$netIndex]+
 			  $netTxCar[$netIndex];
 
-    # Ethernet totals only
+    # Ethernet totals only, but no longer using anywhere
     if ($netNameNow=~/eth/)
     {
       $netEthRxKBTot+= $netRxKB[$netIndex];
@@ -6477,7 +6548,7 @@ sub fix
   return($counter);
 }
 
-# unitCounter  0 -> none, 1 -> K, etc (devide by $divisor this # times)
+# unitCounter  0 -> none, 1 -> K, etc (divide by $divisor this # times)
 # divisor 0 -> /1000  1 -> /1024
 sub cvt
 {
@@ -6485,7 +6556,6 @@ sub cvt
   my $width=shift;
   my $unitCounter=shift;
   my $divisorType=shift;
-  my ($divisor, $units);
 
   $width=4                 if !defined($width);
   $unitCounter=0           if !defined($unitCounter);
@@ -6503,7 +6573,7 @@ sub cvt
   $field=abs($field);
 
   my $last=0;
-  $divisor=($divisorType==0) ? 1000 : $OneKB;
+  my $divisor=($divisorType==0) ? 1000 : $OneKB;
   while (length($field)>=$width)
   {
     $last=$field;
@@ -6512,25 +6582,36 @@ sub cvt
   }
   $field*=$sign;
 
-  $units=substr(" KMGTP", $unitCounter, 1);
+  my $units=substr(" KMGTP", $unitCounter, 1);
   my $result=(abs($field)>0) ? "$field$units" : "1$units";
-  
+
   # Messy, but I hope reasonable efficient.  We're only applying this to
   # fields >= 'G' and options g/G!  Furthermore, for -oG we only reformat 
   # when single digit because no room for 2.
-  if ($units=~/[GTP]/ && $options=~/g/i && (my $len=length($field))!=3)
+  if ($units=~/[GTP]/ && $options=~/g/i && (length($field))!=3)
   {
-    if ($options=~/G/ && $len==1)
+    # This one's a mouthful...  we need to figure out what the remainer of the 
+    # previous division was, by subtracting the field*divisor.  Then we need
+    # to round up and pad with leading 0s.  Note cases where we've rounded
+    # something like 9.999 which really needs to become 10.000
+    my $round=($options=~/g/) ? 5 : 50;
+    my $fraction=sprintf("%03d", $last-$field*$divisor+$round);
+    if ($fraction>=$divisor)
+    {	
+      $field++;
+      $fraction='000';
+    }
+
+    # For 'G' we almost always print the first form but if we just rounded from 9.9 to
+    # to 10, we no longer have room for the fraction
+    if ($options=~/G/)
     {
-      my $fraction=substr($last, $len, 2-$len);
-      $fraction='1'    if $fraction==0;
-      $result="$field.".$fraction.'G';
+      $result=(length($field)==1) ? "$field.".substr($fraction, 0, 1).'G' : "$field$units";
     }
     elsif ($options=~/g/)
     {
-      my $fraction=substr($last, $len, 3-$len);
-      $fraction='01'    if $fraction==0;
-      $result="${field}g".$fraction;
+      # since the fraction follows the 'g', just chop the thing to 4 chars
+      $result=substr("${field}g".$fraction, 0, 4);
     }
   }
   return($result);
@@ -6966,16 +7047,16 @@ sub printBrief
     if (!$ioSizeFlag)
     {
       $line.=sprintf("%6s %6s %6s  %6s ",
-          cvt($netEthRxKBTot/$intSecs,6,0,1), cvt($netEthRxPktTot/$intSecs,6),
-          cvt($netEthTxKBTot/$intSecs,6,0,1), cvt($netEthTxPktTot/$intSecs,6));
+          cvt($netRxKBTot/$intSecs,6,0,1), cvt($netRxPktTot/$intSecs,6),
+          cvt($netTxKBTot/$intSecs,6,0,1), cvt($netTxPktTot/$intSecs,6));
     }
     else
     {
-      $netEthRxSizeTot=($netEthRxPktTot) ? $netEthRxKBTot*1024/$netEthRxPktTot : 0;
-      $netEthTxSizeTot=($netEthTxPktTot) ? $netEthTxKBTot*1024/$netEthTxPktTot : 0;
+      $netRxSizeTot=($netRxPktTot) ? $netRxKBTot*1024/$netRxPktTot : 0;
+      $netTxSizeTot=($netTxPktTot) ? $netTxKBTot*1024/$netTxPktTot : 0;
       $line.=sprintf("%6s %6s %4s %6s  %6s %4s ",
-          cvt($netEthRxKBTot/$intSecs,6,0,1), cvt($netEthRxPktTot/$intSecs,6), cvt($netEthRxSizeTot,4,0,1),
-          cvt($netEthTxKBTot/$intSecs,6,0,1), cvt($netEthTxPktTot/$intSecs,6), cvt($netEthTxSizeTot,4,0,1));
+          cvt($netRxKBTot/$intSecs,6,0,1), cvt($netRxPktTot/$intSecs,6), cvt($netRxSizeTot,4,0,1),
+          cvt($netTxKBTot/$intSecs,6,0,1), cvt($netTxPktTot/$intSecs,6), cvt($netTxSizeTot,4,0,1));
     }
   }
 
@@ -7135,7 +7216,7 @@ sub resetBriefCounters
   $memFreeTOT=$memBufTOT=$memCachedTOT=$inactiveTOT=$memSlabTOT=$memMapTOT=0;
   $slabSlabAllTotalTOT=$slabSlabAllTotalBTOT=0;
   $dskReadKBTOT=$dskReadTOT=$dskWriteKBTOT=$dskWriteTOT=0;
-  $netEthRxKBTOT=$netEthRxPktTOT=$netEthTxKBTOT=$netEthTxPktTOT=0;
+  $netRxKBTOT=$netRxPktTOT=$netTxKBTOT=$netTxPktTOT=0;
   $tcpPAckTOT=$tcpHPAckTOT=$tcpLossTOT=$tcpFTransTOT=0;
   $sockUsedTOT=$sockUdpTOT=$sockRawTOT=$sockFragTOT=0;
   $filesAllocTOT=$inodeUsedTOT=0;
@@ -7184,10 +7265,10 @@ sub countBriefCounters
   $dskWriteKBTOT+=  $dskWriteKBTot;
   $dskWriteTOT+=    $dskWriteTot;
 
-  $netEthRxKBTOT+=  $netEthRxKBTot;
-  $netEthRxPktTOT+= $netEthRxPktTot;
-  $netEthTxKBTOT+=  $netEthTxKBTot;
-  $netEthTxPktTOT+= $netEthTxPktTot;
+  $netRxKBTOT+=     $netRxKBTot;
+  $netRxPktTOT+=    $netRxPktTot;
+  $netTxKBTOT+=     $netTxKBTot;
+  $netTxPktTOT+=    $netTxPktTot;
 
   $tcpPAckTOT+=    $tcpValue[27];
   $tcpHPAckTOT+=   $tcpValue[28];
@@ -7335,16 +7416,16 @@ sub printBriefCounters
     if (!$ioSizeFlag)
     {
       printf "%6s %6s %6s  %6s ",
-          cvt($netEthRxKBTOT/$aveSecs,6,0,1), cvt($netEthRxPktTOT/$aveSecs,6),
-          cvt($netEthTxKBTOT/$aveSecs,6,0,1), cvt($netEthTxPktTOT/$aveSecs,6);
+          cvt($netRxKBTOT/$aveSecs,6,0,1), cvt($netRxPktTOT/$aveSecs,6),
+          cvt($netTxKBTOT/$aveSecs,6,0,1), cvt($netTxPktTOT/$aveSecs,6);
     }
     else
     {
       printf "%6s %6s %4s %6s  %6s %4s ", 
-	  cvt($netEthRxKBTOT/$aveSecs,6,0,1), cvt($netEthRxPktTOT/$aveSecs,6), 
-	  $netEthRxPktTOT ? cvt($netEthRxKBTOT*1024/$netEthRxPktTOT,4,0,1) : 0, 
-	  cvt($netEthTxKBTOT/$aveSecs,6,0,1), cvt($netEthTxPktTOT/$aveSecs,6),
-          $netEthTxPktTOT ? cvt($netEthTxKBTOT*1024/$netEthTxPktTOT,4,0,1) : 0;
+	  cvt($netRxKBTOT/$aveSecs,6,0,1), cvt($netRxPktTOT/$aveSecs,6), 
+	  $netRxPktTOT ? cvt($netRxKBTOT*1024/$netRxPktTOT,4,0,1) : 0, 
+	  cvt($netTxKBTOT/$aveSecs,6,0,1), cvt($netTxPktTOT/$aveSecs,6),
+          $netTxPktTOT ? cvt($netTxKBTOT*1024/$netTxPktTOT,4,0,1) : 0;
     }
   }
 
@@ -8040,7 +8121,7 @@ sub ibCheck
   # This error can only happen when NOT open fabric
   if (!-e $SysIB && !$found)
   {
-    logmsg('E', "Found HCA(s) but no software OR monitoring disabled in collectl.conf")
+    logmsg('E', "Found HCA(s) but no software OR monitoring disabled in $configFile")
         if $inactiveIBFlag==0;
     $mellanoxFlag=0;
     $inactiveIBFlag=1;
@@ -8268,12 +8349,13 @@ sub lustreCheckClt
 
       # if ost closed (this happens when new filesystems get created), ignore it.
       my ($uuid, $state)=split(/\s+/, cat("$dir/ost_server_uuid"));
-      next    if $state eq 'CLOSED';
+      next    if $state=~/CLOSED|DISCONN/;
 
-      # Our uuid looks something like 'ibsfs-ost15_UUID' so we need to split on 
-      # both - and _ pulling out the middle piece.  The filesystem name comes
-      # from our mapping hash
-      $ostName=(split(/[-_]/, $uuid))[1];
+      # uuids look something like 'xxx-ost_UUID' and you can actully have a - or _
+      # following the xxx so drop the beginning/end this way in case an embedded _
+      # in ost name itself.
+      $ostName=$uuid;
+      $ostName=~s/.*?[-_](.*)_UUID/$1/;
       $fsName=$lustreCltOstMappings{$uuid};
 
       $OstWidth=length($ostName)    if $OstWidth<length($ostName);
@@ -8445,7 +8527,7 @@ sub getOfedPath
         logmsg('I', "Adding '$found' to '$label' in $configFile");
         my $conf=`$Cat $configFile`;
         $conf=~s/($label\s+=\s+)(.*)$/$1$found:$2/m;
-        open  CONF, ">/etc/collectl.conf" or logmsg("F", "Couldn't write to /etc/collectl.conf so do it manually!");
+        open  CONF, ">$configFile" or logmsg("F", "Couldn't write to $configFile so do it manually!");
         print CONF $conf;
         close CONF;
       }
@@ -8482,9 +8564,9 @@ sub loadEnvRules
     }
     next    if $skipFlag;
 
-    if ($line eq '[pre]' || $line eq '[post]')
+    if ($line eq '[pre]' || $line eq '[post]' || $line eq '[ignore]')
     {
-      $line=~/(pre|post)/;
+      $line=~/(pre|post|ignore)/;
       $type=$1;
       $index=0;
       next;

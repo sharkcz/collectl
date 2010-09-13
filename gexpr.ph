@@ -110,15 +110,15 @@ sub gexpr
     {
       for (my $i=0; $i<$NumCpus; $i++)
       {
-        sendData('cputotals.user.cpu$i',  'percent', $userP[$i]);
-        sendData('cputotals.nice.cpu$i',  'percent', $niceP[$i]);
-        sendData('cputotals.sys.cpu$i',   'percent', $sysP[$i]);
-        sendData('cputotals.wait.cpu$i',  'percent', $waitP[$i]);
-        sendData('cputotals.irq.cpu$i',   'percent', $irqP[$i]);
-        sendData('cputotals.soft.cpu$i',  'percent', $softP[$i]);
-        sendData('cputotals.steal.cpu$i', 'percent', $stealP[$i]);
-        sendData('cputotals.idle.cpu$i',  'percent', $idleP[$i]);
-        sendData('cputotals.intrpt.cpu$i','percent', $intrpt[$i]);
+        sendData("cputotals.user.cpu$i",  'percent', $userP[$i]);
+        sendData("cputotals.nice.cpu$i",  'percent', $niceP[$i]);
+        sendData("cputotals.sys.cpu$i",   'percent', $sysP[$i]);
+        sendData("cputotals.wait.cpu$i",  'percent', $waitP[$i]);
+        sendData("cputotals.irq.cpu$i",   'percent', $irqP[$i]);
+        sendData("cputotals.soft.cpu$i",  'percent', $softP[$i]);
+        sendData("cputotals.steal.cpu$i", 'percent', $stealP[$i]);
+        sendData("cputotals.idle.cpu$i",  'percent', $idleP[$i]);
+        sendData("cputotals.intrpt.cpu$i",'percent', $intrptTot[$i]);
       }
     }
   }
@@ -137,10 +137,10 @@ sub gexpr
     {
       for (my $i=0; $i<$NumDisks; $i++)
       {
-        sendData('diskinfo.reads.$dskName[$i]',    'reads/sec',    $dskRead[$i]/$intSecs);
-        sendData('diskinfo.readkbs.$dskName[$i]',  'readkbs/sec',  $dskReadKB[$i]/$intSecs);
-        sendData('diskinfo.writes.$dskName[$i]',   'writes/sec',   $dskWrite[$i]/$intSecs);
-        sendData('diskinfo.writekbs.$dskName[$i]', 'writekbs/sec', $dskWriteKB[$i]/$intSecs);
+        sendData("diskinfo.reads.$dskName[$i]",    'reads/sec',    $dskRead[$i]/$intSecs);
+        sendData("diskinfo.readkbs.$dskName[$i]",  'readkbs/sec',  $dskReadKB[$i]/$intSecs);
+        sendData("diskinfo.writes.$dskName[$i]",   'writes/sec',   $dskWrite[$i]/$intSecs);
+        sendData("diskinfo.writekbs.$dskName[$i]", 'writekbs/sec', $dskWriteKB[$i]/$intSecs);
       }
     }
   }
@@ -163,7 +163,7 @@ sub gexpr
     }
   }
 
-   if ($gexSubsys=~/i/)
+  if ($gexSubsys=~/i/)
   {
     sendData('inodeinfo.dentnum',    'dentrynum',    $dentryNum);
     sendData('inodeinfo.dentunused', 'dentryunused', $dentryUnused);
@@ -172,8 +172,7 @@ sub gexpr
     sendData('inodeinfo.inodenum',   'inodeused',    $inodeUsed);
   }
 
-  # No lustre details, at least not for now...
-   if ($gexSubsys=~/l/)
+  if ($gexSubsys=~/l/)
   {
     if ($CltFlag)
     {
@@ -186,20 +185,63 @@ sub gexpr
 
     if ($MdsFlag)
     {
-      sendData('lusclt.close',   'close/sec',   $lustreMdsClose/$intSecs);
-      sendData('lusclt.getattr', 'getattr/sec', $lustreMdsGetattr/$intSecs);
-      sendData('lusclt.reint',   'reint/sec',   $lustreMdsReint/$intSecs);
-      sendData('lusclt.sync',    'sync/sec',    $lustreMdsSybc/$intSecs);
+      my $getattrPlus=$lustreMdsGetattr+$lustreMdsGetattrLock+$lustreMdsGetxattr;
+      my $setattrPlus=$lustreMdsReintSetattr+$lustreMdsSetxattr;
+      my $varName=($cfsVersion lt '1.6.5') ? 'reint' : 'unlink';
+      my $varVal= ($cfsVersion lt '1.6.5') ? $lustreMdsReint : $lustreMdsReintUnlink;
+
+      sendData('lusmds.gattrP',    'gattrP/sec',   $getattrPlus/$intSecs);
+      sendData('lusmds.sattrP',    'sattrP/sec',   $setattrPlus/$intSecs);
+      sendData('lusmds.sync',      'sync/sec',     $lustreMdsSync/$intSecs);
+      sendData("lusmds.$varName",  "$varName/sec", $varVal/$intSecs);
     }
 
     if ($OstFlag)
     {
       sendData('lusost.reads',    'reads/sec',    $lustreReadOpsTot/$intSecs);
       sendData('lusost.readkbs',  'readkbs/sec',  $lustreReadKBytesTot/$intSecs);
-      sendData('lusost.writes',   'writes/sec',   $lustreWriteOptsTot/$intSecs);
+      sendData('lusost.writes',   'writes/sec',   $lustreWriteOpsTot/$intSecs);
       sendData('lusost.writekbs', 'writekbs/sec', $lustreWriteKBytesTot/$intSecs);
     }
+  }
 
+  if ($gexSubsys=~/L/)
+  {
+    if ($CltFlag)
+    {
+      # Either report details by filesystem OR OST
+      if ($lustOpts!~/O/)
+      {
+        for (my $i=0; $i<$NumLustreFS; $i++)
+        {
+          sendData("lusost.reads.$lustreCltFS[$i]",    'reads/sec',    $lustreCltRead[$i]/$intSecs);
+	  sendData("lusost.readkbs.$lustreCltFS[$i]",  'readkbs/sec',  $lustreCltReadKB[$i]/$intSecs);
+          sendData("lusost.writes.$lustreCltFS[$i]",   'writes/sec',   $lustreCltWrite[$i]/$intSecs);
+          sendData("lusost.writekbs.$lustreCltFS[$i]", 'writekbs/sec', $lustreCltWriteKB[$i]/$intSecs);
+        }
+      }
+      else
+      {
+        for (my $i=0; $i<$NumLustreCltOsts; $i++)
+        {
+          sendData("lusost.reads.$lustreCltOsts[$i]",    'reads/sec',    $lustreCltLunRead[$i]/$intSecs);
+          sendData("lusost.readkbs.$lustreCltOsts[$i]",  'readkbs/sec',  $lustreCltLunReadKB[$i]/$intSecs);
+          sendData("lusost.writes.$lustreCltOsts[$i]",   'writes/sec',   $lustreCltLunWrite[$i]/$intSecs);
+          sendData("lusost.writekbs.$lustreCltOsts[$i]", 'writekbs/sec', $lustreCltLunWriteKB[$i]/$intSecs);
+        }
+      }
+    }
+
+    if ($OstFlag)
+    {
+      for ($i=0; $i<$NumOst; $i++)
+      {
+        sendData("lusost.reads.$lustreOsts[$i]",    'reads/sec',    $lustreReadOps[$i]/$intSecs);
+        sendData("lusost.readkbs.$lustreOsts[$i]",  'readkbs/sec',  $lustreReadKBytes[$i]/$intSecs);
+        sendData("lusost.writes.$lustreOsts[$i]",   'writes/sec',   $lustreWriteOps[$i]/$intSecs);
+        sendData("lusost.writekbs.$lustreOsts[$i]", 'writekbs/sec', $lustreWriteKBytes[$i]/$intSecs);
+      }
+    }
   }
 
   if ($gexSubsys=~/m/)
@@ -409,7 +451,7 @@ sub sendData
     $intUsecs=sprintf("%06d", $intUsecs);
     my ($sec, $min, $hour)=localtime($intSeconds);
     my $timestamp=sprintf("%02d:%02d:%02d.%s", $hour, $min, $sec, substr($intUsecs, 0, 3));
-    printf "$timestamp Name: %-20s Units: %-10s Val: %8d TTL: %d %s\n",
+    printf "$timestamp Name: %-25s Units: %-12s Val: %8d TTL: %d %s\n",
                 $name, $units, $value, $gexTTL[$gexDataIndex], ($valSentFlag) ? 'sent' : ''
                         if $gexDebug & 1 || $valSentFlag;
   }

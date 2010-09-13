@@ -1,6 +1,23 @@
 #!/bin/sh
 # Startup script for collectl
 #
+
+### BEGIN INIT INFO
+# Provides:          collectl
+# Required-Start:    $network +openib
+# Required-Stop:     $network +openib
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Collectl monitors system performance.
+# Description:       Collectl is a light-weight performance monitoring
+#                    tool capable of reporting interactively as well 
+#                    as logging to disk. It reports statistics on 
+#                    cpu, disk, infiniband, lustre, memory, network,
+#                    nfs, process, quadrics, slabs and more in easy 
+#                    to read format.
+#
+### END INIT INFO
+
 # chkconfig: 345 99 99
 # description: Run data collection for a number of subsystems
 #    see /etc/collectl.conf for startup options
@@ -10,6 +27,14 @@
 RETVAL=0
 COLLECTL=/usr/sbin/collectl
 . /etc/rc.d/init.d/functions
+
+# older distros do not support "status -p" and we need to know if this one does
+STATUS=`status` 
+if [[ $STATUS = *-p* ]]; then IFLAG=1; else IFLAG=0; fi
+if [ $IFLAG -eq 0 ] && [ "$2" != '' ]; then 
+    echo "starting multiple instances with this distro is not supported";
+    exit
+fi
 
 if [ ! -f $COLLECTL ]; then
     echo -n "Cannot find $COLLECTL"
@@ -64,8 +89,13 @@ case "$1" in
    	RETVAL=$?
 	;;
   status)
-        # need to use pid file since there can be multiple instances
-   	status -p $PIDFILE
+        # need to use pid file since there can be multiple instances, but only if
+        # this distro supports it
+        if [ $IFLAG -eq 1 ]; then
+	    status -p $PIDFILE
+	else
+	    status $PNAME
+        fi 
    	RETVAL=$?
 	;;
   *)

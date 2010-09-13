@@ -1,7 +1,7 @@
 # This block at the beginning don't have rules but are there to make parsing
 # this file every so slightly faster, noting the commas are really only
 # needed to make visual parsing easier.
->ProLiant BL460c G1,ProLiant BL460c G6<
+>ProLiant BL460c G1,ProLiant BL460c G6,ProLiant BL490c G6<
 >ProLiant BL685c G1,ProLiant BL2x220c G5<
 >ProLiant DL145 G2<
 >ProLiant DL185 G5,ProLiant DL385 G5,ProLiant DL585 G1<

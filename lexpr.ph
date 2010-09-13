@@ -179,10 +179,15 @@ sub lexpr
 
     if ($MdsFlag)
     {
-      $lusSumString.=sendData("lusclt.close",    $lustreMdsClose/$intSecs);
-      $lusSumString.=sendData("lusclt.getattr",  $lustreMdsGetattr/$intSecs);
-      $lusSumString.=sendData("lusclt.reint",    $lustreMdsReint/$intSecs);
-      $lusSumString.=sendData("lusclt.sync",     $lustreMdsSync/$intSecs);
+      my $getattrPlus=$lustreMdsGetattr+$lustreMdsGetattrLock+$lustreMdsGetxattr;
+      my $setattrPlus=$lustreMdsReintSetattr+$lustreMdsSetxattr;
+      my $varName=($cfsVersion lt '1.6.5') ? 'reint' : 'unlink';
+      my $varVal= ($cfsVersion lt '1.6.5') ? $lustreMdsReint : $lustreMdsReintUnlink;
+
+      $lusSumString.=sendData('lusmds.gattrP',   $getattrPlus/$intSecs);
+      $lusSumString.=sendData('lusmds.sattrP',   $setattrPlus/$intSecs);
+      $lusSumString.=sendData('lusmds.sync',     $lustreMdsSync/$intSecs);
+      $lusSumString.=sendData("lusmds.$varName", $varVal/$intSecs);
     }
 
     if ($OstFlag)

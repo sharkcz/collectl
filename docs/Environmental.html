@@ -246,23 +246,31 @@ should simply contains line of the following form (no stanza preface) noting tha
 and comments (lines preceeded with a #) are permitted:
 
 <pre>
+[ignore]
+/pattern/
+...
 [pre]
 /pattern1/replace1/
 /pattern2/replace2/
 ...
-/patternN/replaceN/
 [post]
 /pattern1/replace1/
 /pattern2/replace2/
 ...
-/patternN/replaceN/
 </pre>
 
-If you know perl (and you really should if you use this), collectl builds a perl
-pattern subsitution command out of the <i>pattern</i> and <i>replace</i> strings.  
-So looking at the string 
-<pre>FAN MOD 1A RPM</pre> and the processing rules described in the previous
-section, the <i>MOD</i>
+If you know perl (and you really should if you want to do this), collectl builds a perl
+pattern match command if you specify <i>[ignore]</i> and ignores any strings returned by 
+ipmitool that match.  This is a good way to reduce the volume of sensors on systems that
+may have dozens of them and you're only interested in a specific subset.
+<p>
+In the cases of <i>[pre]</i> and <i>[post]</i> a perl substistituion command is built out
+of the <i>pattern</i> and <i>replace</i> strings and applied to the sensor names.  There
+is one caveat about <i>[post]</i> and that is it only applies to the actual derived sensor
+name and <i>not</i> the instance, so it you want to change a specific instance consider 
+using a <i>pre</i> string to make a  unique sensor name and then change it to what you 
+really want with <i>post</i>.  So looking  at the string <pre>FAN MOD 1A RPM</pre> 
+and the processing rules described in the previous section, the <i>MOD</i>
 suffix will be prepended to <i>FAN</i> and the first letter used to name the device
 <i>MFAN</i>, losing the instance information with is <i>1A</i>.
 <p>

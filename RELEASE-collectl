@@ -37,6 +37,57 @@ KNOWN PROBLEMS/RESTRICTIONS
   - if a symlink is used to point to the executable, it MUST contain the full
     path or collectl will not be able to find 'formatit.ph'
 
+3.3.4-5	June 14, 2009
+  - old redhat distros don't recognize the -p switch on the start script so check
+    first before using it
+
+3.3.4-4
+  - make sure all LSB headers the same and only contain "$network +openib" for
+    services so that collectl can run diskless and not require ntp
+
+3.3.4-3
+  - fixed a few things with gexpr.ph
+    - incorrectly used ' instead of " for detail counters variable names [thanks evan]
+    - using wrong variable name for interrupt totals by CPU
+  - changed way lustre OST names are parsed so that they handle embedded _s correctly
+  - include LSB comments in start script headers
+  - make SubsysCore in collectl.conf match real subsys core, even though just a comment
+
+3.3.4-2
+  - changed all hardcoded occurances of /etc/collectl.conf to $configFile even in
+    error messages, in case someone ran with -C [thanks philippe, for this and others]
+  - added DiskMaxValue to collectl.conf, with default of -1.  If >0 and a disk
+    read/write rate is greater, reset all stats for this disk to 0 because something
+    reset them and they're probably all bogus
+  - moved code that initialized disk names to separate subroutine and added logic to
+    save disk major/minor numbers so it can also be called later if disks are reordered
+  - if DiskFilter specified in collectl.conf, use that string for disk filtering.  if
+    not specified continue to use separate if statements for tests in getProc() since
+    they're slightly more efficient
+  - if diskremap.ph exists, call internal remapDisk() routine when disk array is being
+    initialized in initDisk()
+  - newLog() was clearing $printHeaders instead of $headersPrinted
+  - if playing back multiple files for same day with -sD and disk config changes, generate
+    an error if not -ou because mixing the data in the same detail file will make it impossible
+    to interpret
+  - remove unused variable '$intFlag'
+
+3.3.4-1
+  - added "ProLiant BL490c G6" to envrules as a 'standard' system since there
+    is nothing special to do to parse the data
+  - changed lustreMDS data for sexpr, lexpr and gexpr to be consistent with what
+    is being reported.  this wasn't done when lustre 1.6 support was added and
+    should have been
+  - fixed a typo in a lustre ost variable name in gexpr
+  - don't just report ETH traffic in -sn brief mode, use same numbers as --verbose
+  - added [ignore] stanza to envrules to allow ingoring anything that matches
+  - only call loadEnvRule is -sE or debugging with --envtest
+  - rewrote formatting code for g/G option because it wasn't working correctly for
+    all situations
+
+3.3.3-1   April 28, 2009
+  - forgot to include misc.ph in INSTALL
+
 3.3.2.1   April 28, 2009
   - screwed up $rootFlag and set to 0 after it was intialized correctly
   - fixed a couple of problems in INSTALL: added 'q' to gzip, added gexpr/envrules.std

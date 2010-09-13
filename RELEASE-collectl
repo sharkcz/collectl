@@ -40,7 +40,49 @@ KNOWN PROBLEMS/RESTRICTIONS
   - if a symlink is used to point to the executable, it MUST contain the full
     path or collectl will not be able to find 'formatit.ph'
 
-3.3.6.2 Sep 16, 2009
+3.4.0-4 Jan 04, 2010
+  - updated envrules to include additional parsing rules for dl185 [thanks evan]
+  - changer envrules header for dl585 G1 to G5
+  - if running an ofed >= 1.5, ignore 'CounterSelect2' field, which is right in the middle
+  - send errors in getExec() to /dev/null because perfquery for > ofed 1.4 is braindead
+  - was incorrectly using 256 to print IB debugging info instead of 2
+
+3.4.0-3 Dec 14, 2009
+  - was not clearing right variable for CPU Detail Totals in sexpr.ph
+  - fixed typo on QLocic HCA name from qlib to qib
+
+3.4.0-2 Dec 13, 2009
+  - fixed typo of HugePages from HughPages [thanks Frederic] 
+  - fixed typo of 'openib' in start script LSB headers to 'openibd'
+  - clarified help and man page for --all to indicate ONLY summary data will
+    be reported, meaning NO process or detail data either
+
+3.4.0-1
+  - restructure installation directories to be more standard
+  - pid was not properly set for suse flush command
+
+3.3.7-1
+  - added support for psv [polyserve] disks
+  - added support for QLogic IB HCA
+  - changes to INSTALL/UNINSTALL to handle gentoo and to restructure 'generic'
+    distro processing for more flexibility in the future
+  - 3 'standard' tools turned out not to be standard on gentoo and so:
+    - limit checking for ethtool to writing to log file OR --showhead
+    - if can't find lspci during -sx processing (and -sx IS a daemon default), 
+      disable -sx rather than throw a hard error.
+    - only use dmidecode if -sE and if not found, set product name to 'Unknown'
+  - creating /var/log/collectl in INSTALL so when installed this way the 
+    daemon writes logs into that directory instead of /var/log.  this now 
+    matches what an RPM install does
+  - if required include files can't be find in same directory as collectl, look
+    in ReqDir which is initially set to /usr/share/collectl.  This can be 
+    changed in collectl.conf
+  - when exiting due to a fatal error, be sure to exit(1) and not just exit.
+  - some process I/O counters found to be missing on CentOS 4.8 and so had to
+    initialize to 0 in case not found
+  - wasn't catching 'ioall' as invalid --top option
+
+3.3.6-2 Sep 16, 2009
   - if printing interrupts in brief mode, Cpu headers have to be changed as the number
     of cpus increase to 2 or 3 digits.  [thanks Aron]
 

@@ -1,9 +1,13 @@
 #!/bin/bash
 
+#    R e m o v e    O L D    S t r u c t u r e    I f   T h e r e
+
 BINDIR=/opt/hp/collectl
 
+# This is code
 rm -fr $BINDIR
 
+# These are all symlinks
 rm -f /usr/bin/collectl
 rm -f /usr/sbin/collectl
 rm -f /etc/collectl.conf
@@ -12,4 +16,20 @@ rm -f /usr/share/man/man1/collectl.1.gz
 
 rm -f /etc/init.d/rc?.d/*collectl
 rm -f /etc/rc.d/rc?.d/*collectl
-rm -f /etc/rc?.d/*collectl       # debian different
+rm -f /etc/rc?.d/*collectl               # debian different
+rm -f /etc/init.d/collectl               # gentoo and generic
+rm -f /etc/runlevels/default/collectl    # gentoo
+
+#    N e w    D i r e c t o r y    S t r u c t u r e
+
+BINDIR=/usr/bin
+DOCDIR=/usr/share/doc/collectl
+SHRDIR=/usr/share/collectl
+
+rm -f /usr/bin/collectl
+rm -f /etc/collectl.conf
+rm -f /etc/init.d/collectl
+rm -f /usr/share/man/man1/collectl*
+
+rm -fr $DOCDIR
+rm -fr $SHRDIR

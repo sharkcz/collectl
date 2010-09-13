@@ -239,7 +239,7 @@ is searched for a matching stanza and its translations applied to device names
 before their initial parsing and/or immediately after a device name is generated.
 <p>
 If your system is not in this <i>standard</i> set, you can either add your own rules to 
-<i>/opt/hp/collectl/sbin/envrules.std</i> (assuming your system type can be obained 
+<i>/usr/share/collectl/envrules.std</i> (assuming your system type can be obained 
 through dmidecode) or put them in a standalone file and tell collectl to use it
 instead of the standard one using <i>--envrules</i>.  If you do use your own file it 
 should simply contains line of the following form (no stanza preface) noting that spaces

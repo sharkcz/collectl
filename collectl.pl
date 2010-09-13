@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 
-# Copyright 2003-2009 Hewlett-Packard Development Company, L.P. 
+# Copyright 2003-2010 Hewlett-Packard Development Company, L.P. 
 #
 # collectl may be copied only under the terms of either the Artistic License
 # or the GNU General Public License, which may be found in the source kit
@@ -73,6 +73,8 @@ $Rpm=          '/bin/rpm';
 $Ethtool=      '/sbin/ethtool';
 $Lspci=        '/sbin/lspci';
 $Lctl=         '/usr/sbin/lctl';
+$Dmidecode=    '/usr/sbin/dmidecode';
+$ReqDir=       '/usr/share/collectl';    # may not exist
 
 %TopProcTypes=qw(vsz '' rss '' syst '' usrt '' time '' rkb '' wkb '' iokb ''
                  rkbc '' wkbc '' iokbc '' ioall '' rsys '' wsys '' iosys  ''
@@ -96,6 +98,10 @@ $diskRemapFlag=$diskChangeFlag=0;
 $PcFlag=($Config{"osname"}=~/MSWin32/) ? 1 : 0;
 $XCFlag=(!$PcFlag && -e '/etc/hptc-release') ? 1 : 0;
 
+# If we ever want to write something to /var/log/messages, we need this which
+# we obviously can't include on a pc.
+require "Sys/Syslog.pm"    if !$PcFlag;
+
 # Always nice to know if we're root
 $rootFlag=(!$PcFlag && `whoami`=~/root/) ? 1 : 0;
 
@@ -110,7 +116,7 @@ if ($PerlVers lt '5.08.00')
   print "See /opt/hp/collectl/docs/FAQ-collectl.html for details.\n";
 }
 
-$Version=  '3.3.6-2';
+$Version=  '3.4.0-4';
 $Copyright='Copyright 2003-2009 Hewlett-Packard Development Company, L.P.';
 $License=  "collectl may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
@@ -168,16 +174,6 @@ $myHost=($PcFlag) ? `hostname` : `/bin/hostname`;
 $myHost=(split(/\./, $myHost))[0];
 chomp $myHost;
 $Host=$myHost;
-
-# If we ever want to write something to /var/log/messages, we need this which
-# we obviously can't include on a pc.
-require "Sys/Syslog.pm"    if !$PcFlag;
-
-# Load include files and optional PMs if there
-require "$BinDir/formatit.ph";
-$zlibFlag=     (eval {require "Compress/Zlib.pm" or die}) ? 1 : 0;
-$hiResFlag=    (eval {require "Time/HiRes.pm" or die}) ? 1 : 0;
-$diskRemapFlag=(eval {require "$BinDir/diskremap.ph" or die}) ? 1 : 0;
 
 # may be overkill, but we want to throttle max errors/day to prevent runaway.
 $zlibErrors=0;
@@ -237,7 +233,7 @@ $IbDupCheckFlag=1;
 $TimeHiResCheck=1;
 $PasswdFile='/etc/passwd';
 $DiskMaxValue=-1;    # disabled
-$DiskFilter='cciss/c\d+d\d+ |hd[ab] | sd[a-z]+ |xvd[a-z] |dm-\d+ |emcpower';
+$DiskFilter='cciss/c\d+d\d+ |hd[ab] | sd[a-z]+ |xvd[a-z] |dm-\d+ |emcpower|psv\d+';
 $DiskFilterFlag=0;   # only set when filter set in collectl.conf
 
 # Standard locations
@@ -272,6 +268,31 @@ GetOptions('C=s'      => \$configFile,
 # use the whole thing as the name.
 $configFile.="/$ConfigFile"    if $configFile ne '' && -d $configFile;;
 loadConfig();
+
+# Very unlikely but I hate programs that silently exit.  We have to figure out
+# where formatit.ph lives, out first choice always being '$BinDir'.
+$filename='';
+$BinDir=dirname($ExeName);
+if (!-e "$BinDir/formatit.ph" && !-e "$ReqDir/formatit.ph")
+{
+  # Let's not get too carried away for something that probably won't ever happen on a PC,
+  # but there's no point displaying $ReqDir since it in unix format and will never exist!
+  my $msg=sprintf("can't find 'formatit.ph' in '$BinDir'%s.  Corrupted installation!", !$PcFlag ? " OR '$ReqDir'" : '');
+  print "$msg\n";    # can't call logmsg() before formatit.ph not yet loaded
+  logsys($msg,1);    # force it because $filename not yet set
+  exit(1);
+}
+
+# Now that we've loaded collectl.conD and have possibly reset '$ReqDir', it's time to
+# load it, changing $ReqDir to $BinDir if we find it there.
+$ReqDir=$BinDir    if -e "$BinDir/formatit.ph";
+print "BinDir: $BinDir  ReqDir: $ReqDir\n"    if $debug & 1;
+
+# Load include files and optional PMs if there
+require "$ReqDir/formatit.ph";
+$zlibFlag=     (eval {require "Compress/Zlib.pm" or die}) ? 1 : 0;
+$hiResFlag=    (eval {require "Time/HiRes.pm" or die}) ? 1 : 0;
+$diskRemapFlag=(eval {require "$ReqDir/diskremap.ph" or die}) ? 1 : 0;
 
 # These can get overridden after loadConfig(). Others can as well but this is 
 # a good place to reset those that don't need any further manipulation
@@ -310,7 +331,7 @@ $briefFlag=1;
 $showPHeaderFlag=$showMergedFlag=$showHeaderFlag=$showSlabAliasesFlag=$showRootSlabsFlag=0;
 $verboseFlag=$vmstatFlag=$alignFlag=0;
 $quietFlag=$utcFlag=0;
-$address=$filename=$flush=$fileRoot='';
+$address=$flush=$fileRoot='';
 $limits=$lustreSvcs=$runTime=$playback=$playbackFile=$rollLog='';
 $groupFlag=$msgFlag=$niceFlag=$plotFlag=$sshFlag=$wideFlag=$rawFlag=$ioSizeFlag=0;
 $userOptions=$userInterval=$userSubsys='';
@@ -692,7 +713,7 @@ if ($topOpts ne '')
   $topType='time'          if $topType eq '';
 
   # enough of these to warrant setting a flag
-  $topIOFlag=($topType=~/kb|sys$|cncl/) ? 1 : 0;
+  $topIOFlag=($topType=~/io|kb|sys$|cncl/) ? 1 : 0;
 
   $termHeight=12    if $playback ne '';
   $numTop=$termHeight-$scrollEnd-2    if !defined($numTop) || $numTop==-1;
@@ -741,13 +762,13 @@ if ($import ne '')
     ($impName, $impOpts)=split(/,/, $impString, 2);
     $impName.=".ph"    if $impName!~/\./;
 
-    # If the import file itself doesn't exist in current directory, try $BinDir 
+    # If the import file itself doesn't exist in current directory, try $ReqDir 
     my $tempName=$impName;
-    $impName="$BinDir/$impName"    if !-e $impName;
+    $impName="$ReqDir/$impName"    if !-e $impName;
     if (!-e "$impName")
     {
       my $temp="can't find import file '$tempName' in ./";
-      $temp.=" OR $BinDir/"    if $BinDir ne '.';
+      $temp.=" OR $ReqDir/"    if $ReqDir ne '.';
       error($temp)             if !-e "$impName";
     }
 
@@ -804,13 +825,13 @@ if ($export ne '')
   ($expName, @expOpts)=split(/,/, $export);
   $expName.=".ph"    if $expName!~/\./;
 
-  # If the export file itself doesn't exist in current directory, try $BinDir
+  # If the export file itself doesn't exist in current directory, try $ReqDir
   my $tempName=$expName;
-  $expName="$BinDir/$expName"    if !-e $expName;
+  $expName="$ReqDir/$expName"    if !-e $expName;
   if (!-e "$expName")
   {
     my $temp="can't find export file '$tempName' in ./";
-    $temp.=" OR $BinDir/"    if $BinDir ne '.';
+    $temp.=" OR $ReqDir/"    if $ReqDir ne '.';
     error($temp);
   }
   require $expName;
@@ -883,16 +904,21 @@ if (!$PcFlag)
 
   # Some distros put lspci in /usr/sbin and others in /usr/bin, so take one last look in
   # those before complaining, but only if in record mode AND if looking at interconnects
-  if (!-e $Lspci && $playback eq '' && $subsys=~/x/)
+  if (!-e $Lspci && $playback eq '' && $subsys=~/x/i)
   {
-    error("can't find 'lspci' in $Lspci or '/usr/sbin' or '/usr/bin' which is require for -sx\n".
-	"If somewhere else, move it or define in collectl.conf")
-            if (!-e "/usr/sbin/lspci" && !-e "/usr/bin/lspci");
-    $Lspci=(-e '/usr/sbin/lspci') ? '/usr/sbin/lspci' : '/usr/bin/lspci'
+    $Lspci=(-e '/usr/sbin/lspci') ? '/usr/sbin/lspci' : '/usr/bin/lspci';
+    if (!-e "/usr/sbin/lspci" && !-e "/usr/bin/lspci")
+    {
+      logmsg('W', "-sx disabled because 'lspci' not in $Lspci or '/usr/sbin' or '/usr/bin'");
+      logmsg('W', "If somewhere else, move it or define in collectl.conf");
+      $xFlag=$XFlag=0;
+      $subsys=~s/x//ig;
+    }
   }
 
-  # Do something similar with 'ethtool' or but if not there disable it!
-  if (!-e $Ethtool && $playback eq '')
+  # Do something similar with 'ethtool' noting that we only need it to write to the header
+  # when writing to a file or responding to --showhead and then if not there disable it!
+  if (!-e $Ethtool && $playback eq '' && ($filename ne '' || $showHeaderFlag))
   {
     $Ethtool='/usr/sbin/ethtool';
     if (!-e $Ethtool)
@@ -900,6 +926,13 @@ if (!$PcFlag)
       logmsg("W", "Can't find '$Ethtool' so interface speeds in header will be disabled");
       $Ethtool='';
     }
+  }
+
+  if (!-e $Dmidecode && $playback eq '' && $subsys=~/E/)
+  {
+    logmsg('W', "cannot find '$Dmidecode' so can't determine hardware Product Name");
+    $Dmidecode='';
+    $ProductName='Unknown';
   }
 }
 
@@ -916,8 +949,8 @@ if ($filename ne '')
   $rawFlag=1          if !$plotFlag && $export eq '';
   $logToFileFlag=1    if $rawFlag || $plotFlag;
 }
-printf "RawFlag: %d PlotFlag: %d Log2Flag: %d Export: %s\n", 
-    $rawFlag, $plotFlag, $logToFileFlag, $export    if $debug & 1;
+printf "RawFlag: %d PlotFlag: %d Repeat: %d Log2Flag: %d Export: %s\n", 
+    $rawFlag, $plotFlag, $headerRepeat, $logToFileFlag, $export    if $debug & 1;
 
 error("-G requires data collection to a file") 
     if $groupFlag && ($playback ne '' || $filename eq '');
@@ -1877,7 +1910,7 @@ my $temp=($pname ne '') ? "(running as '$pname') " : '';
 $message="V$Version Beginning execution ${temp}on $myHost...";
 logmsg("I", $message);
 logsys($message);
-checkHiRes()    if $daemonFlag;    # check for possible HiRes/glibc incompatibility
+checkHiRes()        if $daemonFlag;      # check for possible HiRes/glibc incompatibility
 
 # initialize. noting if the user had only selected subsystems not supported
 # on this platform, initRecord() will have deselected them!
@@ -3375,6 +3408,7 @@ sub getProc
         if ($line=~/xvd[a-z] /)          { record(2, "$tag $line"); next; }
         if ($line=~/dm-\d+ /)            { record(2, "$tag $line"); next; }
         if ($line=~/emcpower/)           { record(2, "$tag $line"); next; }
+        if ($line=~/psv\d+/)             { record(2, "$tag $line"); next; }
       }
       else
       {
@@ -3480,7 +3514,12 @@ sub getExec
   my $type=   shift;
   my $command=shift;
   my $tag=    shift;
-  print "Type: $type Exec: $command\n"    if $debug & 256;
+
+  # for now, always send error messages to /dev/null unless we're debugging.  This is
+  # really manditory for perfquery >= ofed 1.5 but let's do it everywhere unless it becomes
+  # problematic later on.
+  $command.=' 2>/dev/null'            unless $debug & 3;
+  print "Type: $type Exec: $command\n"    if $debug & 2;
 
   # If we can't exec command, only report it once.
   if (!open CMD, "$command|")
@@ -3495,8 +3534,12 @@ sub getExec
   my $oneline='';
   if ($type==1)
   {
+    my $lineNum=0;
     foreach my $line (<CMD>)
     {
+      # OFED 1.5 adds an extra field called CounterSelect2, which we want to ignore
+      next    if ++$lineNum==13 && $IBVersion>1.4;
+
       if ($line=~/^#.*(\d+)$/)
       {
         # The 0 is a place holder we don't care about, at least not now
@@ -4388,7 +4431,8 @@ sub flushError
 
 # Note - ALL errors (both E and F) will be written to syslog.  If you want
 # others to go there (such as startup/shutdown messages) you need to call
-# logsys() directly.
+# logsys() directly, but be sure to make sure $filename ne '' (but can't
+# unless $filename is known at that point).
 sub logmsg
 {
   my ($severity, $text)=@_;
@@ -4404,7 +4448,7 @@ sub logmsg
   # We ONLY write to the log when writing to a file and -m
   $text="$time $text"      if $debug & 1;
   print STDERR "$text\n"   if !$daemonFlag && ($msgFlag || ($severity eq 'W' && !$quietFlag) || $severity=~/[EF]/ || $debug & 1);
-  exit                     if !$msgFlag && $severity eq "F";
+  exit(1)                  if !$msgFlag && $severity eq "F";
   return                   unless $msgFlag && $filename ne '';
 
   $yymm=sprintf("%d%02d", 1900+$year, $mon+1);
@@ -4418,20 +4462,21 @@ sub logmsg
   print MSG "$date $time $msg\n";
   close MSG;
 
-  logsys($msg)    if $severity=~/EF/ && !$PcFlag;
-  exit            if $severity=~/F/;
+  logsys($msg)     if $severity=~/EF/;
+  exit(1)          if $severity=~/F/;
 }
 
 sub logsys
 {
   my $message=shift;
+  my $force=  shift;
 
-  if ($filename ne "")
-  {
-    $x=Sys::Syslog::openlog($Program, "", "user");
-    $x=Sys::Syslog::syslog("info", "%s", $message);
-    Sys::Syslog::closelog();
-  }
+  # if not writing to a file, only log when forced
+  return    if $PcFlag || ($filename eq '' && !$force);
+
+  $x=Sys::Syslog::openlog($Program, "", "user");
+  $x=Sys::Syslog::syslog("info", "%s", $message);
+  Sys::Syslog::closelog();
 }
 
 sub setFlags
@@ -4762,6 +4807,7 @@ sub loadConfig
 
     else
     {
+      $ReqDir=$value           if $param=~/^ReqDir/;
       $Grep=$value             if $param=~/^Grep/;
       $Egrep=$value            if $param=~/^Egrep/;
       $Ps=$value               if $param=~/^Ps/;
@@ -5440,7 +5486,7 @@ sub error
     printText("Error: $text\n");
     printText("type '$Program -h' for help\n");
     logmsg("F", "Error: $text")    if $daemonFlag;
-    exit;
+    exit(1);
   }
 
 my $help=<<EOF;
@@ -5491,7 +5537,8 @@ my $extended=<<EOF2;
 This is the complete list of switches, more details in man page
 
       --align                   align on time boundary
-      --all                     selects 'all' summary subsystems except slabs
+      --all                     selects 'all' summary subsystems except slabs,
+                                which means NO detail or process data either
   -A, --address    addr         write output to socket
   -C, --config     file         use alternate collectl.conf file
   -c, --count      count        collect this number of samples and exit

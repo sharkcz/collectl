@@ -4,13 +4,19 @@
 >ProLiant BL460c G1,ProLiant BL460c G6,ProLiant BL490c G6<
 >ProLiant BL685c G1,ProLiant BL2x220c G5<
 >ProLiant DL145 G2<
->ProLiant DL185 G5,ProLiant DL385 G5,ProLiant DL585 G1<
 >ProLiant DL360 G3,ProLiant DL380 G3,ProLiant DL380 G5<
+>ProLiant DL385 G5,ProLiant DL585 G5<
 >ProLiant ML370 G6<
 
 # These are the real rules and the headers much EXACTLY match everything to the
 # right of the ": " returned by the command "dmidecode|grep -m1 'Product Name'"
 # for example: "Product Name: ProLiant BL460c G1"
+
+>ProLiant DL185 G5<
+[pre]
+/CPU(\d) Diode/CPUTemp$1/
+/Power Ambient/ATemp/
+/Front Panel Temp/FPTemp/
 
 >ProLiant DL160 G5<
 [pre]

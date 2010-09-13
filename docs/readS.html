@@ -26,11 +26,13 @@ collectl will write one sample to /tmp/S which looks like the following:
   (netpktout 0 8 0 0))
 </pre></div>
 
-This file will be continously overwritten with each sample collectl takes.  In other
-words, any external appliction can at any time it wishes read this file and see all
-the date in one, easy to read, compact form.  To facilitate the reading of this file
-the tool <i>readS</i> is supplied in <i>/opt/hp/collectl/sbin</i> as well as a soft
-link to it in <i>/usr/sbin</i>.
+This file will be continously overwritten with each sample collectl takes.  In
+other words, any external appliction can at any time it wishes read this file
+and see all the date in one, easy to read, compact form.  To facilitate the 
+reading of this file the tool <i>readS</i> is supplied in 
+<i>/usr/share/collectl/util</i> but keep in mind since the utility is written
+in perl, one needs to start the perl interpretter with each invocation and so
+will generate addtional and perhaps unwanted overhead.
 <p>
 <h3>readS - the basics</h3>
 When you type <i>readS</i> at the command line, you'll get the following usage

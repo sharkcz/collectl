@@ -8,8 +8,8 @@
 #
 ### BEGIN INIT INFO
 # Provides:          collectl
-# Required-Start:    $network +openib
-# Required-Stop:     $network +openib
+# Required-Start:    $network +openibd
+# Required-Stop:     $network +openibd
 # Default-Start:     2 3 4 5
 # Default-Stop:      0 1 6
 # Short-Description: Collectl monitors system performance.
@@ -21,7 +21,7 @@
 #                    to read format.
 ### END INIT INFO
 
-COLLECTL=/usr/sbin/collectl
+COLLECTL=/usr/bin/collectl
 if [ ! -f $COLLECTL ]; then
     echo -n "Cannot find $COLLECTL"
     rc_status -s
@@ -95,7 +95,7 @@ case "$1" in
 
   flush)
       if [ -f $PIDFILE ]; then
-	  pid=`$PIDFILE`
+	  pid=`cat $PIDFILE`
 	  echo Flushing buffers for $PNAME
 	  kill -s USR1 $pid
       else

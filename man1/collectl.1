@@ -38,7 +38,9 @@ delay the start of sampling up to 2 full process monitoring intervals.
 .B "--all"
 .RS
 Collect summary data for ALL subsystems except slabs, since slab monitoring requires
-a different monitoring interval.  You can use this switch anywhere -s can be used
+a different monitoring interval.  This also means you won't get any detail data which
+also includes processes and environmementals.
+You can use this switch anywhere -s can be used
 but not both together.  If the system supports lustre and/or interconnect monitoring
 those statistics will be provided but the warnings produced when they are not 
 available you try to select them with -s will not be displayed.
@@ -935,5 +937,3 @@ Copyright 2003-2008 Hewlett-Packard Development Company, LP
 .br
 collectl may be copied only under the terms of either the Artistic License
 or the GNU General Public License, which may be found in the source kit
-
-.SH SEE ALSO

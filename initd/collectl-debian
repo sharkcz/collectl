@@ -1,11 +1,12 @@
 #!/bin/bash
-# Startup script for collectl on distros that support start-stop-daemon
+# Startup script for collectl on distros that support update-rc.d such
+# as debian & ubuintu
 #
 
 ### BEGIN INIT INFO
 # Provides:          collectl
-# Required-Start:    $network +openib
-# Required-Stop:     $network +openib
+# Required-Start:    $network +openibd
+# Required-Stop:     $network +openibd
 # Default-Start:     2 3 4 5
 # Default-Stop:      0 1 6
 # Short-Description: Collectl monitors system performance.

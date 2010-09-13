@@ -1,48 +1,43 @@
 #!/bin/bash
 
-BINDIR=/opt/hp/collectl
+BINDIR=/usr/bin
+DOCDIR=/usr/share/doc/collectl
+SHRDIR=/usr/share/collectl
 
-mkdir -p $BINDIR
-mkdir -p $BINDIR/sbin
-mkdir -p $BINDIR/docs
-mkdir -p $BINDIR/util
-mkdir -p $BINDIR/man1
-mkdir -p $BINDIR/etc/init.d
+mkdir -p $DOCDIR
+mkdir -p $SHRDIR
+mkdir -p $SHRDIR/util
+mkdir -p /var/log/collectl
 
-cp GPL ARTISTIC COPYING  $BINDIR
-cp UNINSTALL             $BINDIR
-cp RELEASE-collectl      $BINDIR/docs
+cp collectl.pl           $BINDIR/collectl
+cp collectl.conf         /etc
+cp initd/*               /etc/init.d
+cp man1/*                /usr/share/man/man1
 
-cp collectl.pl           $BINDIR/sbin/collectl
-cp formatit.ph           $BINDIR/sbin
-cp lexpr.ph sexpr.ph     $BINDIR/sbin
-cp gexpr.ph misc.ph      $BINDIR/sbin
-cp envrules.std          $BINDIR/sbin
-cp vmstat.ph             $BINDIR/sbin
-cp client.pl readS       $BINDIR/util
-cp col2tlviz.pl          $BINDIR/util
-cp collectl.conf         $BINDIR/etc
-cp docs/*                $BINDIR/docs
-cp initd/*               $BINDIR/etc/init.d
-cp man1/*                $BINDIR/man1
+cp docs/*                $DOCDIR
+cp GPL ARTISTIC COPYING  $DOCDIR
+cp RELEASE-collectl      $DOCDIR
+
+cp UNINSTALL             $SHRDIR
+cp formatit.ph           $SHRDIR
+cp lexpr.ph sexpr.ph     $SHRDIR
+cp gexpr.ph misc.ph      $SHRDIR
+cp envrules.std          $SHRDIR
+cp vmstat.ph             $SHRDIR
+cp client.pl readS       $SHRDIR/util
+cp col2tlviz.pl          $SHRDIR/util
 
 # Force in case redoing the install and files already zipped
-gzip -f $BINDIR/man1/*
+gzip -f /usr/share/man/man1/collectl*
 
-chmod 755 $BINDIR/sbin/collectl $BINDIR/util/*
-chmod 755 $BINDIR//etc/init.d/collectl
-chmod 444 $BINDIR/sbin/formatit.ph $BINDIR/sbin/*expr.ph $BINDIR/sbin/vmstat.ph
-chmod 444 $BINDIR/etc/collectl.conf
-chmod 444 $BINDIR/ARTISTIC $BINDIR/COPYING $BINDIR/GPL
+chmod 755 /etc/init.d/collectl*
+chmod 444 /etc/collectl.conf
+chmod 755 $BINDIR/collectl
+chmod 444 $DOCDIR/ARTISTIC $DOCDIR/COPYING $DOCDIR/GPL
+chmod 755 $SHRDIR/util/*
+chmod 444 $SHRDIR/formatit.ph $SHRDIR/*expr.ph $SHRDIR/vmstat.ph
 
-# create all symlinks, noting daemon start link may get changed later
-ln -sf $BINDIR/man1/collectl.1.gz  /usr/share/man/man1/collectl.1.gz
-ln -sf $BINDIR/sbin/collectl       /usr/bin/collectl
-ln -sf $BINDIR/sbin/collectl       /usr/sbin/collectl
-ln -sf $BINDIR/etc/collectl.conf   /etc/collectl.conf
-ln -sf $BINDIR/etc/init.d/collectl /etc/init.d/collectl
-
-# remove any stale versions in case the names numbers used have changed.
+# remove any stale versions in case the names/numbers used have changed.
 # on new ROCKS installion 'rm' isn't there yet!  [thanks roy]
 if [ -x /bin/rm ] ; then
   /bin/rm -f /etc/init.d/rc*.d/*collectl
@@ -53,23 +48,57 @@ fi
 distro=1
 if [[ -f /sbin/yast ]]; then
     distro=2
-    ln -sf $BINDIR/etc/init.d/collectl-suse /etc/init.d/collectl
+    cp -f /etc/init.d/collectl-suse /etc/init.d/collectl
+    rm -f /etc/init.d/collectl-suse
+    rm -f /etc/init.d/collectl-debian
+    rm -f /etc/init.d/collectl-generic
 fi
 
 # debian
 if [[ -f /usr/sbin/update-rc.d ]]; then
     distro=3
-    ln -sf $BINDIR/etc/init.d/collectl-debian /etc/init.d/collectl
-    chmod +x /etc/init.d/collectl
+    cp -f /etc/init.d/collectl-debian /etc/init.d/collectl
+    rm -f /etc/init.d/collectl-suse
+    rm -f /etc/init.d/collectl-debian
+    rm -f /etc/init.d/collectl-generic
     update-rc.d collectl defaults
 fi
 
 # redhat
 if [[ -f /etc/redhat-release ]]; then
     distro=4
+    rm -f /etc/init.d/collectl-suse
+    rm -f /etc/init.d/collectl-debian
+    rm -f /etc/init.d/collectl-generic
     chkconfig --add collectl
 fi
 
+# gentoo
+if [[ -f /etc/gentoo-release ]]; then
+    distro=5
+    cp -f /etc/init.d/collectl-generic /etc/init.d/collectl
+    rm -f /etc/init.d/collectl-suse
+    rm -f /etc/init.d/collectl-debian
+    rm -f /etc/init.d/collectl-generic
+    rc-update -a collectl default
+fi
+
+# Generic Distros
+# If /etc/init.d doesn't exist and/or there's no way to use chkconfig or 
+# rc-update you're going to have to add some custom code below...
 if [[ ${distro} = 1 ]]; then
-    ln -sf /etc/rc.d/init.d/collectl /etc/rc.d/rc5.d/K99collectl
+
+    cp -f /etc/init.d/collectl-generic /etc/init.d/collectl
+    rm -f /etc/init.d/collectl-suse
+    rm -f /etc/init.d/collectl-debian
+    rm -f /etc/init.d/collectl-generic
+
+    # figure out how to handle reboots
+    if [[ -f /sbin/chkconfig ]]; then
+        chkconfig --add collectl
+    elif [[ -f /sbin/rc-update ]]; then
+        rc-update -a collectl default
+    else
+        echo "could not figure out how to enable restarting across reboots"
+    fi
 fi

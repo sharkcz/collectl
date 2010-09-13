@@ -385,7 +385,7 @@ sub sexprRate
 
     if ($subsys=~/C/)
     {
-      my ($name, $userTot, $niceTot, $sysTot, $waitTot, $irqTot, $softT, $stealTot, $idleTot, $intTot)=
+      my ($name, $userTot, $niceTot, $sysTot, $waitTot, $irqTot, $softTot, $stealTot, $idleTot, $intTot)=
 		('','','','','','','','','','');
       for (my $i=0; $i<$NumCpus; $i++)
       {

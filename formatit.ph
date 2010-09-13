@@ -132,7 +132,7 @@ sub initRecord
   # if doing interconnect, the first thing to do is see what interconnect
   # hardware is present via lspci.  Note that from the H/W database, we get
   # the following IDS -Quadrics: 14fc, Myricom: 14c1, Mellanox (IB): 15b3
-  # OR 0c06.
+  # OR 0c06, QLogic (IB): 1077
   # we also have to make sure in the right position of output of lspci command
   # so need to be a little clever
   $NumXRails=$NumHCAs=0;
@@ -151,7 +151,7 @@ sub initRecord
     print "lspci -- Version: $lspciVer  Vendor Field: $lspciVendorField\n"
 	if $debug & 1;
 
-    $command="$Lspci -n | $Egrep '15b3|0c06|14c1|14fc'";
+    $command="$Lspci -n | $Egrep '15b3|0c06|14c1|14fc|1077'";
     print "Command: $command\n"    if $debug & 1;
     @pci=`$command`;
     foreach $temp (@pci)
@@ -170,7 +170,7 @@ sub initRecord
 	elanCheck();
       }
 
-      if ($vendorID=~/15b3|0c06/)
+      if ($vendorID=~/15b3|0c06|1077/)
       {
 	next    if $type eq '5a46';    # ignore pci bridge
 	print "Found Infiniband Interconnect\n"    if $debug & 1;
@@ -218,8 +218,10 @@ sub initRecord
           }
 
           # I hate support questions and this is the place to catch perfquery problems!
+          # also, since perfquery generates warnings on stderr in V1.5 and we don't know
+          # the version yet, always ignore it.
           my $message='';
-          my $temp=`$PQuery`;
+          my $temp=`$PQuery 2>/dev/null`;
           $message="Permission denied"            if $temp=~/Permission denied/;
           $message="Required module missing"      if $temp=~/required by/;
           $message="No such file or directory"    if $temp=~/No such file/;
@@ -348,10 +350,13 @@ sub initRecord
 
   #    E n v i r o n m e n t a l    C h e c k s
 
-  $ProductName=($rootFlag) ? `dmidecode | grep -m1 'Product Name'` : '';
-  $ProductName=~s/\s*Product Name: //;
-  chomp $ProductName;
-  $ProductName=~s/\s*$//;   # some have trailing whitespace
+  if ($subsys=~/E/ && $Dmidecode ne '')
+  {
+    $ProductName=($rootFlag) ? `$Dmidecode | grep -m1 'Product Name'` : '';
+    $ProductName=~s/\s*Product Name: //;
+    chomp $ProductName;
+    $ProductName=~s/\s*$//;   # some have trailing whitespace
+  }
 
   if ($subsys=~/E/ && $envTestFile eq '')
   {
@@ -1836,6 +1841,11 @@ sub dataAnalyze
 
       if ($data2=~/^cancelled_write_bytes: (\d+)/)
       {
+        # CentOS V4 (and therefore must be true for some RHEL distros) 
+        # doesn't include all counters so if one isn't set I'm going
+        # to assume ALL aren't set
+        $procRChar=$procWChar=$procSyscr=$procSyscw=0    if !defined($procRChar);
+
         $procCancel=$1;
 	$procRKBC[$i]=fix($procRChar-$procRCharLast[$i])/1024;
   	$procWKBC[$i]=fix($procWChar-$procWCharLast[$i])/1024;
@@ -2806,8 +2816,8 @@ sub dataAnalyze
 	  $dskInProg[$dskIndex]=$dskTicks[$dskIndex]=$dskWeighted[$dskIndex]=0;
         }
 
-      # Don't include device mapper data in totals
-      if ($diskName!~/^dm-/)
+      # Don't include device mapper OR polyserve data in totals
+      if ($diskName!~/^dm-|^psv/)
       {
         $dskReadTot+=      $dskRead[$dskIndex];
         $dskReadMrgTot+=   $dskReadMrg[$dskIndex];
@@ -3306,9 +3316,9 @@ sub dataAnalyze
     $memAnon=$data            if $type=~/^Anon/;
     $memMap=$data+$memAnon    if $type=~/^Map/;
     $memCommit=$data          if $type=~/^Com/;
-    $memHugeTot=$data         if $type=~/^HughPages_T/;
-    $memHugeFree=$data        if $type=~/^HughPages_F/;
-    $memHugeRsvd=$data        if $type=~/^HughPages_R/;
+    $memHugeTot=$data         if $type=~/^HugePages_T/;
+    $memHugeFree=$data        if $type=~/^HugePages_F/;
+    $memHugeRsvd=$data        if $type=~/^HugePages_R/;
   }
 
   elsif ($subsys=~/m/ && $kernel2_6 && $type=~/^Swap/)
@@ -8226,7 +8236,7 @@ sub ibCheck
 
       # While this should work for any ofed compliant adaptor, doing it this
       # way at least makes it more explicit which ones have been found to work.
-      if ($devname=~/mthca|mlx4_/)
+      if ($devname=~/mthca|mlx4_|qib/)
       {
         $HCAName[$NumHCAs]=$devname;
         $HCAPorts[$NumHCAs]=0;  # none active yet
@@ -8581,7 +8591,7 @@ sub getOfedPath
 sub loadEnvRules
 {
   my $envStdFlag=($envRules eq '') ? 1 : 0;
-  my $ruleFile=($envStdFlag) ? "$BinDir${Sep}envrules.std" : $envRules;
+  my $ruleFile=($envStdFlag) ? "$ReqDir${Sep}envrules.std" : $envRules;
   open TMP, "<$ruleFile" or logmsg('F', "Cannot open '$ruleFile'");
 
   my $skipFlag=1    if $envStdFlag;    # if 'std', need to find right stanza

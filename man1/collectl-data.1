@@ -665,8 +665,8 @@ only on HP SFS systems.
 .SH Memory
 .nf
 # MEMORY STATISTICS
-#<-------------Physical Memory-----------><-----------Swap----------><-Inactive-><Pages/sec>
-#   TOTAL    USED    FREE    BUFF  CACHED     TOTAL    USED    FREE     TOTAL     IN    OUT
+#<------------------------Physical Memory-----------------------><-----------Swap----------><-Inactive-><Pages/sec>
+#   TOTAL    USED    FREE    BUFF  CACHED    SLAB  MAPPED  COMMIT     TOTAL    USED    FREE     TOTAL     IN    OUT
 .fi
 
 .B Total
@@ -676,6 +676,11 @@ Total physical memory
 .B Used
 .RS
 Used physical memory.  This does not include memory used by the kernel itself.
+.RE
+.B Commit
+.RS
+Accorting to RedHat: "An estimate of how much RAM you would need to make a 99.99% guarantee
+that there never is OOM (out of memory) for this workload."
 .RE
 .B "Swap Total"
 .RS

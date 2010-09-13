@@ -50,6 +50,20 @@ KNOWN PROBLEMS/RESTRICTIONS
   - this version may generate errors "Ignoring '!' modifier for short option P" with
     older versions of perl OR at least older version of the 'getopts' module.
 
+2.3.2   Sep 4, 2007
+  - if you created a plot file and then reran trying to send plot data to terminal, 
+    you were told you needed to force creation of a new file.  this has been fixed
+  - added "Commit" data to memory data for both verbose and plot formats
+  - added --quiet.  Normally any messages logged with a status other than "I" are reported
+    on the terminal and can be annoying.  This switch will suppress them (at your peril!)
+  - added --custom to extended help message which was missing
+  - if /proc/slabinfo doesn't exist disable monitoring and continue as is done for
+    other non-existent data.  also fixed incorrect spelling of associated logmsg() call
+  - cleaned up some of the help text for "collectl -h"
+  - added new switch --utc for plot mode only, generates time in UTC rather than date/time
+  - added new switch --sep to allow one to define actual plot data field separator
+  - tighten up pattern match on memory labels
+
 2.3.1   Aug 09, 2007
   - cleaned up the way client handles ost to filesystem name mapping for
     rpc-stats as it was not working correctly

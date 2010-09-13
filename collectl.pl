@@ -84,7 +84,7 @@ if ($Config{'version'} lt '5.8.0')
 #  exit;
 }
 
-$Version=  '2.3.1';
+$Version=  '2.3.2';
 $Copyright='Copyright 2003-2007 Hewlett-Packard Development Company, L.P.';
 $License=  "collectl may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
@@ -239,6 +239,7 @@ $count=-1;
 $numTop=0;
 $showPHeaderFlag=0;
 $showMergedFlag=$showHeaderFlag=$verboseFlag=$procmemFlag=$vmstatFlag=$alignFlag=0;
+$quietFlag=$utcFlag=0;
 $address=$beginTime=$endTime=$filename=$flush=$noHardCmd='';
 $limits=$lustreSvcs=$procopts=$runTime=$subOpts=$playback=$rollLog='';
 $groupFlag=$msgFlag=$niceFlag=$plotFlag=$sshFlag=$wideFlag=$rawFlag=$sexprFlag=0;
@@ -294,18 +295,21 @@ GetOptions('align!'     => \$alignFlag,
 	   'p=s'        => \$playback,
            'playback=s' => \$playback,
 	   'P!'         => \$plotFlag,
+           'quiet!'     => \$quietFlag,
            'plot!'      => \$plotFlag,
 	   'r=s'        => \$rollLog,
            'rolllogs=s' => \$rollLog,
 	   'R=s'        => \$runTime,
            'runtime=s'  => \$runTime,
            's=s'        => \$userSubsys,
+           'sep=s'      => \$SEP,
            'subsys=s'   => \$userSubsys,
 	   'S!'         => \$sshFlag,
            'ssh!'       => \$sshFlag,
 	   'top=i'      => \$numTop,
            'T=s'        => \$timeOffset,
            'timezone=s' => \$timeOffset,
+           'utc!'       => \$utcFlag,
 	   'v!'         => \$vSwitch,
            'version!'   => \$vSwitch,
 	   'V!'         => \$VSwitch,
@@ -441,6 +445,8 @@ error("--showheader in collection mode only supported on linux")
 
 #    S i m p l e    S w i t c h    C h e c k s
 
+$utcFlag=1    if $options=~/U/;
+
 # should I migrate a lot of other simple tests here?
 error("you can only specify -s with --top with -p")        if $numTop ne 0 && $userSubsys ne '' && $playback eq '';
 error("you cannot specify -f with --top")                  if $numTop ne 0 && $filename ne '';
@@ -453,7 +459,12 @@ error("--rawtoo requires -f")                              if $rawFlag && $filen
 error("--rawtoo requires -P or --sexpr")                   if $rawFlag && !$plotFlag && $sexprType ne '';
 error("--rawtoo and -P requires -f")                       if $rawFlag && $plotFlag && $filename eq '';
 error("--rawtoo cannot be used with -p")                   if $rawFlag && $playback ne '';
+error("-ou/--utc only apply to -P format")                 if $utcFlag && !$plotFlag;
+error("can't mix -ou with other formats")                  if $utcFlag && $options=~/[dDt]/;
 error("-oz only applies to -P files")                      if $options=~/z/ && !$plotFlag;
+error("--sep cannot be a '%'")                             if defined($SEP) && $SEP eq '%';
+error("--sep only applied to plot format")                 if defined($SEP) && !$plotFlag;
+error("--sep much be 1 character or a number")             if defined($SEP) && length($SEP)>1 && $SEP!~/^\d+$/;
 
 error('--showheader not allowed with -f')                  if $filename ne '' && $showHeaderFlag;
 error('--showmergedheader not allowed with -f')            if $filename ne '' && $showMergedFlag;
@@ -462,6 +473,11 @@ error('--showplotheader not allowed with -f')              if $filename ne '' &&
 error("--align require HiRes time module")                 if $alignFlag && !$hiResFlag;
 
 #    H a n d l e    D e f a u l t s
+
+# The separator is either a space if not defined or the character supplied if non-numeric.  If it
+# is numeric assume decimal and convert to the associated char code (eg 9=tab).
+$SEP=' '                    if !defined($SEP);
+$SEP=sprintf("%c", $SEP)    if $SEP=~/\d+/;
 
 # Set default interval and subsystems for interactive mode unless already
 # set, noting the default values above are for daemon mode.  To be consistent,
@@ -1136,11 +1152,9 @@ if ($playback ne '')
     {
       print "Prefix: $prefix  Host: $Host\n"    
 	  if ($debug & 1) && !$logToFileFlag;
-      $headersPrinted=$headersPrintedProc=0;
-      $totalCounter=0;
-      $newOutputFile=1;
+      $headersPrinted=$headersPrintedProc=$totalCounter=$prcFileCount=0;
+      $newOutputFile=($filename ne '') ? 1 : 0;
       $playback{$key}=1;
-      $prcFileCount=0;
     }
     $prcFileCount++    if $subsys=~/Z/;
     #print "NEW PREFIX: $newPrefixDate  NEW FILE: $newOutputFile\n";
@@ -1367,7 +1381,7 @@ if ($sexprType ne '')
 # need to load even if interval is 0, but don't allow for -p mode
 error("threads only currently supported in 2.6 kernels")
     if $procopts=~/\+/ && !$kernel2_6;
-loadSlabs($slabopts)        if $subsys=~/y/i;
+loadSlabs($slabopts)    if $subsys=~/y/i;
 loadPids($procopts)     if $subsys=~/Z/;
 
 # In case running on a cluster, record the name of the host we're running on.
@@ -3458,7 +3472,7 @@ sub logmsg
   # BUT - if running as a daemon we CAN'T print because no terminal to talk to
   # We ONLY write to the log when writing to a file and -m
   $text="$time $text"      if $debug & 1;
-  print STDERR "$text\n"   if !$daemonFlag && ($msgFlag || $severity ne "I" || $debug & 1);
+  print STDERR "$text\n"   if !$daemonFlag && ($msgFlag || ($severity eq 'W' && !$quietFlag) || $severity=~/[EF]/ || $debug & 1);
   exit                     if !$msgFlag && $severity eq "F";
   return                   unless $msgFlag && $filename ne '';
 
@@ -3802,7 +3816,14 @@ sub loadSlabs
   my $slabopts=shift;
   my ($line, $name, $slab, %slabsKnown);
 
-  open PROC,"</proc/slabinfo" or msglog("F", "Couldn't read /proc/slabinfo");
+  if (!open PROC,"</proc/slabinfo")
+  {
+    logmsg("W", "Slab monitoring disabled because /proc/slabinfo doesn't exist");
+    $yFlag=$YFlag=0;
+    $subsys=~s/y//ig;
+    return;
+  }
+
   while ($line=<PROC>)
   {
     $slab=(split(/\s+/, $line))[0];
@@ -4303,34 +4324,22 @@ sub error
   }
 
 my $help=<<EOF;
-These are a subset of the basic switches, to see all type 'collectl --helpext'
-To get started just type 'collectl'
+These are a subset of the basic switches and even the descripions are abbreviated.
+To see all type 'collectl --helpext'.  To get started just type 'collectl'
 
 usage: collectl [switches]
   -c, --count      count      collect this number of samples and exit
   -f, --filename   file       name of directory/file to write to
   -i, --interval   int        collection interval in seconds [default=10]
   -o, --options    options    list of miscellaneous options to control output format
-                                  h - do NOT print multiple headers to terminal
-                                  H - do NOT print any headers to terminal
+                                d|D - include date in output
                                   T - include time in output
   -O, --subopts    subopts    list of sub-options that get applied to subsystems
-                                NFS
-                                  2 - record nfs V2 statistics
-                                  3 - record nfs V3 statistics [default]
-                                  C - collect nfs client data (requires -s f/F)
-                                Lustre
-                                  B - only for OST's and clients, collect buffer/rpc stats
-                                  D - for MDS and OST, collectl disk block level stats
-                                  M - collect lustre client metadata
-                                  R - collect lustre client readahead stats
-                                Processes
-                                  P - never look for new pids or threads to match processing
-                                      criteria - (also improves performance)
+                                NFS = [23C], Lustre = [BDMR], Processes = [P]
   -p, --playback   file       playback results from 'file'
   -P, --plot                  generate output in 'plot' format
   -s, --subsys     subsys     record/playback data from one or more subsystems
-                              values = [cdfilmnstxyCDEFLLNTXYZ] defaults = [$SubsysCore]
+                                values = [cdfilmnstxyCDEFLLNTXYZ] defaults = [$SubsysCore]
   --verbose                   display output in verbose format (this mode can get automatically
                               selected in some cases where brief doesn't make sense)
 
@@ -4362,6 +4371,8 @@ These switches are for more advanced usage
   -b, --begin      time         in playback mode, don't start at this date/time
                                 time actually in '[date-]time' format
   -C, --config     file         use alternate collectl.conf file
+      --custom     ph-file      this file-root (no .ph) will in included in the collectl source and
+                                override the normal output pring routine
   -d, --debug      debug        see source for details or try -d 1 to get started
   -D, --daemon                  run as a daemon
   -e, --end        time         in playback mode, don't process after this date/time
@@ -4383,9 +4394,11 @@ printText($extended);
 showOptions(1);
 showSubopts(1);
 my $eof2a=<<EOF2a;
+      --quiet                   do note echo warning messages on the terminal
   -r, --rolllogs   time,d,m     roll logs at 'time', retaining for 'd' days, every 'm' minutes
                                 [default days=7, minutes=1440 (once a day)]
   -R, --runtime    duration     time to run in <num><units> format where unit is w,d,h,m,s
+      --sep        separator    specify an alternate plot format separator
 EOF2a
 printText($eof2a);
 showSubsys(1);
@@ -4415,6 +4428,8 @@ my $eof2b=<<EOF2b;
                                         any threads associated with that process will also be reported.
                                         see man page for important restrictions
 
+Synonyms
+  --utc = -oU
 
 These are Alternate Display Formats
   --procmem                   show memory utilization by process
@@ -4489,6 +4504,7 @@ sub showOptions
                                   d - preface output with 'mm/dd hh:mm:ss'
                                   D - preface outout with 'ddmmyyyy hh:mm:ss'
                                   T - preface output with time only
+                                  U - preface output with UTC time
                                   m - when reporting times, include milli-secs
 
                                 terminal output headers

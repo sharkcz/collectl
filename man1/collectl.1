@@ -152,6 +152,18 @@ an individual collection file in minutes the default of which is 1440 minutes
 or 1 day.
 .RE
 
+.B "--quiet"
+.RS
+Whenever collectl wants to tell the user something, it assigns a category to it such as
+Informational, Warning, Error or Fatal.  When run with -m, all messages are displayed 
+for the user and if logging data to a file with -f, these messages are also sent to a
+log file which is in the data collection directory and has an extenion of "log".  
+However, if -m is not specified Informational messages (such as collectl starting
+or stopping) are not reported on the terminal but the other 3 are.  Sometimes the 
+warnings can be annoying and one can suppress these with --quiet though they will still be
+written to the message log in -f.  You cannot suppress Error or Fatal errors.
+.RE
+
 .B "--rawtoo"
 .RS
 Only available in conjunction with -P, this switch causes the creation/logging
@@ -169,6 +181,14 @@ by one of
 indicating how many weeks, days, hours, minutes or seconds
 the collection is to be taken for.
 .RE
+
+.B "--sep separator"
+.RS
+Specify the plot format separator - default is a space.  If this is a numeric field it is 
+interpretted as the decimal value of the associated ASCII character code.  Otherwise it
+is interpretted as the character itself.  In other words, "--sep :" sets the separator 
+character to a colon and "--sep 9" sets it to a horizontal tab.  "--sep 58" would also
+set it to a colon.
 
 .B --sexpr {raw|rate}[,dir]
 .RS
@@ -423,7 +443,7 @@ Eliminate ALL headers from the display
 .RS
 Whenever times are reported in plot format, in the normal 
 terminal reporting format at the bginning of each interval or when when one 
-of the time reporting options (d, D or T is selected), append the milliseconds
+of the time reporting options (d, D, T or U is selected), append the milliseconds
 to the time.
 .RE
 
@@ -463,6 +483,12 @@ For use with terminal output and brief mode, preceeds each line with a time stam
 Create plot files with unique names by include the starting time of a colletion
 in the name.  This forces
 multiple collections taken the same day to be written to multiple files.
+.RE
+
+.B "u or --utc"
+.RS
+In plot format only, report timestamps in Coordinated Universal time which is more
+commonly know as UTC.
 .RE
 
 .B x

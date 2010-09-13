@@ -938,7 +938,7 @@ sub initFormat
   $dirty=$clean=$target=$laundry=$active=$inactive=0;
   $procsRun=$procsBlock=0;
   $pagein=$pageout=$swapin=$swapout=$swapTotal=$swapUsed=$swapFree=0;
-  $memTot=$memUsed=$memFree=$memShared=$memBuf=$memCached=$memSlab=$memMap=0;
+  $memTot=$memUsed=$memFree=$memShared=$memBuf=$memCached=$memSlab=$memMap=$memCommit=0;
   $sockUsed=$sockTcp=$sockOrphan=$sockTw=$sockAlloc=0;
   $sockMem=$sockUdp=$sockRaw=$sockFrag=$sockFragM=0;
 
@@ -2125,7 +2125,7 @@ sub dataAnalyze
     $memFree=$data    if $type=~/^MemFree/;
   }
 
-  elsif ($type=~/^Buf|^Cached|^Dirt|^Active|^Inactive|^Mapped|^Slab:/ && $subsys=~/m/ && $kernel2_6)
+  elsif ($type=~/^Buffers|^Cached|^Dirty|^Active|^Inactive|^Mapped|^Slab:|^Committed_AS:/ && $subsys=~/m/ && $kernel2_6)
   {
     $data=(split(/\s+/, $data))[0];
     $memBuf=$data       if $type=~/^Buf/;
@@ -2135,6 +2135,7 @@ sub dataAnalyze
     $inactive=$data     if $type=~/^Ina/;
     $memSlab=$data      if $type=~/^Sla/;
     $memMap=$data       if $type=~/^Map/;
+    $memCommit=$data    if $type=~/^Com/;
    }
 
   elsif ($type=~/^procs/ && $subsys=~/m/ && $kernel2_6)
@@ -2671,101 +2672,102 @@ sub printHeaders
   ##############################
 
   $headersAll='';
-  $headers=($filename ne '') ? "$commonHeader#Date Time " : '#Date Time ';
+  $datetime=(!$utcFlag) ? "#Date${SEP}Time${SEP}" : "#UTC${SEP}";
+  $headers=($filename ne '') ? "$commonHeader$datetime" : $datetime;
 
   if ($subsys=~/c/)
   {
-    $headers.="[CPU]User% [CPU]Nice% [CPU]Sys% [CPU]Idle% [CPU]Wait% [CPU]Totl% ";
-    $headers.="[CPU]Intrpt$rate [CPU]Ctx$rate [CPU]Proc$rate ";
-    $headers.="[CPU]ProcQue [CPU]ProcRun [CPU]L-Avg1 [CPU]L-Avg5 [CPU]L-Avg15 "
+    $headers.="[CPU]User%${SEP}[CPU]Nice%${SEP}[CPU]Sys%${SEP}[CPU]Idle%${SEP}[CPU]Wait%${SEP}[CPU]Totl%${SEP}";
+    $headers.="[CPU]Intrpt$rate${SEP}[CPU]Ctx$rate${SEP}[CPU]Proc$rate${SEP}";
+    $headers.="[CPU]ProcQue${SEP}[CPU]ProcRun${SEP}[CPU]L-Avg1${SEP}[CPU]L-Avg5${SEP}[CPU]L-Avg15${SEP}"
   }
 
   if ($subsys=~/m/)
   {
-    $headers.="[MEM]Tot [MEM]Used [MEM]Free [MEM]Shared [MEM]Buf [MEM]Cached ";
-    $headers.="[MEM]Slab [MEM]Map ";    # always from V1.7.5 forward
-    $headers.="[MEM]SwapTot [MEM]SwapUsed [MEM]SwapFree ";
-    $headers.="[MEM]Dirty [MEM]Clean [MEM]Laundry [MEM]Inactive [MEM]PageIn [MEM]PageOut ";
+    $headers.="[MEM]Tot${SEP}[MEM]Used${SEP}[MEM]Free${SEP}[MEM]Shared${SEP}[MEM]Buf${SEP}[MEM]Cached${SEP}";
+    $headers.="[MEM]Slab${SEP}[MEM]Map${SEP}[MEM]Commit${SEP}";    # always from V1.7.5 forward
+    $headers.="[MEM]SwapTot${SEP}[MEM]SwapUsed${SEP}[MEM]SwapFree${SEP}";
+    $headers.="[MEM]Dirty${SEP}[MEM]Clean${SEP}[MEM]Laundry${SEP}[MEM]Inactive${SEP}[MEM]PageIn${SEP}[MEM]PageOut${SEP}";
   }
 
   if ($subsys=~/s/)
   {
-    $headers.="[SOCK]Used [SOCK]Tcp [SOCK]Orph [SOCK]Tw [SOCK]Alloc ";
-    $headers.="[SOCK]Mem [SOCK]Udp [SOCK]Raw [SOCK]Frag [SOCK]FragMem ";
+    $headers.="[SOCK]Used${SEP}[SOCK]Tcp${SEP}[SOCK]Orph${SEP}[SOCK]Tw${SEP}${SEP}[SOCK]Alloc${SEP}";
+    $headers.="[SOCK]Mem${SEP}[SOCK]Udp${SEP}[SOCK]Raw${SEP}[SOCK]Frag${SEP}[SOCK]FragMem${SEP}";
   }
 
   if ($subsys=~/n/)
   {
-    $headers.="[NET]RxPktTot [NET]TxPktTot [NET]RxKBTot [NET]TxKBTot ";
-    $headers.="[NET]RxCmpTot [NET]RxMltTot [NET]TxCmpTot ";
-    $headers.="[NET]RxErrsTot [NET]TxErrsTot ";
+    $headers.="[NET]RxPktTot${SEP}[NET]TxPktTot${SEP}[NET]RxKBTot${SEP}[NET]TxKBTot${SEP}";
+    $headers.="[NET]RxCmpTot${SEP}[NET]RxMltTot${SEP}[NET]TxCmpTot${SEP}";
+    $headers.="[NET]RxErrsTot${SEP}[NET]TxErrsTot${SEP}";
   }
 
   if ($subsys=~/d/)
   {
-    $headers.="[DSK]ReadTot [DSK]WriteTot [DSK]OpsTot ";
-    $headers.="[DSK]ReadKBTot [DSK]WriteKBTot [DSK]KbTot ";
-    $headers.="[DSK]ReadMrgTot [DSK]WriteMrgTot [DSK]MrgTot ";
+    $headers.="[DSK]ReadTot${SEP}[DSK]WriteTot${SEP}[DSK]OpsTot${SEP}";
+    $headers.="[DSK]ReadKBTot${SEP}[DSK]WriteKBTot${SEP}[DSK]KbTot${SEP}";
+    $headers.="[DSK]ReadMrgTot${SEP}[DSK]WriteMrgTot${SEP}[DSK]MrgTot${SEP}";
   }
 
   if ($subsys=~/i/)
   {
-    $headers.="[INODE]dentry-unused [INODE]openFiles [INODE]%Max [INODE]used ";
-    $headers.="[INODE]super-used [INODE]%Max [INODE]dqout-used [INODE]%Max ";
+    $headers.="[INODE]dentry-unused${SEP}[INODE]openFiles${SEP}[INODE]%Max${SEP}[INODE]used${SEP}";
+    $headers.="[INODE]super-used${SEP}[INODE]%Max${SEP}[INODE]dqout-used${SEP}[INODE]%Max${SEP}";
   }
 
   if ($subsys=~/f/)
   {
     my $nfsType=($subOpts=~/2/) ?  'NFS2' : 'NFS3';
     $nfsType.=  ($subOpts=~/C/) ?     'C' : 'S';
-    $headers.="[NFS]Packets [NFS]Udp [NFS]Tcp [NFS]TcpConn [NFS]Calls ";
-    $headers.=($subOpts!~/C/) ? "[NFS]BadAuth [NFS]BadClient " : "[NFS]Retrans [NFS]AuthRef ";
-    $headers.="[$nfsType]Reads [$nfsType]Writes ";
+    $headers.="[NFS]Packets${SEP}[NFS]Udp${SEP}[NFS]Tcp${SEP}[NFS]TcpConn${SEP}[NFS]Calls${SEP}";
+    $headers.=($subOpts!~/C/) ? "[NFS]BadAuth${SEP}[NFS]BadClient${SEP}" : "[NFS]Retrans${SEP}[NFS]AuthRef${SEP}";
+    $headers.="[$nfsType]Reads${SEP}[$nfsType]Writes${SEP}";
   }
 
   if ($subsys=~/l/)
   {
     if ($reportMdsFlag)
     {
-      $headers.="[MDS]Close [MDS]Getattr [MDS]Reint [MDS]Sync ";
+      $headers.="[MDS]Close${SEP}[MDS]Getattr${SEP}[MDS]Reint${SEP}[MDS]Sync${SEP}";
     }
 
     if ($reportOstFlag)
     {
       # We always report basic I/O independent of what user selects with -O
-      $headers.="[OST]Read [OST]ReadKB [OST]Write [OST]WriteKB ";
+      $headers.="[OST]Read${SEP}[OST]ReadKB${SEP}[OST]Write${SEP}[OST]WriteKB${SEP}";
       if ($subOpts=~/B/)
       {
         foreach my $i (@brwBuckets)
-        { $headers.="[OSTB]r${i}P "; }
+        { $headers.="[OSTB]r${i}P{SEP}"; }
         foreach my $i (@brwBuckets)
-        { $headers.="[OSTB]w${i}P "; }
+        { $headers.="[OSTB]w${i}P${SEP}"; }
       }
     }
     if ($subOpts=~/D/)
     {
-      $headers.="[OSTD]Rds [OSTD]Rdk [OSTD]Wrts [OSTD]Wrtk ";
+      $headers.="[OSTD]Rds${SEP}[OSTD]Rdk${SEP}[OSTD]Wrts${SEP}[OSTD]Wrtk${SEP}";
       foreach my $i (@diskBuckets)
-      { $headers.="[OSTD]r${i}K "; }
+      { $headers.="[OSTD]r${i}K${SEP}"; }
       foreach my $i (@diskBuckets)
-      { $headers.="[OSTD]w${i}K "; }
+      { $headers.="[OSTD]w${i}K${SEP}"; }
     }
 
     if ($reportCltFlag)
     {
       # 4 different sizes based on whether or not -OB, -OM and/or -OR selected.
       # NOTE - order IS critical
-      $headers.="[CLT]Reads [CLT]ReadKB [CLT]Writes [CLT]WriteKB ";
-      $headers.="[CLTM]Open [CLTM]Close [CLTM]GAttr [CLTM]SAttr [CLTM]Seek [CLTM]FSync [CLTM]DrtHit [CLTM]DrtMis "
+      $headers.="[CLT]Reads${SEP}[CLT]ReadKB${SEP}[CLT]Writes${SEP}[CLT]WriteKB${SEP}";
+      $headers.="[CLTM]Open${SEP}[CLTM]Close${SEP}[CLTM]GAttr${SEP}[CLTM]SAttr${SEP}[CLTM]Seek${SEP}[CLTM]FSync${SEP}[CLTM]DrtHit${SEP}[CLTM]DrtMis${SEP}"
 		    if $subOpts=~/M/;
-      $headers.="[CLTR]Pend [CLTR]Hits [CLTR]Misses [CLTR]NotCon [CLTR]MisWin [CLTR]LckFal [CLTR]Discrd [CLTR]ZFile [CLTR]ZerWin [CLTR]RA2Eof [CLTR]HitMax "
+      $headers.="[CLTR]Pend${SEP}[CLTR]Hits${SEP}[CLTR]Misses${SEP}[CLTR]NotCon${SEP}[CLTR]MisWin${SEP}[CLTR]LckFal${SEP}[CLTR]Discrd${SEP}[CLTR]ZFile${SEP}[CLTR]ZerWin${SEP}[CLTR]RA2Eof${SEP}[CLTR]HitMax${SEP}"
 		    if $subOpts=~/R/;
       if ($subOpts=~/B/)
       {
         foreach my $i (@brwBuckets)
-        { $headers.="[CLTB]r${i}P "; }
+        { $headers.="[CLTB]r${i}P${SEP}"; }
         foreach my $i (@brwBuckets)
-        { $headers.="[CLTB]w${i}P "; }
+        { $headers.="[CLTB]w${i}P${SEP}"; }
       }
     }
   }
@@ -2773,18 +2775,18 @@ sub printHeaders
   if ($subsys=~/x/)
   {
     my $int=($NumXRails) ? 'ELAN' : 'IB';
-    $headers.="[$int]InPkt [$int]OutPkt [$int]InKB [$int]OutKB [$int]Err ";
+    $headers.="[$int]InPkt${SEP}[$int]OutPkt${SEP}[$int]InKB${SEP}[$int]OutKB${SEP}[$int]Err${SEP}";
   }
 
   if ($subsys=~/t/)
   {
-    $headers.="[TCP]PureAcks [TCP]HPAcks [TCP]Loss [TCP]FTrans ";
+    $headers.="[TCP]PureAcks${SEP}[TCP]HPAcks${SEP}[TCP]Loss${SEP}[TCP]FTrans${SEP}";
   }
 
   if ($subsys=~/y/)
   {
-    $headers.="[SLAB]ObjInUse [SLAB]ObjInUseB [SLAB]ObjAll [SLAB]ObjAllB ";
-    $headers.="[SLAB]InUse [SLAB]InUseB [SLAB]All [SLAB]AllB [SLAB]CacheInUse [SLAB]CacheTotal ";
+    $headers.="[SLAB]ObjInUse${SEP}[SLAB]ObjInUseB${SEP}[SLAB]ObjAll${SEP}[SLAB]ObjAllB${SEP}";
+    $headers.="[SLAB]InUse${SEP}[SLAB]InUseB${SEP}[SLAB]All${SEP}[SLAB]AllB${SEP}[SLAB]CacheInUse${SEP}[SLAB]CacheTotal${SEP}";
   }
 
   # only if at least one core subsystem selected.  if not, make sure
@@ -2807,13 +2809,13 @@ sub printHeaders
   # Whenever we print a header to a file, we do both the common header
   # and date/time.  Remember, if we're printing the terminal, this is
   # completely ignored by writeData().
-  $ch="$commonHeader#Date Time ";
+  $ch=($filename ne '') ? "$commonHeader$datetime" : $datetime;
 
   if ($subsys=~/C/)
   { 
     for ($i=0; $i<$NumCpus; $i++)
     {
-      $cpuHeaders.="[CPU:$i]User% [CPU:$i]Nice% [CPU:$i]Sys% [CPU:$i]Idle% [CPU:$i]Wait% [CPU:$i]Totl% ";
+      $cpuHeaders.="[CPU:$i]User%${SEP}[CPU:$i]Nice%${SEP}[CPU:$i]Sys%${SEP}[CPU:$i]Idle%${SEP}[CPU:$i]Wait%${SEP}[CPU:$i]Totl%${SEP}";
     }
     writeData(0, $ch, \$cpuHeaders, CPU, $ZCPU, 'cpu', \$headersAll);
   }
@@ -2822,9 +2824,9 @@ sub printHeaders
   {
     for ($i=0; $i<$NumDisks; $i++)
     {
-      $temp= "[DSK]Name [DSK]Reads [DSK]RMerge [DSK]RKBytes ";
-      $temp.="[DSK]Writes [DSK]WMerge [DSK]WKBytes [DSK]Request ";
-      $temp.="[DSK]QueLen [DSK]Wait [DSK]SvcTim [DSK]Util ";
+      $temp= "[DSK]Name${SEP}[DSK]Reads${SEP}[DSK]RMerge${SEP}[DSK]RKBytes${SEP}";
+      $temp.="[DSK]Writes${SEP}[DSK]WMerge${SEP}[DSK]WKBytes${SEP}[DSK]Request${SEP}";
+      $temp.="[DSK]QueLen${SEP}[DSK]Wait${SEP}[DSK]SvcTim${SEP}[DSK]Util${SEP}";
       $temp=~s/DSK/DSK:$dskName[$i]/g;
       $temp=~s/cciss\///g;
       $dskHeaders.=$temp;
@@ -2836,15 +2838,15 @@ sub printHeaders
   {
     for ($i=1; $i<=$NumFans; $i++)
     {
-      $envHeaders.="[FAN$i] ";
+      $envHeaders.="[FAN$i]${SEP}";
     }
     for ($i=1; $i<=$NumPwrs; $i++)
     {
-      $envHeaders.="[PWR$i] ";
+      $envHeaders.="[PWR$i]${SEP}";
     }
     for ($i=1; $i<=$NumTemps; $i++)
     {
-      $envHeaders.="[TEMP$i] ";
+      $envHeaders.="[TEMP$i]${SEP}";
     }
     writeData(0, $ch, \$envHeaders, ENV, $ZENV, 'env', \$headersAll);
   }
@@ -2854,18 +2856,18 @@ sub printHeaders
      if ($subOpts=~/2/)
     {
       my $type=($subOpts=~/C/) ? 'NFS2CD' : 'NFS2SD';
-     $nfsHeaders.="[$type]Null [$type]Getattr [$type]Setattr [$type]Root [$type]Lookup [$type]Readlink ";
-      $nfsHeaders.="[$type]Read [$type]Wrcache [$type]Write [$type]Create [$type]Remove [$type]Rename ";
-      $nfsHeaders.="[$type]Link [$type]Symlink [$type]Mkdir [$type]Rmdir [$type]Readdir [$type]Fsstat ";
+      $nfsHeaders.="[$type]Null${SEP}[$type]Getattr${SEP}[$type]Setattr${SEP}[$type]Root${SEP}[$type]Lookup${SEP}[$type]Readlink${SEP}";
+      $nfsHeaders.="[$type]Read${SEP}[$type]Wrcache${SEP}[$type]Write${SEP}[$type]Create${SEP}[$type]Remove${SEP}[$type]Rename${SEP}";
+      $nfsHeaders.="[$type]Link${SEP}[$type]Symlink${SEP}[$type]Mkdir${SEP}[$type]Rmdir${SEP}[$type]Readdir${SEP}[$type]Fsstat${SEP}";
     }
 
     if ($subOpts=~/3/)
     {
       my $type=($subOpts=~/C/) ? 'NFS3CD' : 'NFS3SD';
-      $nfsHeaders.="[$type]Null [$type]Getattr [$type]Setattr [$type]Lookup [$type]Access [$type]Readlink ";
-      $nfsHeaders.="[$type]Read [$type]Write [$type]Create [$type]Mkdir [$type]Symlink [$type]Mknod ";
-      $nfsHeaders.="[$type]Remove [$type]Rmdir [$type]Rename [$type]Link [$type]Readdir ";
-      $nfsHeaders.="[$type]Readdirplus [$type]Fsstat [$type]Fsinfo [$type]Pathconf [$type]Commit ";
+      $nfsHeaders.="[$type]Null${SEP}[$type]Getattr${SEP}[$type]Setattr${SEP}[$type]Lookup${SEP}[$type]Access${SEP}[$type]Readlink${SEP}";
+      $nfsHeaders.="[$type]Read${SEP}[$type]Write${SEP}[$type]Create${SEP}[$type]Mkdir${SEP}[$type]Symlink${SEP}[$type]Mknod${SEP}";
+      $nfsHeaders.="[$type]Remove${SEP}[$type]Rmdir${SEP}[$type]Rename${SEP}[$type]Link${SEP}[$type]Readdir${SEP}";
+      $nfsHeaders.="[$type]Readdirplus${SEP}[$type]Fsstat${SEP}[$type]Fsinfo${SEP}[$type]Pathconf${SEP}[$type]Commit${SEP}";
     }
     writeData(0, $ch, \$nfsHeaders, NFS, $ZNFS, 'nfs', \$headersAll);
    }
@@ -2874,10 +2876,10 @@ sub printHeaders
   {
     for ($i=0; $i<$NumNets; $i++)
     {
-      $temp= "[NET]Name [NET]RxPkt [NET]TxPkt [NET]RxKB [NET]TxKB ";
-      $temp.="[NET]RxErr [NET]RxDrp [NET]RxFifo [NET]RxFra [NET]RxCmp [NET]RxMlt ";
-      $temp.="[NET]TxErr [NET]TxDrp [NET]TxFifo [NET]TxColl [NET]TxCar ";
-      $temp.="[NET]TxCmp [NET]RxErrs [NET]TxErrs ";
+      $temp= "[NET]Name${SEP}[NET]RxPkt${SEP}[NET]TxPkt${SEP}[NET]RxKB${SEP}[NET]TxKB${SEP}";
+      $temp.="[NET]RxErr${SEP}[NET]RxDrp${SEP}[NET]RxFifo${SEP}[NET]RxFra${SEP}[NET]RxCmp${SEP}[NET]RxMlt${SEP}";
+      $temp.="[NET]TxErr${SEP}[NET]TxDrp${SEP}[NET]TxFifo${SEP}[NET]TxColl${SEP}[NET]TxCar${SEP}";
+      $temp.="[NET]TxCmp${SEP}[NET]RxErrs${SEP}[NET]TxErrs${SEP}";
       $temp=~s/NET/NET:$netName[$i]/g;
       $temp=~s/:]/]/g;
       $netHeaders.=$temp;
@@ -2895,16 +2897,16 @@ sub printHeaders
       for ($i=0; $i<$NumOst; $i++)
       { 
         $inst=$lustreOsts[$i];
-        $ostHeaders.="[OST:$inst]Ost [OST:$inst]Read [OST:$inst]ReadKB [OST:$inst]Write [OST:$inst]WriteKB ";
+        $ostHeaders.="[OST:$inst]Ost${SEP}[OST:$inst]Read${SEP}[OST:$inst]ReadKB${SEP}[OST:$inst]Write${SEP}[OST:$inst]WriteKB${SEP}";
       }
 
       for ($i=0; $subOpts=~/B/ && $i<$NumOst; $i++)
       { 
         $inst=$lustreOsts[$i];
         foreach my $j (@brwBuckets)
-        { $ostHeaders.="[OSTB:$inst]r$j "; }
+        { $ostHeaders.="[OSTB:$inst]r$j${SEP}"; }
         foreach my $j (@brwBuckets)
-        { $ostHeaders.="[OSTB:$inst]w$j "; }
+        { $ostHeaders.="[OSTB:$inst]w$j${SEP}"; }
       }
       writeData(0, $ch, \$ostHeaders, OST, $ZOST, 'ost', \$headersAll);
     }
@@ -2918,7 +2920,7 @@ sub printHeaders
 	for ($i=0; $i<$NumLustreCltOsts; $i++)
         {
           $inst=$lustreCltOsts[$i];
-          $temp.="[CLT:$inst]FileSys [CLT:$inst]Ost [CLT:$inst]Reads [CLT:$inst]ReadKB [CLT:$inst]Writes [CLT:$inst]WriteKB ";
+          $temp.="[CLT:$inst]FileSys${SEP}[CLT:$inst]Ost${SEP}[CLT:$inst]Reads${SEP}[CLT:$inst]ReadKB${SEP}[CLT:$inst]Writes${SEP}[CLT:$inst]WriteKB${SEP}";
         }
 
 	# and if specified, brw stats follow
@@ -2928,9 +2930,9 @@ sub printHeaders
           {
             $inst=$lustreCltOsts[$i];
             foreach my $j (@brwBuckets)
-            { $temp.="[CLTB:$inst]r${j}P "; }
+            { $temp.="[CLTB:$inst]r${j}P${SEP}"; }
             foreach my $j (@brwBuckets)
-            { $temp.="[CLTB:$inst]w${j}P "; }
+            { $temp.="[CLTB:$inst]w${j}P${SEP}"; }
 	  }
 	}
       }
@@ -2940,19 +2942,19 @@ sub printHeaders
 	for ($i=0; $i<$NumLustreFS; $i++)
         {
           $inst=$lustreCltFS[$i];
-          $temp.="[CLT:$inst]FileSys [CLT:$inst]Reads [CLT:$inst]ReadKB [CLT:$inst]Writes [CLT:$inst]WriteKB ";
+          $temp.="[CLT:$inst]FileSys${SEP}[CLT:$inst]Reads${SEP}[CLT:$inst]ReadKB${SEP}[CLT:$inst]Writes${SEP}[CLT:$inst]WriteKB${SEP}";
         }
 	for ($i=0; $subOpts=~/M/ && $i<$NumLustreFS; $i++)
         {
           $inst=$lustreCltFS[$i];
-	  $temp.="[CLTM:$inst]Open [CLTM:$inst]Close [CLTM:$inst]GAttr [CLTM:$inst]SAttr ";
-          $temp.="[CLTM:$inst]Seek [CLTM:$inst]Fsync [CLTM:$inst]DrtHit [CLTM:$inst]DrtMis ";
+	  $temp.="[CLTM:$inst]Open${SEP}[CLTM:$inst]Close${SEP}[CLTM:$inst]GAttr${SEP}[CLTM:$inst]SAttr${SEP}";
+          $temp.="[CLTM:$inst]Seek${SEP}[CLTM:$inst]Fsync${SEP}[CLTM:$inst]DrtHit${SEP}[CLTM:$inst]DrtMis${SEP}";
         }
         for ($i=0; $subOpts=~/R/ && $i<$NumLustreFS; $i++)
         {
           $inst=$lustreCltFS[$i];
-          $temp.="[CLTR:$inst]Pend [CLTR:$inst]Hits [CLTR:$inst]Misses [CLTR:$inst]NotCon [CLTR:$inst]MisWin [CLTR:$inst]LckFal ";
-          $temp.="[CLTR:$inst]Discrd [CLTR:$inst]ZFile [CLTR:$inst]ZerWin [CLTR:$inst]RA2Eof [CLTR:$inst]HitMax ";
+          $temp.="[CLTR:$inst]Pend${SEP}[CLTR:$inst]Hits${SEP}[CLTR:$inst]Misses${SEP}[CLTR:$inst]NotCon${SEP}[CLTR:$inst]MisWin${SEP}[CLTR:$inst]LckFal${SEP}";
+          $temp.="[CLTR:$inst]Discrd${SEP}[CLTR:$inst]ZFile${SEP}[CLTR:$inst]ZerWin${SEP}[CLTR:$inst]RA2Eof${SEP}[CLTR:$inst]HitMax${SEP}";
 	}
       }
       $cltHeaders.=$temp;
@@ -2961,18 +2963,18 @@ sub printHeaders
 
     if ($subOpts=~/D/)
     {
-      $rdHeader='[OSTD]rds [OSTD]rdkb ';
-      $wrHeader='[OSTD]wrs [OSTD]wrkb ';
+      $rdHeader="[OSTD]rds${SEP}[OSTD]rdkb${SEP}";
+      $wrHeader="[OSTD]wrs${SEP}[OSTD]wrkb${SEP}";
       foreach my $i (@diskBuckets)
-      { $rdHeader.="[OSTD]r${i}K "; }
+      { $rdHeader.="[OSTD]r${i}K${SEP}"; }
       foreach my $i (@diskBuckets)
-      { $wrHeader.="[OSTD]w${i}K "; }
+      { $wrHeader.="[OSTD]w${i}K${SEP}"; }
 
       for ($i=0; $i<$NumLusDisks; $i++)
       {
-        $temp="[OSTD]Disk $rdHeader $wrHeader";
+        $temp="[OSTD]Disk${SEP}$rdHeader${SEP}$wrHeader";
         $temp=~s/OSTD/OSTD:$LusDiskNames[$i]/g;
-	$blkHeaders.="$temp ";
+	$blkHeaders.="$temp${SEP}";
       }
       writeData(0, $ch, \$blkHeaders, BLK, $ZBLK, 'blk', \$headersAll);
     }
@@ -2980,21 +2982,21 @@ sub printHeaders
 
   if ($subsys=~/T/)
   { 
-    $tcpHeaders.="[TCPD]SyncookiesSent [TCPD]SyncookiesRecv [TCPD]SyncookiesFailed [TCPD]EmbryonicRsts ";
-    $tcpHeaders.="[TCPD]PruneCalled [TCPD]RcvPruned [TCPD]OfoPruned [TCPD]OutOfWindowIcmps [TCPD]LockDroppedIcmps ";
-    $tcpHeaders.="[TCPD]ArpFilter [TCPD]TW [TCPD]TWRecycled [TCPD]TWKilled [TCPD]PAWSPassive [TCPD]PAWSActive ";
-    $tcpHeaders.="[TCPD]PAWSEstab [TCPD]DelayedACKs [TCPD]DelayedACKLocked [TCPD]DelayedACKLost ";
-    $tcpHeaders.="[TCPD]ListenOverflows [TCPD]ListenDrops [TCPD]Prequeued [TCPD]DirectCopyFromBacklog ";
-    $tcpHeaders.="[TCPD]DirectCopyFromPrequeue [TCPD]PrequeueDropped [TCPD]HPHits [TCPD]HPHitsToUser ";
-    $tcpHeaders.="[TCPD]PureAcks [TCPD]HPAcks [TCPD]RenoRecovery [TCPD]SackRecovery [TCPD]TACKReneging ";
-    $tcpHeaders.="[TCPD]FACKReorder [TCPD]SACKReorder [TCPD]RenoReorder [TCPD]TSReorder [TCPD]FullUndo ";
-    $tcpHeaders.="[TCPD]PartialUndo [TCPD]DSACKUndo [TCPD]LossUndo [TCPD]Loss [TCPD]LostRetransmit ";
-    $tcpHeaders.="[TCPD]RenoFailures [TCPD]SackFailures [TCPD]LossFailures [TCPD]FastRetrans [TCPD]ForwardRetrans ";
-    $tcpHeaders.="[TCPD]SlowStartRetrans [TCPD]Timeouts [TCPD]RenoRecoveryFail [TCPD]SackRecoveryFail ";
-    $tcpHeaders.="[TCPD]SchedulerFailed [TCPD]RcvCollapsed [TCPD]DSACKOldSent [TCPD]DSACKOfoSent ";
-    $tcpHeaders.="[TCPD]DSACKRecv [TCPD]DSACKOfoRecv [TCPD]AbortOnSyn [TCPD]AbortOnData [TCPD]AbortOnClose ";
-    $tcpHeaders.="[TCPD]AbortOnMemory [TCPD]AbortOnTimeout [TCPD]AbortOnLinger [TCPD]AbortFailed ";
-    $tcpHeaders.="[TCPD]MemoryPressures ";
+    $tcpHeaders.="[TCPD]SyncookiesSent${SEP}[TCPD]SyncookiesRecv${SEP}[TCPD]SyncookiesFailed${SEP}[TCPD]EmbryonicRsts${SEP}";
+    $tcpHeaders.="[TCPD]PruneCalled${SEP}[TCPD]RcvPruned${SEP}[TCPD]OfoPruned${SEP}[TCPD]OutOfWindowIcmps${SEP}[TCPD]LockDroppedIcmps${SEP}";
+    $tcpHeaders.="[TCPD]ArpFilter${SEP}[TCPD]TW${SEP}[TCPD]TWRecycled${SEP}[TCPD]TWKilled${SEP}[TCPD]PAWSPassive${SEP}[TCPD]PAWSActive${SEP}";
+    $tcpHeaders.="[TCPD]PAWSEstab${SEP}[TCPD]DelayedACKs${SEP}[TCPD]DelayedACKLocked${SEP}[TCPD]DelayedACKLost${SEP}";
+    $tcpHeaders.="[TCPD]ListenOverflows${SEP}[TCPD]ListenDrops${SEP}[TCPD]Prequeued${SEP}[TCPD]DirectCopyFromBacklog${SEP}";
+    $tcpHeaders.="[TCPD]DirectCopyFromPrequeue${SEP}[TCPD]PrequeueDropped${SEP}[TCPD]HPHits${SEP}[TCPD]HPHitsToUser${SEP}";
+    $tcpHeaders.="[TCPD]PureAcks${SEP}[TCPD]HPAcks${SEP}[TCPD]RenoRecovery${SEP}[TCPD]SackRecovery${SEP}[TCPD]TACKReneging${SEP}";
+    $tcpHeaders.="[TCPD]FACKReorder${SEP}[TCPD]SACKReorder${SEP}[TCPD]RenoReorder${SEP}[TCPD]TSReorder${SEP}[TCPD]FullUndo${SEP}";
+    $tcpHeaders.="[TCPD]PartialUndo${SEP}[TCPD]DSACKUndo${SEP}[TCPD]LossUndo${SEP}[TCPD]Loss${SEP}[TCPD]LostRetransmit${SEP}";
+    $tcpHeaders.="[TCPD]RenoFailures${SEP}[TCPD]SackFailures${SEP}[TCPD]LossFailures${SEP}[TCPD]FastRetrans${SEP}[TCPD]ForwardRetrans${SEP}";
+    $tcpHeaders.="[TCPD]SlowStartRetrans${SEP}[TCPD]Timeouts${SEP}[TCPD]RenoRecoveryFail${SEP}[TCPD]SackRecoveryFail${SEP}";
+    $tcpHeaders.="[TCPD]SchedulerFailed${SEP}[TCPD]RcvCollapsed${SEP}[TCPD]DSACKOldSent${SEP}[TCPD]DSACKOfoSent${SEP}";
+    $tcpHeaders.="[TCPD]DSACKRecv${SEP}[TCPD]DSACKOfoRecv${SEP}[TCPD]AbortOnSyn${SEP}[TCPD]AbortOnData${SEP}[TCPD]AbortOnClose${SEP}";
+    $tcpHeaders.="[TCPD]AbortOnMemory${SEP}[TCPD]AbortOnTimeout${SEP}[TCPD]AbortOnLinger${SEP}[TCPD]AbortFailed${SEP}";
+    $tcpHeaders.="[TCPD]MemoryPressures${SEP}";
 
     writeData(0, $ch, \$tcpHeaders, TCP, $ZTCP, 'tcp', \$headersAll);
   }
@@ -3003,7 +3005,7 @@ sub printHeaders
   {
     for ($i=0; $i<$NumXRails; $i++)
     {
-      $elanHeaders.="[ELAN:$i]Rail [ELAN:$i]Rx [ELAN:$i]Tx [ELAN:$i]RxKB [ELAN:$i]TxKB [ELAN:$i]Get [ELAN:$i]Put [ELAN:$i]GetKB [ELAN:$i]PutKB [ELAN:$i]Comp [ELAN:$i]CompKB [ELAN:$i]SendFail [ELAN:$i]Atomic [ELAN:$i]DMA ";
+      $elanHeaders.="[ELAN:$i]Rail${SEP}[ELAN:$i]Rx${SEP}[ELAN:$i]Tx${SEP}[ELAN:$i]RxKB${SEP}[ELAN:$i]TxKB${SEP}[ELAN:$i]Get${SEP}[ELAN:$i]Put${SEP}[ELAN:$i]GetKB${SEP}[ELAN:$i]PutKB${SEP}[ELAN:$i]Comp${SEP}[ELAN:$i]CompKB${SEP}[ELAN:$i]SendFail${SEP}[ELAN:$i]Atomic${SEP}[ELAN:$i]DMA${SEP}";
     }
     writeData(0, $ch, \$elanHeaders, ELN, $ZELN, 'eln', \$headersAll);
   }
@@ -3012,13 +3014,14 @@ sub printHeaders
   {
     for ($i=0; $i<$NumHCAs; $i++)
     {
-      $ibHeaders.="[IB:$i]HCA [IB:$i]InPkt [IB:$i]OutPkt [IB:$i]InKB [IB:$i]OutKB [IB:$i]Err";
+      $ibHeaders.="[IB:$i]HCA${SEP}[IB:$i]InPkt${SEP}[IB:$i]OutPkt${SEP}[IB:$i]InKB${SEP}[IB:$i]OutKB${SEP}[IB:$i]Err${SEP}";
     }
     writeData(0, $ch, \$ibHeaders, IB, $ZIB, 'ib', \$headersAll);
   }
 
   # When going to the terminal OR socket we need a final call with no 'data' 
-  # to write.
+  # to write.  Also note that there is a final separator that needs to be removed
+  $headersAll=~s/$SEP$//;
   writeData(1, '', undef, $LOG, undef, undef, \$headersAll)
 	    if !$logToFileFlag || $addrFlag;
 
@@ -3030,9 +3033,9 @@ sub printHeaders
   {
     if ($subsys=~/D/)
     {
-      $dskHeaders="Num ";
-      $dskHeaders.="[DISKX]Name [DISKX]Reads [DISKX]Merged [DISKX]KBytes [DISKX]Writes [DISKX]Merged ";
-      $dskHeaders.="[DISKX]KBytes [DISKX]Request [DISKX]QueLen [DISKX]Wait [DISKX]SvcTim [DISKX]Util\n";
+      $dskHeaders="Num${SEP}";
+      $dskHeaders.="[DISKX]Name${SEP}[DISKX]Reads${SEP}[DISKX]Merged${SEP}[DISKX]KBytes${SEP}[DISKX]Writes${SEP}[DISKX]Merged${SEP}";
+      $dskHeaders.="[DISKX]KBytes${SEP}[DISKX]Request${SEP}[DISKX]QueLen${SEP}[DISKX]Wait${SEP}[DISKX]SvcTim${SEP}[DISKX]Util\n";
 
       # Since we never write exception data over a socket the last parameter is undef.
       writeData(0, $ch, \$dskHeaders, DSKX, $ZDSKX, 'dskx', undef);
@@ -3088,24 +3091,28 @@ sub printPlot
   my $usecs=  shift;
   my ($datestamp, $time, $hh, $mm, $ss, $mday, $mon, $year, $i, $j);
 
-  # These get used by all print routines
+  # We always print some form of date and time in plot format and in the case of
+  # --utc, it's a single value.  Now that I'm pulling out usecs for utc we
+  # probably don't have to pass it as the second parameter.
+  $utcSecs=(split(/\./, $seconds))[0];
   ($ss, $mm, $hh, $mday, $mon, $year)=localtime($seconds);
   $date=($options=~/d/) ?
          sprintf("%02d/%02d", $mon+1, $mday) :
          sprintf("%d%02d%02d", $year+1900, $mon+1, $mday);
   $time= sprintf("%02d:%02d:%02d", $hh, $mm, $ss);
-  $time.=".$usecs"    if $options=~/m/;
-  my $datetime="$date $time";
+  my $datetime=(!$utcFlag) ? "$date$SEP$time": $utcSecs;
+  $datetime.=".$usecs"    if $options=~/m/;
 
   # slab detail and processes have their own print routines because they
   # do multiple lines of output and can't be mixed with anything else.
   # Furthermore, if we're doing -rawtoo, we DON'T generate these files since
-  # the data is alreadt being recorded in the raw file and we don't want to do
+  # the data is already being recorded in the raw file and we don't want to do
   # both
   if (!$rawFlag && $subsys=~/[YZ]/ && $interval2Print && $interval2Counter>1)
   {
     printPlotSlab($date, $time)    if $subsys=~/Y/;
     printPlotProc($date, $time)    if $subsys=~/Z/;
+    return;
   }
 
   printHeaders()
@@ -3123,10 +3130,10 @@ sub printPlot
     if ($subsys=~/c/)
     {
       $i=$NumCpus;
-      $plot.=sprintf(" %$FS %$FS %$FS %$FS %$FS %$FS",
+      $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
                 $userP[$i], $niceP[$i], $sysP[$i], $idleP[$i], $waitP[$i],
                 $totlP[$i]);
-      $plot.=sprintf(" %$FS %$FS %$FS %$FS %$FS %$FS %d %d",
+      $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%d$SEP%d",
                 $intrpt/$intSecs, $ctxt/$intSecs, $proc/$intSecs,
                 $loadQue, $loadRun, $loadAvg1, $loadAvg5, $loadAvg15);
     }
@@ -3134,10 +3141,10 @@ sub printPlot
     # MEM
     if ($subsys=~/m/)
     {
-      $plot.=sprintf(" %$FS %$FS %$FS %$FS %$FS %$FS",
+      $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
                 $memTot, $memUsed, $memFree, $memShared, $memBuf, $memCached); 
-      $plot.=sprintf(" %$FS %$FS", $memSlab, $memMap);   # Always from V1.7.5 forward
-      $plot.=sprintf(" %$FS %$FS %$FS %$FS %$FS %$FS %$FS %$FS %$FS",
+      $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS", $memSlab, $memMap, $memCommit);   # Always from V1.7.5 forward
+      $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
                 $swapTotal, $swapUsed, $swapFree,
                 $dirty, $clean, $laundry, $inactive,
                 $pagein/$intSecs, $pageout/$intSecs);
@@ -3146,14 +3153,14 @@ sub printPlot
     # SOCKETS
     if ($subsys=~/s/)
     {
-      $plot.=" $sockUsed $sockTcp $sockOrphan $sockTw $sockAlloc";
-      $plot.=" $sockMem $sockUdp $sockRaw $sockFrag $sockFragM";
+      $plot.="$SEP$sockUsed$SEP$sockTcp$SEP$sockOrphan$SEP$sockTw$SEP$sockAlloc";
+      $plot.="$SEP$sockMem$SEP$sockUdp$SEP$sockRaw$SEP$sockFrag$SEP$sockFragM";
     }
 
     # NETWORKS
     if ($subsys=~/n/)
     {
-      $plot.=sprintf(" %$FS %$FS %$FS %$FS %$FS %$FS %$FS %$FS %$FS",
+      $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
                 $netRxPktTot/$intSecs, $netTxPktTot/$intSecs,
                 $netRxKBTot/$intSecs,  $netTxKBTot/$intSecs,
                 $netRxCmpTot/$intSecs, $netRxMltTot/$intSecs,
@@ -3164,7 +3171,7 @@ sub printPlot
     # DISKS
     if ($subsys=~/d/)
     {
-      $plot.=sprintf(" %$FS %$FS %$FS %$FS %$FS %$FS %$FS %$FS %$FS",
+      $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
                 $dskReadTot/$intSecs,    $dskWriteTot/$intSecs,    $dskOpsTot/$intSecs,
                 $dskReadKBTot/$intSecs,  $dskWriteKBTot/$intSecs,  ($dskReadKBTot+$dskWriteKBTot)/$intSecs,
                 $dskReadMrgTot/$intSecs, $dskWriteMrgTot/$intSecs, ($dskReadMrgTot+$dskWriteMrgTot)/$intSecs);
@@ -3173,7 +3180,7 @@ sub printPlot
     # INODES
     if ($subsys=~/i/)
     {
-      $plot.=sprintf(" %d %d %$FS %d %d %$FS %d %$FS",
+      $plot.=sprintf("$SEP%d$SEP%d$SEP%$FS$SEP%d$SEP%d$SEP%$FS$SEP%d$SEP%$FS",
         $unusedDCache, $openFiles, $OFMax ? $openFiles*100/$OFMax  : 0,
         $inodeUsed,    $superUsed, $SBMax ? $superUsed*100/$SBMax  : 0,
         $dquotUsed,                $DQMax ? $dquoteUsed*100/$DQMax : 0);
@@ -3182,15 +3189,15 @@ sub printPlot
     # NFS
     if ($subsys=~/f/)
     {
-      $plot.=sprintf(" %$FS %$FS %$FS %$FS %$FS",
+      $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
             $nfsPkts/$intSecs,    $nfsUdp/$intSecs,
             $nfsTcp/$intSecs,     $nfsTcpConn/$intSecs, $rpcCalls/$intSecs);
 
-      $plot.=sprintf(" %$FS %$FS", $rpcBadAuth/$intSecs, $rpcBadClnt/$intSecs)    if $subOpts!~/C/;
-      $plot.=sprintf(" %$FS %$FS", $rpcRetrans/$intSecs, $rpcCredRef/$intSecs)    if $subOpts=~/C/;
+      $plot.=sprintf("$SEP%$FS$SEP%$FS", $rpcBadAuth/$intSecs, $rpcBadClnt/$intSecs)    if $subOpts!~/C/;
+      $plot.=sprintf("$SEP%$FS$SEP%$FS", $rpcRetrans/$intSecs, $rpcCredRef/$intSecs)    if $subOpts=~/C/;
 
-      $plot.=sprintf(" %$FS %$FS", $nfs2Read/$intSecs, $nfs2Write/$intSecs)  if $subOpts=~/2/;
-      $plot.=sprintf(" %$FS %$FS", $nfsRead/$intSecs,  $nfsWrite/$intSecs)   if $subOpts=~/3/;
+      $plot.=sprintf("$SEP%$FS$SEP%$FS", $nfs2Read/$intSecs, $nfs2Write/$intSecs)  if $subOpts=~/2/;
+      $plot.=sprintf("$SEP%$FS$SEP%$FS", $nfsRead/$intSecs,  $nfsWrite/$intSecs)   if $subOpts=~/3/;
     }
 
     # Lustre
@@ -3198,7 +3205,7 @@ sub printPlot
     {
       # MDS goes first since for detail, the OST is variable and if we ever
       # do both we want consistency of order
-      $plot.=sprintf(" %$FS %$FS %$FS %$FS",
+      $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
         $lustreMdsClose/$intSecs, $lustreMdsGetattr/$intSecs,
         $lustreMdsReint/$intSecs, $lustreMdsSync/$intSecs)
                     if $reportMdsFlag;
@@ -3206,7 +3213,7 @@ sub printPlot
       if ($reportOstFlag)
       {
 	# We always do this...
-        $plot.=sprintf(" %$FS %$FS %$FS %$FS",
+        $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
            $lustreReadOpsTot/$intSecs,  $lustreReadKBytesTot/$intSecs,
            $lustreWriteOpsTot/$intSecs, $lustreWriteKBytesTot/$intSecs);
 
@@ -3214,11 +3221,11 @@ sub printPlot
         {
           for ($j=0; $j<$numBrwBuckets; $j++)
           {
-            $plot.=sprintf(" %$FS", $lustreBufReadTot[$j]/$intSecs);
+            $plot.=sprintf("$SEP%$FS", $lustreBufReadTot[$j]/$intSecs);
           }
           for ($j=0; $j<$numBrwBuckets; $j++)
           {
-            $plot.=sprintf(" %$FS", $lustreBufWriteTot[$j]/$intSecs);
+            $plot.=sprintf("$SEP%$FS", $lustreBufWriteTot[$j]/$intSecs);
           }
         }
       }
@@ -3226,30 +3233,30 @@ sub printPlot
       # Disk Block Level Stats can apply to both MDS and OST
       if ($subOpts=~/D/)
       {
-        $plot.=sprintf(" %d %d %d %d",
+        $plot.=sprintf("$SEP%d$SEP%d$SEP%d$SEP%d",
 	       $lusDiskReadsTot[$LusMaxIndex]/$intSecs, 
                $lusDiskReadBTot[$LusMaxIndex]*0.5/$intSecs,
 	       $lusDiskWritesTot[$LusMaxIndex]/$intSecs, 
                $lusDiskWriteBTot[$LusMaxIndex]*0.5/$intSecs);
         for ($i=0; $i<$LusMaxIndex; $i++)
-        { $plot.=sprintf(" %d", $lusDiskReadsTot[$i]/$intSecs); }
+        { $plot.=sprintf("$SEP%d", $lusDiskReadsTot[$i]/$intSecs); }
         for ($i=0; $i<$LusMaxIndex; $i++)
-        { $plot.=sprintf(" %d", $lusDiskWritesTot[$i]/$intSecs); }
+        { $plot.=sprintf("$SEP%d", $lusDiskWritesTot[$i]/$intSecs); }
       }
 
       if ($reportCltFlag)
       {
 	# There are actually 3 different formats depending on -O
-	$plot.=sprintf(" %d %d %d %d",
+	$plot.=sprintf("$SEP%d$SEP%d$SEP%d$SEP%d",
 	    $lustreCltReadTot/$intSecs,      $lustreCltReadKBTot/$intSecs,
 	    $lustreCltWriteTot/$intSecs,     $lustreCltWriteKBTot/$intSecs);
-        $plot.=sprintf(" %d %d %d %d %d %d %d %d",
+        $plot.=sprintf("$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d",
 	    $lustreCltOpenTot/$intSecs,      $lustreCltCloseTot/$intSecs, 
 	    $lustreCltGetattrTot/$intSecs,   $lustreCltSetattrTot/$intSecs, 
 	    $lustreCltSeekTot/$intSecs,      $lustreCltFsyncTot/$intSecs,  
             $lustreCltDirtyHitsTot/$intSecs, $lustreCltDirtyMissTot/$intSecs)
 		if $subOpts=~/M/;
-        $plot.=sprintf(" %d %d %d %d %d %d %d %d %d %d %d",
+        $plot.=sprintf("$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d",
             $lustreCltRAPendingTot,  $lustreCltRAHitsTot,    $lustreCltRAMissesTot,
             $lustreCltRANotConTot,   $lustreCltRAMisWinTot,  $lustreCltRALckFailTot,
             $lustreCltRAReadDiscTot, $lustreCltRAZeroLenTot, $lustreCltRAZeroWinTot,
@@ -3258,10 +3265,10 @@ sub printPlot
 
         if ($subOpts=~/B/) {
           for ($i=0; $i<$numBrwBuckets; $i++) {
-            $plot.=sprintf(" %d", $lustreCltRpcReadTot[$i]/$intSecs);
+            $plot.=sprintf("$SEP%d", $lustreCltRpcReadTot[$i]/$intSecs);
           }
           for ($i=0; $i<$numBrwBuckets; $i++) {
-            $plot.=sprintf(" %d", $lustreCltRpcWriteTot[$i]/$intSecs);
+            $plot.=sprintf("$SEP%d", $lustreCltRpcWriteTot[$i]/$intSecs);
           }
         }
       }
@@ -3271,7 +3278,7 @@ sub printPlot
     if ($subsys=~/x/ && $NumXRails)
     {
       $elanErrors=$elanSendFailTot+$elanNeterrAtomicTot+$elanNeterrDmaTot;
-      $plot.=sprintf(" %$FS %$FS %$FS %$FS %$FS",
+      $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
 		$elanRxTot/$intSecs,   $elanTxTot/$intSecs,
 		$elanRxKBTot/$intSecs, $elanTxKBTot/$intSecs,
 		$elanErrors/$intSecs);
@@ -3282,7 +3289,7 @@ sub printPlot
     # do it here (we could have done it in the ELAN routines is we wanted to).
     if ($subsys=~/x/ && ($NumHCAs || ($NumHCAs==0 && $NumXRails==0)))
     {
-      $plot.=sprintf(" %$FS %$FS %$FS %$FS %$FS",
+      $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
 		$ibRxTot/$intSecs,   $ibTxTot/$intSecs,
 		$ibRxKBTot/$intSecs, $ibTxKBTot/$intSecs,
                 $ibErrorsTotTot);
@@ -3293,14 +3300,14 @@ sub printPlot
     {
       foreach $i (27, 28, 40, 45)
       {
-	$plot.=sprintf(" %$FS", $tcpValue[$i]/$intSecs);
+	$plot.=sprintf("$SEP%$FS", $tcpValue[$i]/$intSecs);
       }
     }
 
     # SLAB
     if ($subsys=~/y/)
     {
-      $plot.=sprintf(" %d %d %d %d %d %d %d %d %d %d",
+      $plot.=sprintf("$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d",
 	$slabObjActTotal,  $slabObjActTotalB,  $slabObjAllTotal,  $slabObjAllTotalB,
 	$slabSlabActTotal, $slabSlabActTotalB, $slabSlabAllTotal, $slabSlabAllTotalB,
    	$slabNumAct,       $slabNumTot,6);
@@ -3318,7 +3325,7 @@ sub printPlot
     $cpuPlot='';
     for ($i=0; $i<$NumCpus; $i++)
     {
-      $cpuPlot.=sprintf(" %$FS %$FS %$FS %$FS %$FS %$FS",
+      $cpuPlot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
                 $userP[$i], $niceP[$i], $sysP[$i],
                 $idleP[$i], $waitP[$i], $totlP[$i]);
     }
@@ -3336,7 +3343,7 @@ sub printPlot
     {
       # We don't always need this but it sure makes it simpler this way
       # also note that the name isn't really plottable...
-      $dskRecord=sprintf("%s %$FS %$FS %$FS %$FS %$FS %$FS %$FS %$FS %$FS %$FS %$FS",
+      $dskRecord=sprintf("%s$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
                 $dskName[$i],
                 $dskRead[$i]/$intSecs,    $dskReadMrg[$i]/$intSecs,  $dskReadKB[$i]/$intSecs,
                 $dskWrite[$i]/$intSecs,   $dskWriteMrg[$i]/$intSecs, $dskWriteKB[$i]/$intSecs,
@@ -3357,7 +3364,7 @@ sub printPlot
       }
 
       # If not doing x-exception reporting, just build one long string
-      $dskPlot.=" $dskRecord"    if $options!~/x/;
+      $dskPlot.="$SEP$dskRecord"    if $options!~/x/;
     }
 
     # we only write DSK data when NOT doing x type execption processing
@@ -3373,15 +3380,15 @@ sub printPlot
     $envPlot='';
     for ($i=1; $i<=$NumFans; $i++)
     {
-      $envPlot.="$fanStat[$i]-$fanText[$i] ";
+      $envPlot.="$fanStat[$i]-$fanText[$i]$SEP";
     }
     for ($i=1; $i<=$NumPwrs; $i++)
     {
-      $envPlot.="$pwrStat[$i] ";
+      $envPlot.="$pwrStat[$i]$SEP";
     }
     for ($i=1; $i<=$NumTemps; $i++)
     {
-      $envPlot.="$tempTemp[$i] ";
+      $envPlot.="$tempTemp[$i]$SEP";
     }
     $envPlot=~s/ $//;
     writeData(0, $datetime, \$envPlot, ENV, $ZENV, 'env', \$oneline);
@@ -3399,7 +3406,7 @@ sub printPlot
       $ostPlot='';
       for ($i=0; $i<$NumOst; $i++)
       {
-        $ostPlot.=sprintf(" %s %d %d %d %d",
+        $ostPlot.=sprintf("$SEP%s$SEP%d$SEP%d$SEP%d$SEP%d",
 	    $lustreOsts[$i],
             $lustreReadOps[$i]/$intSecs,  $lustreReadKBytes[$i]/$intSecs,
             $lustreWriteOps[$i]/$intSecs, $lustreWriteKBytes[$i]/$intSecs);
@@ -3409,9 +3416,9 @@ sub printPlot
       for ($i=0; $subOpts=~/B/ && $i<$NumOst; $i++)
       {
         for ($j=0; $j<$numBrwBuckets; $j++)
-        { $ostPlot.=sprintf(" %d", $lustreBufRead[$i][$j]/$intSecs); }
+        { $ostPlot.=sprintf("$SEP%d", $lustreBufRead[$i][$j]/$intSecs); }
         for ($j=0; $j<$numBrwBuckets; $j++)
-        { $ostPlot.=sprintf(" %d", $lustreBufWrite[$i][$j]/$intSecs); }
+        { $ostPlot.=sprintf("$SEP%d", $lustreBufWrite[$i][$j]/$intSecs); }
       } 
       writeData(0, $datetime, \$ostPlot, OST, $ZOST, 'ost', \$oneline);
     }
@@ -3421,22 +3428,22 @@ sub printPlot
       $blkPlot='';
       for ($i=0; $i<$NumLusDisks; $i++)
       {
-        $blkPlot.=sprintf(" %s %d %d",
+        $blkPlot.=sprintf("$SEP%s$SEP%d$SEP%d",
 		 	  $LusDiskNames[$i], 
 	     		  $lusDiskReads[$i][$LusMaxIndex]/$intSecs, 
              		  $lusDiskReadB[$i][$LusMaxIndex]*0.5/$intSecs);
         for ($j=0; $j<$LusMaxIndex; $j++)
         {
 	  $temp=(defined($lusDiskReads[$i][$j])) ? $lusDiskReads[$i][$j]/$intSecs : 0;
-          $blkPlot.=sprintf(" %d", $temp);
+          $blkPlot.=sprintf("$SEP%d", $temp);
         }
-        $blkPlot.=sprintf(" %d %d",
+        $blkPlot.=sprintf("$SEP%d$SEP%d",
 	     	   	  $lusDiskWrites[$i][$LusMaxIndex]/$intSecs, 
              		  $lusDiskWriteB[$i][$LusMaxIndex]*0.5/$intSecs);
         for ($j=0; $j<$LusMaxIndex; $j++)
         {
 	  $temp=(defined($lusDiskWrites[$i][$j])) ? $lusDiskWrites[$i][$j]/$intSecs : 0;
-          $blkPlot.=sprintf(" %d", $temp);
+          $blkPlot.=sprintf("$SEP%d", $temp);
         }
       }
       writeData(0, $datetime, \$blkPlot, BLK, $ZBLK, 'blk', \$online);
@@ -3450,7 +3457,7 @@ sub printPlot
         for ($i=0; $i<$NumLustreCltOsts; $i++)
         {
           # when lustre first starts up none of these have values
-          $cltPlot.=sprintf(" %s %s %d %d %d %d",
+          $cltPlot.=sprintf("$SEP%s$SEP%s$SEP%d$SEP%d$SEP%d$SEP%d",
               $lustreCltOstFS[$i], $lustreCltOsts[$i],
 	      defined($lustreCltLunRead[$i])    ? $lustreCltLunRead[$i]/$intSecs : 0,
 	      defined($lustreCltLunReadKB[$i])  ? $lustreCltLunReadKB[$i]/$intSecs : 0,
@@ -3461,11 +3468,11 @@ sub printPlot
         {
           for ($j=0; $j<$numBrwBuckets; $j++)
           {
-	    $cltPlot.=sprintf(" %3d", $lustreCltRpcRead[$i][$j]/$intSecs);
+	    $cltPlot.=sprintf("$SEP%3d", $lustreCltRpcRead[$i][$j]/$intSecs);
           }
           for ($j=0; $j<$numBrwBuckets; $j++)
           {
-	    $cltPlot.=sprintf(" %3d", $lustreCltRpcWrite[$i][$j]/$intSecs);
+	    $cltPlot.=sprintf("$SEP%3d", $lustreCltRpcWrite[$i][$j]/$intSecs);
           }
         }
       }
@@ -3473,14 +3480,14 @@ sub printPlot
       {
         for ($i=0; $i<$NumLustreFS; $i++)
         {
-          $cltPlot.=sprintf(" %s %d %d %d %d",
+          $cltPlot.=sprintf("$SEP%s$SEP%d$SEP%d$SEP%d$SEP%d",
 	    $lustreCltFS[$i],
 	    $lustreCltRead[$i]/$intSecs,      $lustreCltReadKB[$i]/$intSecs,   
 	    $lustreCltWrite[$i]/$intSecs,     $lustreCltWriteKB[$i]/$intSecs);
 	}
         for ($i=0; $subOpts=~/M/ && $i<$NumLustreFS; $i++)
         {
-          $cltPlot.=sprintf(" %d %d %d %d %d %d %d %d",
+          $cltPlot.=sprintf("$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d",
 	    $lustreCltOpen[$i]/$intSecs,      $lustreCltClose[$i]/$intSecs, 
 	    $lustreCltGetattr[$i]/$intSecs,   $lustreCltSetattr[$i]/$intSecs, 
 	    $lustreCltSeek[$i]/$intSecs,      $lustreCltFsync[$i]/$intSecs,  
@@ -3488,7 +3495,7 @@ sub printPlot
 	}
         for ($i=0; $subOpts=~/R/ && $i<$NumLustreFS; $i++)
         {
-          $cltPlot.=sprintf(" %d %d %d %d %d %d %d %d %d %d %d",
+          $cltPlot.=sprintf("$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d",
             $lustreCltRAPendingTot,  $lustreCltRAHitsTot,    $lustreCltRAMissesTot,
             $lustreCltRANotConTot,   $lustreCltRAMisWinTot,  $lustreCltRALckFailTot,
             $lustreCltRAReadDiscTot, $lustreCltRAZeroLenTot, $lustreCltRAZeroWinTot,
@@ -3508,12 +3515,12 @@ sub printPlot
     $nfsPlot='';
     if ($subOpts=~/2/)
     {
-      $nfsPlot.=sprintf(" %$FS %$FS %$FS %$FS %$FS %$FS %$FS %$FS %$FS ",
+      $nfsPlot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP",
             $nfs2Null/$intSecs,   $nfs2Getattr/$intSecs, $nfs2Setattr/$intSecs,
             $nfs2Root/$intSecs,   $nfs2Lookup/$intSecs,  $nfs2Readlink/$intSecs,
             $nfs2Read/$intSecs,   $nfs2Wrcache/$intSecs, $nfs2Write/$intSecs);
 
-      $nfsPlot.=sprintf("%$FS %$FS %$FS %$FS %$FS %$FS %$FS %$FS %$FS",
+      $nfsPlot.=sprintf("%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
             $nfs2Create/$intSecs, $nfs2Remove/$intSecs,  $nfs2Rename/$intSecs,
             $nfs2Link/$intSecs,   $nfs2Symlink/$intSecs, $nfs2Mkdir/$intSecs,
             $nfs2Rmdir/$intSecs,  $nfs2Readdir/$intSecs, $nfs2Fsstat/$intSecs);
@@ -3521,12 +3528,12 @@ sub printPlot
 
     if ($subOpts=~/3/)
     {
-      $nfsPlot.=sprintf(" %$FS %$FS %$FS %$FS %$FS %$FS %$FS %$FS %$FS %$FS %$FS ",
+      $nfsPlot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP",
             $nfsNull/$intSecs,   $nfsGetattr/$intSecs, $nfsSetattr/$intSecs,
             $nfsLookup/$intSecs, $nfsAccess/$intSecs,  $nfsReadlink/$intSecs,
             $nfsRead/$intSecs,   $nfsWrite/$intSecs,   $nfsCreate/$intSecs,
             $nfsMkdir/$intSecs,  $nfsSymlink/$intSecs);
-      $nfsPlot.=sprintf("%$FS %$FS %$FS %$FS %$FS %$FS %$FS %$FS %$FS %$FS %$FS",
+      $nfsPlot.=sprintf("%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
             $nfsMknod/$intSecs,  $nfsRemove/$intSecs,   $nfsRmdir/$intSecs,
             $nfsRename/$intSecs, $nfsLink/$intSecs,     $nfsReaddir/$intSecs,
             $nfsReaddirplus/$intSecs,                   $nfsFsstat/$intSecs,
@@ -3544,7 +3551,7 @@ sub printPlot
     $netPlot='';
     for ($i=0; $i<$NumNets; $i++)
     {
-      $netPlot.=sprintf(" %s %$FS %$FS %$FS %$FS %$FS %$FS %$FS %$FS %$FS %$FS %$FS %$FS %$FS %$FS %$FS %$FS %$FS %$FS",
+      $netPlot.=sprintf("$SEP%s$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
                   $netName[$i],
                   $netRxPkt[$i]/$intSecs, $netTxPkt[$i]/$intSecs,
                   $netRxKB[$i]/$intSecs,  $netTxKB[$i]/$intSecs,
@@ -3569,7 +3576,7 @@ sub printPlot
     $elanPlot='';
     for ($i=0; $i<$NumXRails; $i++)
     {
-      $elanPlot.=sprintf(" %$FS %$FS %$FS %$FS %$FS %$FS %$FS %$FS %$FS %$FS %$FS %$FS %$FS",
+      $elanPlot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
 	$elanRx[$i], $elanTx[$i], $elanRxKB[$i], $elanTxKB[$i],
 	$elanGet[$i], $elanPut[$i], $elanGetKB[$i], $elanPutKB[$i], 
 	$elanComp[$i], $elanCompKB[$i],
@@ -3584,7 +3591,7 @@ sub printPlot
     $ibPlot='';
     for ($i=0; $i<$NumHCAs; $i++)
     {
-      $ibPlot.=sprintf(" %d %$FS %$FS %$FS %$FS %$FS",
+      $ibPlot.=sprintf("$SEP%d$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
 	  $i,
 	  $ibRx[$i]/$intSecs,   $ibTx[$i]/$intSecs,
 	  $ibRxKB[$i]/$intSecs, $ibTxKB[$i]/$intSecs,
@@ -3602,7 +3609,7 @@ sub printPlot
     $tcpPlot='';
     for ($i=0; $i<$NumTcpFields; $i++)
     {
-      $tcpPlot.=sprintf(" %$FS", $tcpValue[$i]/$intSecs);
+      $tcpPlot.=sprintf("$SEP%$FS", $tcpValue[$i]/$intSecs);
     }
     writeData(0, $datetime, \$tcpPlot, TCP, $ZTCP, 'tcp', \$oneline);
   }
@@ -3617,7 +3624,7 @@ sub printPlot
 # First and formost, this is ONLY used to print plot or socket related data AND the 
 # socket data itself must be plot formatted as well.
 # Secondly, we only call after processing a complete subsystem so in the case of
-# core ones there's a singel call but for detail subsystems one per.
+# core ones there's a single call but for detail subsystems one per.
 # Therefore, when writing to a file, we write the whole string we're passed, but when 
 # writing to a terminal or socket, we build up one long string and write it on the
 # last call.  Since we can write to any combinations we need to handle them all.
@@ -3631,7 +3638,7 @@ sub writeData
   my $errtxt=  shift;
   my $strall=  shift;
 
-  # The very last call is special
+  # The very last call is special so handle it elsewhere
   if (!$eolFlag)
   {
     # If writing to the terminal or a socket, just concatenate
@@ -3642,11 +3649,16 @@ sub writeData
     }
     elsif ($logToFileFlag)
     {
+      # Since we get called with !$eolFlag with partial lines, we always
+      # have a separator at the end of the line, so remove it before write.
+      my $localCopy=$$string;
+      $localCopy=~s/$SEP$//;
+
       # Each record gets a timestamp and a newline.  In the case of a file
       # header, this will be null and the data will be the header!
-      $zfile->gzwrite("$datetime$$string\n") or 
-	     writeError($errtxt, $zfile)     if  $zFlag;
-      print {$file} "$datetime$$string\n"   if !$zFlag;
+      $zfile->gzwrite("$datetime$localCopy\n") or 
+	     writeError($errtxt, $zfile)       if  $zFlag;
+      print {$file} "$datetime$localCopy\n"    if !$zFlag;
     }
     return;
   }
@@ -4481,9 +4493,9 @@ sub printTerm
       }
       else
       {
-        $line=sprintf("#$miniFiller<---------------------Physical Memory-------------------><-----------Swap----------><-Inactive-><Pages%s>\n", substr($rate, 0, 4));
+        $line=sprintf("#$miniFiller<------------------------Physical Memory-----------------------><-----------Swap----------><-Inactive-><Pages%s>\n", substr($rate, 0, 4));
         printText($line);
-        printText("#$miniFiller   TOTAL    USED    FREE    BUFF  CACHED    SLAB  MAPPED     TOTAL    USED    FREE     TOTAL     IN    OUT\n");
+        printText("#$miniFiller   TOTAL    USED    FREE    BUFF  CACHED    SLAB  MAPPED  COMMIT     TOTAL    USED    FREE     TOTAL     IN    OUT\n");
       }
     }
 
@@ -4491,7 +4503,7 @@ sub printTerm
             cvt($memTot,7,1,1),   cvt($memUsed,7,1,1),   cvt($memFree,7,1,1),
 	    cvt($memBuf,7,1,1),   cvt($memCached,7,1,1));
 
-    $line.=sprintf("%7s %7s ", cvt($memSlab,7,1,1), cvt($memMap,7,1,1))
+    $line.=sprintf("%7s %7s %7s ", cvt($memSlab,7,1,1), cvt($memMap,7,1,1), cvt($memCommit,7,1,1))
 	    if $kernel2_6 && ($recVersion ge '1.5.6');
 
     $line.=sprintf("  %7s %7s %7s   %7s %6d %6d\n",
@@ -4900,12 +4912,16 @@ sub cvt
 sub cvtT1
 {
   my $jiffies=shift;
+  my $nsFlag= shift;
   my ($secs, $hsec);
+
+  # set formatting for minutes according to 'no space' flag
+  $MF=(!$nsFlag) ? '%2d' : '%d';
 
   $secs=int($jiffies/$HZ);
   $jiffies=$jiffies-$secs*$HZ;
   $hsec=$jiffies/$HZ*100;
-  return(sprintf('%2d.%02d', $secs, $hsec));
+  return(sprintf("$MF.%02d", $secs, $hsec));
 }
 
 # Time Format1 - convert time in jiffies to something ps-esque
@@ -4913,7 +4929,11 @@ sub cvtT1
 sub cvtT2
 {
   my $jiffies=shift;
+  my $nsFlag= shift;
   my ($hour, $mins, $secs, $time, $hsec);
+
+  # set formatting for minutes according to 'no space' flag
+  $MF=(!$nsFlag) ? '%3d' : '%d';
 
   $secs=int($jiffies/$HZ);
   $jiffies=$jiffies-$secs*$HZ;
@@ -4921,7 +4941,7 @@ sub cvtT2
 
   $mins=int($secs/60);
   $secs=$secs-$mins*60;
-  $time=sprintf('%3d:%02d', $mins, $secs);
+  $time=sprintf("$MF:%02d", $mins, $secs);
   $time.=sprintf('.%02d', $hsec);
   return($time);
 }
@@ -6099,8 +6119,10 @@ sub printPlotProc
   if (!$headersPrintedProc)
   {
     $procHeaders=$commonHeader    if $logToFileFlag;
-    $procHeaders.="#Date Time ";
-    $procHeaders.="PID User PR PPID S VmSize VmLck VmRSS VmData VmStk VmExe VmLib SysT UsrT AccumT MajF MinF Command\n";
+    $procHeaders.=(!$utcFlag) ? "#Date${SEP}Time" : '#UTC';;
+    $procHeaders.="${SEP}PID${SEP}User${SEP}PR${SEP}PPID${SEP}S${SEP}VmSize${SEP}";
+    $procHeaders.="VmLck${SEP}VmRSS${SEP}VmData${SEP}VmStk${SEP}VmExe${SEP}VmLib${SEP}";
+    $procHeaders.="SysT${SEP}UsrT${SEP}AccumT${SEP}MajF${SEP}MinF${SEP}Command\n";
     $headersPrintedProc=1;
   }
 
@@ -6122,9 +6144,12 @@ sub printPlotProc
       $minFlt=$procMinFlt[$i]/$interval2Secs;
     }
 
+    my $datetime=(!$utcFlag) ? "$date$SEP$time": time;
+    $datetime.=".$usecs"    if $options=~/m/;
+
     # Username comes from translation hash OR we just print the UID
-    $procPlot.=sprintf("%s %s %d %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s\n",
-          $date, $time, $procPid[$i], $procUser[$i],  $procPri[$i], 
+    $procPlot.=sprintf("%s${SEP}%d${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s\n",
+          $datetime, $procPid[$i], $procUser[$i],  $procPri[$i], 
 	  $procPpid[$i],  $procState[$i],  
 	  defined($procVmSize[$i]) ? $procVmSize[$i] : 0, 
 	  defined($procVmLck[$i])  ? $procVmLck[$i]  : 0,
@@ -6133,8 +6158,8 @@ sub printPlotProc
 	  defined($procVmStk[$i])  ? $procVmStk[$i]  : 0,  
 	  defined($procVmExe[$i])  ? $procVmExe[$i]  : 0,
 	  defined($procVmLib[$i])  ? $procVmLib[$i]  : 0,
-	  cvtT1($procSTime[$i]), cvtT1($procUTime[$i]), 
-	  cvtT2($procSTimeTot[$i]+$procUTimeTot[$i]),
+	  cvtT1($procSTime[$i],1), cvtT1($procUTime[$i],1), 
+	  cvtT2($procSTimeTot[$i]+$procUTimeTot[$i],1),
 	  cvt($majFlt), cvt($minFlt),
 	  defined($procCmd[$i])    ? $procCmd[$i] : $procName[$i]);
 
@@ -6159,10 +6184,14 @@ sub printPlotSlab
   if (!$headersPrintedSlab)
   {
     $slabHeaders=$commonHeader    if $logToFileFlag;
-    $slabHeaders.="#Date Time SlabName ObjInUse ObjInUseB ObjAll ObjAllB ";
-    $slabHeaders.="SlabInUse SlabInUseB SlabAll SlabAllB\n";
+    $slabHeaders.=(!$utcFlag) ? "#Date${SEP}Time" : '#UTC';
+    $slabHeaders.="${SEP}SlabName${SEP}ObjInUse${SEP}ObjInUseB${SEP}ObjAll${SEP}ObjAllB${SEP}";
+    $slabHeaders.="SlabInUse${SEP}SlabInUseB${SEP}SlabAll${SEP}SlabAllB\n";
     $headersPrintedSlab=1;
   }
+
+  my $datetime=(!$utcFlag) ? "$date$SEP$time": time;
+  $datetime.=".$usecs"    if $options=~/m/;
 
   $slabPlot=$slabHeaders;
   for (my $i=0; $i<$NumSlabs; $i++)
@@ -6171,8 +6200,8 @@ sub printPlotSlab
     next    if ($options=~/s/ && $slabSlabAllTot[$i]==0) ||
                ($options=~/S/ && $slabSlabAct[$i]==0 && $slabSlabAll[$i]==0);
 
-    $slabPlot.=sprintf("%s %s %s %d %d %d %d %d %d %d %d\n",
-      $date, $time, $slabName[$i],
+    $slabPlot.=sprintf("%s$SEP%s$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d\n",
+      $datetime, $slabName[$i],
       $slabObjActTot[$i],  $slabObjActTotB[$i], $slabObjAllTot[$i],  $slabObjAllTotB[$i],
       $slabSlabActTot[$i], $slabSlabActTotB[$i],$slabSlabAllTot[$i], $slabSlabAllTotB[$i]);
   }

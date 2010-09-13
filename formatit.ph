@@ -42,6 +42,7 @@ sub initRecord
   # but then only if someone builds the kernel with it enabled, though
   # that, will probably change with future kernels.
   $processIOFlag=(-e '/proc/self/io')  ? 1 : 0;
+  $slabinfoFlag= (-e '/proc/slabinfo') ? 1 : 0;
   $slubinfoFlag= (-e '/sys/slab')      ? 1 : 0;
 
   # Get number of cpus, which are used in header of 'raw' file
@@ -482,9 +483,6 @@ sub initRecord
       $yFlag=$YFlag=0;
     }
   }
-  elsif ($slubinfoFlag)
-  {
-  }
 }
 
 # Why is initFormat() so damn big?
@@ -850,6 +848,28 @@ sub initFormat
     $header=~/NumSlabs:\s+(\d+)\s+Version:\s+(\S+)/;
     $NumSlabs=$1;
     $SlabVersion=$2;
+
+    # If using the SLUB allocator, the data has been recorded using the 'root' names for each
+    # slab and when we print the data we want the 'first' name which we need to extract from
+    # the header.  All other data in $slabdata{} will be populated as the raw data is read in.
+    if ($slubinfoFlag)
+    {
+      my $skipFlag=1;
+      foreach my $line (split(/\n/, $header))
+      {
+	if ($line=~/#SLUB/)
+        {
+  	  $skipFlag=0;
+	  next;
+        }
+	next    if $skipFlag;
+        next    if $line=~/^##/;
+
+	$line=~s/^#//;
+	my ($slab, $first)=split(/\s+/, $line);
+        $slabfirst{$first}=$slab;
+      }
+    }
 
     # Since what is recorded for slabs is identical whether y or Y, we want 
     # to be able to let someone who recorded with -sy play it back with -sY
@@ -1365,6 +1385,7 @@ sub initInterval
   $slabObjActTotal=$slabObjAllTotal=$slabSlabActTotal=$slabSlabAllTotal=0;
   $slabObjActTotalB=$slabObjAllTotalB=$slabSlabActTotalB=$slabSlabAllTotalB=0;
   $slabNumAct=$slabNumTot=0;
+  $slabNumObjTot=$slabObjAvailTot=$slabUsedTot=$slabTotalTot=0;    # These are for slub
 
   # processes and environmentals don't get reported every interval so we need
   # to set a flag when they do.
@@ -1455,7 +1476,6 @@ sub dataAnalyze
   chomp $line;
   ($type, $data)=split(/\s+/, $line, 2);
   return    if (!defined($data) || $data eq "");
-  print "RAW: $line\n"    if $debug & 32;
 
   # if user requested -sd, we had to force -sc so we can get 'jiffies'
   # NOTE - 2.6 adds in wait, irq and softIrq.  2.6 disk stats also need
@@ -1485,7 +1505,7 @@ sub dataAnalyze
     $irq=  fix($irqNow-$irqLast[$cpuIndex]);
     $soft= fix($softNow-$softLast[$cpuIndex]);
     $steal=fix($stealNow-$stealLast[$cpuIndex]);
-    $total=$user+$nice+$sys+$idle+$wait;
+    $total=$user+$nice+$sys+$idle+$irq+$soft+$steal;
     $total=1    if !$total;  # has seen to be 0 when interval=0;
 
     # For some calculations, like disk performance, we use a more exact measure
@@ -1501,8 +1521,8 @@ sub dataAnalyze
     $softP[$cpuIndex]= 100*$soft/$total;
     $stealP[$cpuIndex]=100*$steal/$total;
     $totlP[$cpuIndex]=$userP[$cpuIndex]+$niceP[$cpuIndex]+
-		       $sysP[$cpuIndex]+$irqP[$cpuIndex]+
-		       $softP[$cpuIndex]+$stealP[$cpuIndex];
+		      $sysP[$cpuIndex]+$irqP[$cpuIndex]+
+		      $softP[$cpuIndex]+$stealP[$cpuIndex];
 
     $userLast[$cpuIndex]= $userNow;
     $niceLast[$cpuIndex]= $niceNow;
@@ -2623,80 +2643,113 @@ sub dataAnalyze
 
   #    S L A B S
 
-  # this is a little complicated, but not too much as the order of the ||
-  # is key.  The idea is that only in playback mode and then only if the
-  # user specifies a list of slabs to look at do we ever execute
-  # that ugly 'defined()' function.  Also note this CAN'T be 'Slab:'
-  elsif (($subsys=~/y/i && $type=~/^Slab/ && $type!~/:$/) &&
+  # Note the trailing '$'.  This is because there is a Slab: in /proc/meminfo
+  # Also note this handles both slab and slub
+  elsif ($subsys=~/y/i && $type=~/^Slab$/)
+  {
+    # First comes /proc/slabinfo
+    # this is a little complicated, but not too much as the order of the ||
+    # is key.  The idea is that only in playback mode and then only if the
+    # user specifies a list of slabs to look at do we ever execute
+    # that ugly 'defined()' function.
+    if ($slabinfoFlag &&
 	 ($playback eq '' || $slabopts eq '' ||
 	    defined($slabProc{(split(/ /,$data))[0]})))
-  {
-    # make sure we note this this interval has process data in it and is ready
-    # to be reported.
-    $interval2Print=1;
-
-    # in case slabs don't always appear in same order (new ones
-    # dynamically added?), we'll index everything...
-    $name=(split(/ /, $data))[0];
-    $slabIndex{$name}=$slabIndexNext++    if !defined($slabIndex{$name});
-    $i=$slabIndex{$name};
-    $slabName[$i]=$name;
-
-    # very rare (I hope), but if the number of slabs grew after we started, make
-    # a note in message log and init the variable that got missed because of this.
-    if ($i>=$NumSlabs)
     {
-      $NumSlabs++;
-      $slabObjActLast[$i]=$slabObjAllLast[$i]=0;
-      $slabSlabActLast[$i]=$slabSlabAllLast[$i]=0;
-      logmsg("W", "New slab created after logging started")    
+      # make sure we note this this interval has process data in it and is ready
+      # to be reported.
+      $interval2Print=1;
+
+      # in case slabs don't always appear in same order (new ones
+      # dynamically added?), we'll index everything...
+      $name=(split(/ /, $data))[0];
+      $slabIndex{$name}=$slabIndexNext++    if !defined($slabIndex{$name});
+      $i=$slabIndex{$name};
+      $slabName[$i]=$name;
+
+      # very rare (I hope), but if the number of slabs grew after we started, make
+      # a note in message log and init the variable that got missed because of this.
+      if ($i>=$NumSlabs)
+      {
+        $NumSlabs++;
+        $slabObjActLast[$i]=$slabObjAllLast[$i]=0;
+        $slabSlabActLast[$i]=$slabSlabAllLast[$i]=0;
+        logmsg("W", "New slab created after logging started")    
+      }
+
+      # since these are NOT counters, the values are actually totals from which we
+      # can derive changes from individual entries.
+      if ($SlabVersion eq '1.1')
+      {
+        ($slabObjActTot[$i], $slabObjAllTot[$i], $slabObjSize[$i],
+         $slabSlabActTot[$i], $slabSlabAllTot[$i], $slabPagesPerSlab[$i])=(split(/\s+/, $data))[1..6];
+      }
+      elsif ($SlabVersion=~/^2/)
+      {
+        ($slabObjActTot[$i], $slabObjAllTot[$i], $slabObjSize[$i], 
+         $slanObjPerSlab[$i], $slabPagesPerSlab[$i],
+         $slabSlabActTot[$i], $slabSlabAllTot[$i])=(split(/\s+/, $data))[1..5,13,14];
+      }
+
+      # Total Sizes of objects and slabs
+      $slabObjActTotB[$i]=$slabObjActTot[$i]*$slabObjSize[$i];
+      $slabObjAllTotB[$i]=$slabObjAllTot[$i]*$slabObjSize[$i];
+      $slabSlabActTotB[$i]=$slabSlabActTot[$i]*$slabPagesPerSlab[$i]*$PageSize;
+      $slabSlabAllTotB[$i]=$slabSlabAllTot[$i]*$slabPagesPerSlab[$i]*$PageSize;
+
+      $slabObjAct[$i]= $slabObjActTot[$i]- $slabObjActLast[$i];
+      $slabObjAll[$i]= $slabObjAllTot[$i]- $slabObjAllLast[$i];
+      $slabSlabAct[$i]=$slabSlabActTot[$i]-$slabSlabActLast[$i];
+      $slabSlabAll[$i]=$slabSlabAllTot[$i]-$slabSlabAllLast[$i];
+
+      $slabObjActLast[$i]= $slabObjActTot[$i];
+      $slabObjAllLast[$i]= $slabObjAllTot[$i];
+      $slabSlabActLast[$i]=$slabSlabActTot[$i];
+      $slabSlabAllLast[$i]=$slabSlabAllTot[$i];
+
+      # if -oS, only count slabs whose objects or sizes have changed
+      # since last interval.
+      # note -- this is only if !S and the slabs themselves change
+      if ($options!~/S/ || $slabSlabAct[$i]!=0 || $slabSlabAll[$i]!=0)
+      {
+        $slabObjActTotal+=  $slabObjActTot[$i];
+        $slabObjAllTotal+=  $slabObjAllTot[$i];
+        $slabObjActTotalB+= $slabObjActTot[$i]*$slabObjSize[$i];
+        $slabObjAllTotalB+= $slabObjAllTot[$i]*$slabObjSize[$i];
+        $slabSlabActTotal+= $slabSlabActTot[$i];
+        $slabSlabAllTotal+= $slabSlabAllTot[$i];
+        $slabSlabActTotalB+=$slabSlabActTot[$i]*$slabPagesPerSlab[$i]*$PageSize;
+        $slabSlabAllTotalB+=$slabSlabAllTot[$i]*$slabPagesPerSlab[$i]*$PageSize;
+        $slabNumAct++       if $slabSlabAllTot[$i];
+        $slabNumTot++;
+      }
     }
-
-    # since these are NOT counters, the values are actually totals from which we
-    # can derive changes from individual entries.
-    if ($SlabVersion eq '1.1')
+    else
     {
-      ($slabObjActTot[$i], $slabObjAllTot[$i], $slabObjSize[$i],
-       $slabSlabActTot[$i], $slabSlabAllTot[$i], $slabPagesPerSlab[$i])=(split(/\s+/, $data))[1..6];
-    }
-    elsif ($SlabVersion=~/^2/)
-    {
-      ($slabObjActTot[$i], $slabObjAllTot[$i], $slabObjSize[$i], 
-       $slanObjPerSlab[$i], $slabPagesPerSlab[$i],
-       $slabSlabActTot[$i], $slabSlabAllTot[$i])=(split(/\s+/, $data))[1..5,13,14];
-    }
+      # Note as efficient as if..then..elsif..elsif... but a lot more readable
+      # and more important, no appreciable difference in processing time
+      my ($slabname, $datatype, $value)=split(/\s+/, $data);
 
-    # Total Sizes of objects and slabs
-    $slabObjActTotB[$i]=$slabObjActTot[$i]*$slabObjSize[$i];
-    $slabObjAllTotB[$i]=$slabObjAllTot[$i]*$slabObjSize[$i];
-    $slabSlabActTotB[$i]=$slabSlabActTot[$i]*$slabPagesPerSlab[$i]*$PageSize;
-    $slabSlabAllTotB[$i]=$slabSlabAllTot[$i]*$slabPagesPerSlab[$i]*$PageSize;
+      $slabdata{$slabname}->{objsize}=$value     if $datatype=~/^object_/;    # object_size
+      $slabdata{$slabname}->{slabsize}=$value    if $datatype=~/^slab_/;      # slab_size  
+      $slabdata{$slabname}->{order}=$value       if $datatype=~/^or/;         # order
+      $slabdata{$slabname}->{objper}=$value      if $datatype=~/^objs/;       # objs_per_slab
+      $slabdata{$slabname}->{objects}=$value     if $datatype=~/^objects/;
 
-    $slabObjAct[$i]= $slabObjActTot[$i]- $slabObjActLast[$i];
-    $slabObjAll[$i]= $slabObjAllTot[$i]- $slabObjAllLast[$i];
-    $slabSlabAct[$i]=$slabSlabActTot[$i]-$slabSlabActLast[$i];
-    $slabSlabAll[$i]=$slabSlabAllTot[$i]-$slabSlabAllLast[$i];
+      # This is the second of the ('objects','slabs') tuple
+      if ($datatype=~/^slabs/)
+      { 
+        my $numSlabs=$slabdata{$slabname}->{slabs}=$value;
 
-    $slabObjActLast[$i]= $slabObjActTot[$i];
-    $slabObjAllLast[$i]= $slabObjAllTot[$i];
-    $slabSlabActLast[$i]=$slabSlabActTot[$i];
-    $slabSlabAllLast[$i]=$slabSlabAllTot[$i];
+        $interval2Print=1;
+        $slabdata{$slabname}->{avail}=$slabdata{$slabname}->{objper}*$numSlabs;
 
-    # if -oS, only count slabs whose objects or sizes have changed
-    # since last interval.
-    # note -- this is only if !S and the slabs themselves change
-    if ($options!~/S/ || $slabSlabAct[$i]!=0 || $slabSlabAll[$i]!=0)
-    {
-      $slabObjActTotal+=  $slabObjActTot[$i];
-      $slabObjAllTotal+=  $slabObjAllTot[$i];
-      $slabObjActTotalB+= $slabObjActTot[$i]*$slabObjSize[$i];
-      $slabObjAllTotalB+= $slabObjAllTot[$i]*$slabObjSize[$i];
-      $slabSlabActTotal+= $slabSlabActTot[$i];
-      $slabSlabAllTotal+= $slabSlabAllTot[$i];
-      $slabSlabActTotalB+=$slabSlabActTot[$i]*$slabPagesPerSlab[$i]*$PageSize;
-      $slabSlabAllTotalB+=$slabSlabAllTot[$i]*$slabPagesPerSlab[$i]*$PageSize;
-      $slabNumAct++       if $slabSlabAllTot[$i];
-      $slabNumTot++;
+	$slabNumTot+=     $numSlabs;
+        $slabObjAvailTot+=$slabdata{$slabname}->{objper}*$numSlabs;
+        $slabNumObjTot+=  $slabdata{$slabname}->{objects};
+        $slabUsedTot+=    $slabdata{$slabname}->{used}=$slabdata{$slabname}->{slabsize}*$slabdata{$slabname}->{objects};
+        $slabTotalTot+=   $slabdata{$slabname}->{total}=$value*($PageSize<<$slabdata{$slabname}->{order});
+      }
     }
   }
 
@@ -3890,14 +3943,16 @@ sub printTerm
         $line.="#$miniDateTime r  b   swpd   free   buff  cache  inact active   si   so    bi    bo   in    cs us sy  id wa\n";
       }
 
-      $i=$NumCpus;
+      my $i=$NumCpus;
+      my $usr=$userP[$i]+$niceP[$i];
+      my $sys=$sysP[$i]+$irqP[$i]+$softP[$i]+$stealP[$i];
       $line.=sprintf("%s %2d %2d %6s %6s %6s %6s %6s %6s %4d %4d %5d %5d %4d %5d %2d %2d %3d %2d\n",
 		$datetime, $procsRun, $procsBlock,
 	        cvt($swapUsed,6,1,1),  cvt($memFree,6,1,1),  cvt($memBuf,6,1,1), 
 		cvt($memCached,6,1,1), cvt($inactive,6,1,1), cvt($active,6,1,1),
 		$swapin/$intSecs, $swapout/$intSecs, $pagein/$intSecs, $pageout/$intSecs,
 		$intrpt/$intSecs, $ctxt/$intSecs,
-       		$userP[$i], $sysP[$i], $idleP[$i], $waitP[$i]);
+       		$usr, $sys, $idleP[$i], $waitP[$i]);
     }
 
     ###########################
@@ -4899,48 +4954,106 @@ sub printTerm
 
   if ($subsys=~/y/ && $interval2Print && $interval2Counter>1)
   {
-    if (printHeader())
+    if ($slabinfoFlag)
     {
-      printText("\n")    if $options!~/t/;
-      printText("# SLAB SUMMARY\n");
-      printText("#${miniFiller}<------------Objects------------><--------Slab Allocation-------><--Caches--->\n");
-      printText("#${miniFiller}  InUse   Bytes    Alloc   Bytes   InUse   Bytes   Total   Bytes  InUse  Total\n");
-    }
+      if (printHeader())
+      {
+        printText("\n")    if $options!~/t/;
+        printText("# SLAB SUMMARY\n");
+        printText("#${miniFiller}<------------Objects------------><--------Slab Allocation-------><--Caches--->\n");
+        printText("#${miniFiller}  InUse   Bytes    Alloc   Bytes   InUse   Bytes   Total   Bytes  InUse  Total\n");
+      }
 
-    $line=sprintf("$datetime %7s %7s  %7s %7s  %6s %7s  %6s %7s %6s %6s\n",
-	cvt($slabObjActTotal,7),  cvt($slabObjActTotalB,7,0,1), 
-	cvt($slabObjAllTotal,7),  cvt($slabObjAllTotalB,7,0,1),
-	cvt($slabSlabActTotal,6), cvt($slabSlabActTotalB,7,0,1),
-	cvt($slabSlabAllTotal,6), cvt($slabSlabAllTotalB,7,0,1),
-   	cvt($slabNumAct,6),       cvt($slabNumTot,6));
-    printText($line);
+      $line=sprintf("$datetime %7s %7s  %7s %7s  %6s %7s  %6s %7s %6s %6s\n",
+          cvt($slabObjActTotal,7),  cvt($slabObjActTotalB,7,0,1), 
+	  cvt($slabObjAllTotal,7),  cvt($slabObjAllTotalB,7,0,1),
+	  cvt($slabSlabActTotal,6), cvt($slabSlabActTotalB,7,0,1),
+	  cvt($slabSlabAllTotal,6), cvt($slabSlabAllTotalB,7,0,1),
+   	  cvt($slabNumAct,6),       cvt($slabNumTot,6));
+      printText($line);
+    }
+    else
+    {
+      if (printHeader())
+      {
+        printText("\n")    if $options!~/t/;
+        printText("# SLAB SUMMARY\n");
+        printText("#${miniFiller}<---Objects---><-Slabs-><-----memory----->\n");
+        printText("#${miniFiller} In Use   Avail  Number      Used    Total\n");
+      }
+      $line=sprintf("$datetime %7s %7s %7s   %7s  %7s\n",
+          cvt($slabNumObjTot,7),  cvt($slabObjAvailTot,7), cvt($slabNumTot,7),  
+	  cvt($slabUsedTot,7,0,1), cvt($slabTotalTot,7,0,1));
+      printText($line);
+    }
   }
 
   if ($subsys=~/Y/ && $interval2Print && $interval2Counter>1)
   {
-    if (printHeader())
+    if ($slabinfoFlag)
     {
-      printText("\n")    if $options!~/t/;
-      printText("# SLAB DETAIL\n");
-      printText("#${miniFiller}                      <-----------Objects----------><---------Slab Allocation------>\n");
-      printText("#${miniFiller}Name                  InUse   Bytes   Alloc   Bytes   InUse   Bytes   Total   Bytes\n");
+      if (printHeader())
+      {
+        printText("\n")    if $options!~/t/;
+        printText("# SLAB DETAIL\n");
+        printText("#${miniFiller}                      <-----------Objects----------><---------Slab Allocation------>\n");
+        printText("#${miniFiller}Name                  InUse   Bytes   Alloc   Bytes   InUse   Bytes   Total   Bytes\n");
+      }
+
+      for ($i=0; $i<$slabIndexNext; $i++)
+      {
+        # the first test is for filtering out zero-size slabs and the
+        # second for slabs that didn't change this during this interval
+        next    if ($options=~/s/ && $slabSlabAllTot[$i]==0) ||
+ 	           ($options=~/S/ && $slabSlabAct[$i]==0 && $slabSlabAll[$i]==0);
+
+        $line=sprintf("$datetime%-20s %7s %7s  %6s %7s  %6s %7s  %6s %7s\n",
+          $slabName[$i],
+	  cvt($slabObjActTot[$i],6),    cvt($slabObjActTotB[$i],7,0,1), 
+  	  cvt($slabObjAllTot[$i],6),    cvt($slabObjAllTotB[$i],7,0,1),
+	  cvt($slabSlabActTot[$i],6),   cvt($slabSlabActTotB[$i],7,0,1),
+	  cvt($slabSlabAllTot[$i],6),   cvt($slabSlabAllTotB[$i],7,0,1));
+
+        printText($line);
+      }
     }
-
-    for ($i=0; $i<$slabIndexNext; $i++)
+    else
     {
-      # the first test is for filtering out zero-size slabs and the
-      # second for slabs that didn't change this during this interval
-      next    if ($options=~/s/ && $slabSlabAllTot[$i]==0) ||
-		 ($options=~/S/ && $slabSlabAct[$i]==0 && $slabSlabAll[$i]==0);
+      if (printHeader())
+      {
+        printText("\n")    if $options!~/t/;
+        printText("# SLAB DETAIL\n");
+        printText("#${miniFiller}                             <----------- objects -----------><--- slabs ---><----- memory ----->\n");
+        printText("#${miniFiller}Slab Name                    Size  /slab   In Use     Avail    SizeK  Number      UsedK    TotalK\n");
+      }
 
-      $line=sprintf("$datetime%-20s %7s %7s  %6s %7s  %6s %7s  %6s %7s\n",
-        $slabName[$i],
-	cvt($slabObjActTot[$i],6),    cvt($slabObjActTotB[$i],7,0,1), 
-	cvt($slabObjAllTot[$i],6),    cvt($slabObjAllTotB[$i],7,0,1),
-	cvt($slabSlabActTot[$i],6),   cvt($slabSlabActTotB[$i],7,0,1),
-	cvt($slabSlabAllTot[$i],6),   cvt($slabSlabAllTotB[$i],7,0,1));
+      foreach my $first (sort keys %slabfirst)
+      {
+	my $slab=$slabfirst{$first};
 
-      printText($line);
+        # as for regular slabs, the first test is for filtering out zero-size
+        # slabs and the second for slabs that didn't change this during this interval
+	my $numObjects=$slabdata{$slab}->{objects};
+        my $numSlabs=  $slabdata{$slab}->{slabs};
+        next    if ($options=~/s/ && $slabdata{$slab}->{objects}==0) ||
+ 	           ($options=~/S/ && $slabdata{$slab}->{lastobj}==$numObjects &&
+				     $slabdata{$slab}->{lastslabs}==$numSlabs);
+
+        printf "$datetime%-25s  %7d  %5d  %7d  %7d     %5d %7d   %8d  %8d\n",
+            $first,
+	    $slabdata{$slab}->{slabsize},
+	    $slabdata{$slab}->{objper},
+	    $numObjects,
+	    $slabdata{$slab}->{avail},
+            ($PageSize<<$slabdata{$slab}->{order})/1024,
+	    $numSlabs, 
+	    $slabdata{$slab}->{used}/1024, 
+	    $slabdata{$slab}->{total}/1024;
+
+        # So we can tell when something changes
+        $slabdata{$slab}->{lastobj}=  $numObjects;
+        $slabdata{$slab}->{lastslabs}=$numSlabs;
+      }
     }
   }
 
@@ -5901,7 +6014,8 @@ sub briefFormatit
     $line.="#$miniDateTime";
     $line.="cpu sys inter  ctxsw "                 if $subsys=~/c/;
     $line.="free buff cach inac slab  map "        if $subsys=~/m/;
-    $line.=" Alloc   Bytes "	 		   if $subsys=~/y/;
+    $line.=" Alloc   Bytes "	 		   if $subsys=~/y/ && $slabinfoFlag;
+    $line.=" InUse   Total "	 		   if $subsys=~/y/ && $slubinfoFlag;
     $line.="KBRead  Reads  KBWrit Writes "         if $subsys=~/[dp]/;
     $line.="netKBi pkt-in  netKBo pkt-out "        if $subsys=~/n/;
     $line.="PureAcks HPAcks   Loss FTrans "        if $subsys=~/t/;
@@ -5946,8 +6060,16 @@ sub briefFormatit
 
   if ($subsys=~/y/)
   {
-    $line.=sprintf("%6s %7s ",
+    if ($slabinfoFlag)
+    {
+      $line.=sprintf("%6s %7s ",
 	cvt($slabSlabAllTotal,6), cvt($slabSlabAllTotalB,7,0,1));
+    }
+    else
+    {
+      $line.=sprintf("%6s %7s ",
+	cvt($slabNumObjTot,7),  cvt($slabTotalTot,7,0,1));
+    }
   }
 
   if ($subsys=~/d/)
@@ -6439,32 +6561,72 @@ sub printPlotSlab
   if (!$headersPrintedSlab)
   {
     $slabHeaders=$commonHeader    if $logToFileFlag;
+    $slabHeaders.=$slubHeader     if $logToFileFlag && $slubinfoFlag;
     $slabHeaders.=(!$utcFlag) ? "#Date${SEP}Time" : '#UTC';
-    $slabHeaders.="${SEP}SlabName${SEP}ObjInUse${SEP}ObjInUseB${SEP}ObjAll${SEP}ObjAllB${SEP}";
-    $slabHeaders.="SlabInUse${SEP}SlabInUseB${SEP}SlabAll${SEP}SlabAllB\n";
+    if ($slabinfoFlag)
+    {
+      $slabHeaders.="${SEP}SlabName${SEP}ObjInUse${SEP}ObjInUseB${SEP}ObjAll${SEP}ObjAllB${SEP}";
+      $slabHeaders.="SlabInUse${SEP}SlabInUseB${SEP}SlabAll${SEP}SlabAllB\n";
+    }
+    else
+    {
+      $slabHeaders.="${SEP}SlabName${SEP}ObjSize${SEP}ObjPerSlab${SEP}ObjInUse${SEP}ObjAvail${SEP}";
+      $slabHeaders.="SlabSize${SEP}SlabNumber${SEP}MemUsed${SEP}MemTotal\n";
+    }
     $headersPrintedSlab=1;
   }
 
   my $datetime=(!$utcFlag) ? "$date$SEP$time": time;
   $datetime.=".$usecs"    if $options=~/m/;
-
   $slabPlot=$slabHeaders;
-  for (my $i=0; $i<$NumSlabs; $i++)
-  {
-    # Skip filtered data
-    next    if ($options=~/s/ && $slabSlabAllTot[$i]==0) ||
-               ($options=~/S/ && $slabSlabAct[$i]==0 && $slabSlabAll[$i]==0);
 
-    $slabPlot.=sprintf("%s$SEP%s$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d\n",
-      $datetime, $slabName[$i],
-      $slabObjActTot[$i],  $slabObjActTotB[$i], $slabObjAllTot[$i],  $slabObjAllTotB[$i],
-      $slabSlabActTot[$i], $slabSlabActTotB[$i],$slabSlabAllTot[$i], $slabSlabAllTotB[$i]);
+  #    O l d    S l a b    F o r m a t
+
+  if ($slabinfoFlag)
+  {
+    for (my $i=0; $i<$NumSlabs; $i++)
+    {
+      # Skip filtered data
+      next    if ($options=~/s/ && $slabSlabAllTot[$i]==0) ||
+                 ($options=~/S/ && $slabSlabAct[$i]==0 && $slabSlabAll[$i]==0);
+
+      $slabPlot.=sprintf("%s$SEP%s$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d\n",
+     	   $datetime, $slabName[$i],
+	   $slabObjActTot[$i],  $slabObjActTotB[$i], $slabObjAllTot[$i],  $slabObjAllTotB[$i],
+           $slabSlabActTot[$i], $slabSlabActTotB[$i],$slabSlabAllTot[$i], $slabSlabAllTotB[$i]);
+    }
+  }
+
+  #    N e w    S l a b    F o r m a t
+
+  else
+  {
+    foreach my $first (sort keys %slabfirst)
+    {
+      # This is all pretty much lifted from 'Slab Detail' reporting
+      my $slab=$slabfirst{$first};
+      my $numObjects=$slabdata{$slab}->{objects};
+      my $numSlabs=  $slabdata{$slab}->{slabs};
+
+      next    if ($options=~/s/ && $slabdata{$slab}->{objects}==0) ||
+                 ($options=~/S/ && $slabdata{$slab}->{lastobj}==$numObjects &&
+                                   $slabdata{$slab}->{lastslabs}==$numSlabs);
+
+      $slabPlot.=sprintf("$datetime$SEP%s$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d\n",
+            $first,      $slabdata{$slab}->{slabsize},  $slabdata{$slab}->{objper},
+            $numObjects, $slabdata{$slab}->{avail},     ($PageSize<<$slabdata{$slab}->{order})/1024,
+            $numSlabs,   $slabdata{$slab}->{used}/1024, $slabdata{$slab}->{total}/1024);
+
+      # So we can tell when something changes
+      $slabdata{$slab}->{lastobj}=  $numObjects;
+      $slabdata{$slab}->{lastslabs}=$numSlabs;
+    }
   }
 
   if (!$addrFlag)
   {
     $ZSLB->gzwrite($slabPlot) or 
-	     writeError('slb', $ZSLB)    if  $zFlag;
+               writeError('slb', $ZSLB)    if  $zFlag;
     print SLB $slabPlot                  if !$zFlag;
   }
 }

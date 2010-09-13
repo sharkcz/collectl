@@ -85,8 +85,8 @@ if ($Config{'version'} lt '5.8.0')
 #  exit;
 }
 
-$Version=  '2.4.0';
-$Copyright='Copyright 2003-2007 Hewlett-Packard Development Company, L.P.';
+$Version=  '2.4.1';
+$Copyright='Copyright 2003-2008 Hewlett-Packard Development Company, L.P.';
 $License=  "collectl may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
 
@@ -150,8 +150,8 @@ undef %playbackSettings;
 $recHdr1=$miniDateTime=$miniFiller=$DaemonOptions='';
 $OstNames=$MdsNames=$LusDiskNames=$LusDiskDir='';
 $NumLustreCltOsts=$NumLusDisks=$MdsFlag=0;
-$NumSlabs=$SlabGetProc=$SlabSkipHeader=0;
-$wideFlag=$coreFlag=0;
+$NumSlabs=$SlabGetProc=$SlabSkipHeader=$newSlabFlag=0;
+$wideFlag=$coreFlag=$newRawFlag=0;
 $totalCounter=0;
 $NumCpus=$NumDisks=$NumNets=$DiskNames=$NetNames=$HZ='';
 $NumOst=$NumFans=$NumPwrs=$NumTemps=0;
@@ -243,8 +243,8 @@ close TMP;
 
 $count=-1;
 $numTop=0;
-$showPHeaderFlag=0;
-$showMergedFlag=$showHeaderFlag=$verboseFlag=$procmemFlag=$vmstatFlag=$alignFlag=0;
+$showPHeaderFlag=$showMergedFlag=$showHeaderFlag=$showSlabAliasesFlag=$showRootSlabsFlag=0;
+$verboseFlag=$procmemFlag=$vmstatFlag=$alignFlag=0;
 $quietFlag=$utcFlag=$procioFlag=0;
 $address=$beginTime=$endTime=$filename=$flush='';
 $limits=$lustreSvcs=$procopts=$runTime=$subOpts=$playback=$rollLog='';
@@ -338,6 +338,8 @@ GetOptions('align!'     => \$alignFlag,
            'showsubopts!'  => \$showSuboptsFlag,
 	   'showheader!'   => \$showHeaderFlag,
            'showplotheader!'  =>\$showPHeaderFlag,
+	   'showslabaliases!' =>\$showSlabAliasesFlag,
+	   'showrootslabs!'   =>\$showRootSlabsFlag,
            'rawtoo!'       => \$rawtooFlag,
            'sexpr=s'       => \$sexprType,
            'procio!'       => \$procioFlag,
@@ -377,13 +379,14 @@ if ($addrFlag)
 
 # Since the output could be intended for a socket (called from colgui/colmux),
 # we need to do after we open the socket.
-error()           if $hSwitch;
-showVersion()     if $vSwitch;
-showDefaults()    if $VSwitch;
-extendHelp()      if $xSwitch;
-showSubsys()      if $showSubsysFlag;
-showOptions()     if $showOptionsFlag;
-showSubopts()     if $showSuboptsFlag;
+error()            if $hSwitch;
+showVersion()      if $vSwitch;
+showDefaults()     if $VSwitch;
+extendHelp()       if $xSwitch;
+showSubsys()       if $showSubsysFlag;
+showOptions()      if $showOptionsFlag;
+showSubopts()      if $showSuboptsFlag;
+showSlabAliases($slabopts)  if $showSlabAliasesFlag || $showRootSlabsFlag;
 
 #    H a n d l e    V 2 . 0    R e m a p p i n g s    F i r s t
 
@@ -570,12 +573,8 @@ if ($briefFlag)
 
   # if more than one subsys and one of them is 'y', they MUST have same
   # interval.
-  if (length($subsys)>1 && $subsys=~/y/ && $temp1!=$temp2)
-  {
-    print "Warning: main and secondary intervals must match when -sy included\n";
-    print "         setting both intervals to $temp1\n";
-    $limit2=$interval2=$interval=$temp1;
-  }
+  error("main and secondary intervals must match when -sy included OR use --verbose")
+      if length($subsys)>1 && $subsys=~/y/ && $temp1!=$temp2;
 }
 
 #    L i n u x    S p e c i f i c
@@ -1300,6 +1299,7 @@ if ($playback ne '')
 
       # Skip redundant disk data in pre-1.3.0 raw file
       next    if $IgnoreDiskData && $line=~/^disk/;
+      print $line    if $debug & 4;
       dataAnalyze($subsys, $line)  if !$newInterval;
 
       $newInterval=$firstTime=0;
@@ -1383,7 +1383,6 @@ if ($sexprType ne '')
 # need to load even if interval is 0, but don't allow for -p mode
 error("threads only currently supported in 2.6 kernels")
     if $procopts=~/\+/ && !$kernel2_6;
-loadSlabs($slabopts)    if $subsys=~/y/i;
 loadPids($procopts)     if $subsys=~/Z/;
 
 # In case running on a cluster, record the name of the host we're running on.
@@ -1397,6 +1396,16 @@ logsys($message);
 initRecord();
 error("no subsystems selected")    if $subsys eq '';
 error("--procio features not enabled in this kernel")      if $procioFlag && !$processIOFlag;
+
+if ($subsys=~/y/i && !$slabinfoFlag && !$slubinfoFlag)
+{
+  logmsg("W", "Slab monitoring disabled because neither /proc/slabinfo nor /sys/slab exists");
+  $yFlag=$YFlag=0;
+  $subsys=~s/y//ig;
+}
+
+# We can't do this until we know if the data structures exist.
+loadSlabs($slabopts)    if $subsys=~/y/i;
 
 # In case displaying output.  We also need the recorded version to match ours.
 initFormat();
@@ -1610,6 +1619,7 @@ if ($options=~/i/)
 
 # This is where efficiency really counts
 $doneFlag=0;
+$firstPass=1;
 for (; $count!=0 && !$doneFlag; $count--)
 {
   # Use the same value for seconds for the entire cycle
@@ -1906,8 +1916,40 @@ for (; $count!=0 && !$doneFlag; $count--)
     {
       # NOTE - $SlabGetProc is either 0 for all slabs or 14 for selective
       #        $SlabHeader is 1 for 2.4 kernels and 2 for 2.6 ones
-      getProc($SlabGetProc, "/proc/slabinfo", "Slab", $SlabSkipHeader)
-	  if !$slubinfoFlag;
+      if ($slabinfoFlag)
+      {
+        getProc($SlabGetProc, "/proc/slabinfo", "Slab", $SlabSkipHeader);
+      }
+      else
+      {
+	# Reading the whole directory and skipping links via the 'skip' hash
+        # is only about about 1/2 second slower over the day so let's just do it.
+        opendir SLUBDIR, "/sys/slab" or die;
+        while ($slab=readdir SLUBDIR)
+	{
+	  next    if $slab=~/^\./;
+	  next    if $slabopts ne '' && !defined($slabdata{$slab});
+	  next    if defined($slabskip{$slab});
+
+	  # See if a new slab appeared, noting this doesn't apply when using
+          # -Y because of the optimization 'next' for '$slabopts' above
+	  # also remember since we're only looking at root slabs, we'll never
+          # discover 'linked' ones
+	  if (!defined($slabdata{$slab}))
+          {
+	    $newSlabFlag=1;
+	    logmsg("W", "New slab detected: $slab");
+  	  }
+
+	  # Whenever there are 'new' slabs to read (which certainly includes the first 
+          # full pass or any time we change log files) read constants before reading
+          # variant data.
+	  getSys('Slab', '/sys/slab', $slab, ['object_size', 'slab_size', 'order','objs_per_slab'])
+	      if $firstPass || $newRawFlag || $newSlabFlag;
+	  getSys('Slab', '/sys/slab', $slab, ['objects', 'slabs']);
+	  $newSlabFlag=0;
+	}
+      }
     }
 
     if ($ZFlag)
@@ -2033,6 +2075,7 @@ for (; $count!=0 && !$doneFlag; $count--)
     sleep $interval                    if !$hiResFlag;
     Time::HiRes::usleep($uInterval)    if  $hiResFlag;
   }
+  $firstPass=$newRawFlag=0;
   next;
 }
 
@@ -2691,7 +2734,7 @@ sub getProc
       record(2, "$tag $line")    if defined($slabProc{$slab});
     }
 
-    # /proc/slabinfo - only if not doing all of them
+    # /proc/dev/netstat
     elsif ($type==15)
     {
       # at least on debian 2.6, the first line is blank and the SECOND is
@@ -2805,6 +2848,36 @@ sub getExec
   record(2, "$tag: $oneLine\n");
 }
 
+# This guy is in charge of reading single valued entries, which are
+# typical of those found in /sys.  The other big difference between
+# this and getProc() is it doens't have to deal with all those 
+# special 'skip', 'ignore', etc flags.  Just read the data!
+sub getSys
+{
+  my $tag=  shift;
+  my $sys=  shift;
+  my $dir=  shift;
+  my $files=shift;
+
+  foreach my $file (@$files)
+  {
+    # as of writing this for slub, I'm not expecting file open failures
+    # but might as well put in here in case needed in the future
+    $filename="$sys/$dir/$file";
+    if (!open SYS, "<$filename")
+    {
+      # but just report it once
+      logmsg("E", "Couldn't open '$filename'")
+	  if !defined($notOpened{$filename});
+      $notOpened{$filename}=1;
+      return(0);
+    }
+
+    my $line=<SYS>;
+    record(2, "$tag $dir $file $line");
+  }
+}
+
 sub record
 {
   my $type=    shift;
@@ -2901,6 +2974,26 @@ sub newLog
   $temp="# Date:       $datetime  Secs: $timesecs TZ: $timezone\n";
   $commonHeader= buildCommonHeader(0, $temp);
   $commonHeader1=buildCommonHeader(1, $temp)    if $recFlag1;
+
+  # Now build a slab subheader just to be used for 'raw' and 'slb' files
+  if ($slubinfoFlag)
+  {
+    $slubHeader="#SLUB DATA\n";
+    foreach my $slab (sort keys %slabdata)
+    {
+      # when we have a slab with no aliases, 'first' gets set to that same
+      # name which in turns ends up on the alias list because it always
+      # contains 'first' followed by any additional aliases.  On the rare
+      # case we have no alias, which can happen where we have only the root
+      # slab itself, set the aliases to that slab which will then be skipped.
+      my $aliaslist=$slabdata{$slab}->{aliaslist};
+      next    if defined($aliaslist) && $slab eq $aliaslist;
+
+      $aliaslist=$slab    if !defined($aliaslist);
+      $slubHeader.="#$slab $aliaslist\n";
+    }
+    $slubHeader.=sprintf("%s\n", '#'x80);
+  }
 
   # If generating plot data on terminal, just open everything on STDOUT
   # but be SURE set the buffers to flush in case anyone runs to run as part
@@ -3016,9 +3109,11 @@ sub newLog
 
     # write common header to raw file (record() ignores otherwise).  Note that we
     # we need to pass along the recovery mode flag because if this record()
-    # fails it's fatal.
+    # fails it's fatal.  we may also need a slub header
     record(1, $commonHeader, $recMode)        if $recFlag0;
     record(1, $commonHeader1, $recMode, 1)    if $recFlag1;
+    record(1, $slubHeader, $recMode)          if $slubinfoFlag && $subsys=~/y/i;
+    $newRawFlag=1;
   }
 
   #    C r e a t e    P l o t    F i l e s
@@ -3803,64 +3898,160 @@ sub loadConfig
 
 sub loadSlabs
 {
-  my $slabopts=shift;
+  my $slabopts= shift;
   my ($line, $name, $slab, %slabsKnown);
 
-  if (!open PROC,"</proc/slabinfo")
+  if ($slabinfoFlag)
   {
-    logmsg("W", "Slab monitoring disabled because /proc/slabinfo doesn't exist");
-    $yFlag=$YFlag=0;
-    $subsys=~s/y//ig;
-    return;
-  }
-
-  while ($line=<PROC>)
-  {
-    $slab=(split(/\s+/, $line))[0];
-    $slabsKnown{$slab}=1;
-  }
-
-  # only if user specified -Y
-  if ($slabopts ne '')
-  {
-    foreach $name (split(/,/, $slabopts))
+    if (!open PROC,"</proc/slabinfo")
     {
-      if (-e $name)
+      logmsg("W", "Slab monitoring disabled because /proc/slabinfo doesn't exist");
+      $yFlag=$YFlag=0;
+      $subsys=~s/y//ig;
+      return;
+    }
+
+    while ($line=<PROC>)
+    {
+      $slab=(split(/\s+/, $line))[0];
+      $slabsKnown{$slab}=1;
+    }
+
+    # only if user specified -Y
+    if ($slabopts ne '')
+    {
+      foreach $name (split(/,/, $slabopts))
       {
-        open SLABS,"<$name" or error("Couldn't open slablist file '$name'");
-	while ($slab=<SLABS>)
+	if (-e $name)
         {
-	  # This allows one to cut/past /proc/slabinfo into the slab file and we just
-          # ignore data portions
-          $slab=(split(/\s+/, $slab))[0];
-	  chomp $slab;
-	  if (!defined($slabsKnown{$slab}))
+	  open SLABS,"<$name" or error("Couldn't open slablist file '$name'");
+	  while ($slab=<SLABS>)
+          {
+	    # This allows one to cut/past /proc/slabinfo into the slab file and we just
+	    # ignore data portions
+	    $slab=(split(/\s+/, $slab))[0];
+	    chomp $slab;
+	    if (!defined($slabsKnown{$slab}))
+	    {
+	      logmsg("W", "Skipping unknown slab name: $slab in slab name file");
+	      next;
+	    }
+	    $slabProc{$slab}=1;
+          }
+	  close SLABS;
+        }
+        else
+        {
+	  if (!defined($slabsKnown{$name}))
 	  {
-	    logmsg("W", "Skipping unknown slab name: $slab in slab name file");
+            logmsg("W", "Skipping unknown slab name: $name");
 	    next;
-	  }
-	  $slabProc{$slab}=1;
+          }
+	  $slabProc{$name}=1;
         }
-	close SLABS;
       }
-      else
-      {
-	if (!defined($slabsKnown{$name}))
-	{
-          logmsg("W", "Skipping unknown slab name: $name");
-	  next;
-        }
-	$slabProc{$name}=1;
-      }
+    }  
+    if ($debug & 1024)
+    {
+      print "*** SLABS ***\n";
+      foreach $slab (sort keys %slabProc)
+      { print "$slab\n"; }
     }
   }
 
-  if ($debug & 1024)
+  if ($slubinfoFlag)
   {
-    print "*** SLABS ***\n";
-    foreach $slab (sort keys %slabProc)
-    { print "$slab\n"; }
+    ###########################################
+    #    build list of all slabs NOT softlinks
+    ###########################################
+
+    opendir SYS, '/sys/slab' or logmsg('F', "Couldn't open '/sys/slab'");
+    while (my $slab=readdir(SYS))
+    {
+      next    if $slab=~/^\./;
+
+      # If a link, it's actually an alias
+      $dirname="/sys/slab/$slab";
+      if (-l $dirname)
+      {
+        # If filtering, only keep those aliases that match
+        next    if $slabopts ne '' && !passSlabFilter($slabopts, $slab);
+
+        # get the name of the slab this link points to
+        my $linkname=readlink($dirname);
+        my $rootslab=basename($linkname);
+
+        # Note that since scalar returns the number of elements, it's always the index
+        # we want to write the next entry into.  We also want to save a list of the link
+        # names so we can easily skip over them later.
+        my $alias=(defined($slabdata{$rootslab}->{aliases})) ? scalar(@{$slabdata{$rootslab}->{aliases}}) : 0;
+        $slabdata{$rootslab}->{aliases}->[$alias]=$slab;
+        $slabskip{$slab}=1;
+      }
+      else
+      {
+        $slabdata{$slab}->{lastobj}=$slabdata{$slab}->{lastslabs}=0;
+      }
+    }
+   
+    ##########################################
+    #    secondary filter scan
+    ##########################################
+
+    if ($slabopts ne '')
+    {
+      # Note, at this point we only have aliases that pass the filter and so we need
+      # to keep the entries OR we have entries with no aliases that might still pass 
+      # filters only we couldn't check them yet so we need this second pass.
+      foreach my $slab (keys %slabdata)
+      {
+        delete $slabdata{$slab}
+	    if !defined($slabdata{$slab}->{aliases}) && !passSlabFilter($slabopts, $slab)
+      }
+    }
+
+    ############################################################
+    #    now find a better name to use, choosing length first
+    ############################################################
+
+    # what we want to do here is also build up a list of all the aliases to
+    # make it easier to insert them into the header as well as display with
+    # --showslabaliases.  Also note is --showrootslabs, we override '$first'
+    # to that of the slab root name.
+    foreach my $slab (sort keys %slabdata)
+    {
+      my ($first,$kmalloc,$list)=('','',' ');    # NOTE - $list set to leading space!
+      foreach my $alias (@{$slabdata{$slab}->{aliases}})
+      {
+	$list.="$alias ";
+	$kmalloc=$alias    if $alias=~/^kmalloc/;
+	$first=$alias      if $alias!~/^kmalloc/ && length($alias)>length($first);
+      }
+      $first=$kmalloc    if $first eq '';
+      $first=$slab       if $first eq '' || $showRootSlabsFlag;
+      $slabdata{$slab}->{first}=$first;
+      $slabfirst{$first}=$slab;
+
+      # note that in some cases there is only a single alias in which case 'list' is ''
+      $list=~s/ $first / /;
+      $list=~s/^ | $//g;
+      $slabdata{$slab}->{aliaslist}=$first       if $first ne $slab;
+      $slabdata{$slab}->{aliaslist}.=" $list"    if $list ne '';
+    } 
+    ref($slabfirst);    # need to mention it to eliminate -w warning
   }
+}
+
+sub passSlabFilter
+{
+  my $filters=shift;
+  my $slab=   shift;
+
+  foreach my $name (split(/,/, $filters))
+  {
+    return(1)    if $slab=~/^$name/;
+  }
+  return(0);
 }
 
 # This needs some explaining...  When doing processes, we build a list of all the pids that
@@ -4267,6 +4458,26 @@ sub cleanStalePids
   }
 }
 
+sub showSlabAliases
+{
+  my $slabopts=shift;
+
+  # by setting the slub flag and calling the 'load' routine, we'll get the header
+  # built
+  $slubinfoFlag= (-e '/sys/slab') ? 1 : 0;
+  error("this kernel does not support 'slub-based' slabs")    if !$slubinfoFlag;
+  loadSlabs($slabopts);
+
+  foreach my $slab (sort keys %slabdata)
+  {
+    my $aliaslist=$slabdata{$slab}->{aliaslist};
+    $aliaslist=$slab    if !defined($aliaslist);
+    next    if $slab eq $aliaslist;
+    printf "%-20s %s\n", $slab, $aliaslist    if $aliaslist=~/ /;
+  }
+  exit;
+}
+
 sub showVersion
 {
   $temp='';
@@ -4343,6 +4554,8 @@ Various types of help
   --showsubopts               show all the suboptions
   --showsubsys                show all the subsystems
   --showheader                show file header that 'would be' generated
+  --showslabaliases           for the new 'slub' slabs, show the aliases using non-root names
+  --showrootslabs             same as --showslabaliases but use 'root' names
 
 $Copyright
 $License
@@ -4367,6 +4580,7 @@ These switches are for more advanced usage
   -D, --daemon                  run as a daemon
   -e, --end        time         in playback mode, don't process after this date/time
   -F, --flush      seconds      number of seconds between output buffer flushes
+  -G, --group                   write process and slab data to separate, rawp file
   -h, --help                    print basic help
       --headerrepeat num        repeat headers every 'num' lines of output
   -i, --interval   int[:pi:ei]] collection interval in seconds [default=10]
@@ -4440,6 +4654,8 @@ Various types of help
   --showsubsys                show all the subsystems
   --showheader                show file header that 'would be' generated and exit
   --showplotheader            show plot headers that 'would be' generated and exit
+  --showslabaliases           for the new 'slub' slabs, show the aliases using non-root names
+  --showrootslabs             same as --showslabaliases but use 'root' names
 
 EOF2b
 printText($eof2b);

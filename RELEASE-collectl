@@ -46,6 +46,19 @@ KNOWN PROBLEMS/RESTRICTIONS
   - when showing process command, only show command portion.  the args will still be
     saved when using -P
 
+2.4.1
+  - corrected calculation for cpu times to include soft, irq and steal which was 
+    causing incorrect values to be reported for system with higher values in one
+    more of these counters.  If one replays any existing raw files the correct
+    values will be produced.
+  - added support for new SLUB slab allocator which results in different output
+    format for slab reporting.
+  - added 'Flags:' to header and use value if 's' to indicate a raw file contains
+    new slab data and a 'i' to indicate that process data contains I/O counters
+  - also added slab alias names as a block comment directly below main header
+    because they are needed for playback on a different system or even on the
+    same one in case the slab configuration has changed
+
 2.4.0	Dec 23, 2007
   - test for -f filename only checked for existing directory and if ended in /
     still created it but logfile created started with -

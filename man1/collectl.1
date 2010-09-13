@@ -667,6 +667,21 @@ This command shows only the portion of the help text that desribes the -o and --
 to save the time of wading through the entire help screen.
 .RE
 
+.B --showrootslabs
+.RS
+This command only works on systems using the new slab allocator and will list the root name (these
+are those entries in /sys/slab which are not soft links) along with all its alias names.  If a
+name doesn't have an alias, it will not appear in this report.
+.RE
+
+.B --showslabaliases
+.RS
+This command only works on systems using the new slab allocator.  Like --showrootslabs, it
+will name a slab and all its aliases but rather than show the root slab name 
+it will show one of the aliases to provide a more meaningful name.  If there are any 
+slabs that only have a single (or no) alias they will not be included in this report.
+.RE
+
 .B --showsubopts
 .RS
 Similar to --showoptions, this command summaries just the paramaters associated with -O and
@@ -1349,7 +1364,7 @@ collect tool, which collectl is based on.
 .SH AUTHOR
 This program was written by Mark Seger (Mark.Seger@hp.com).
 .br
-Copyright 2003-2007 Hewlett-Packard Development Company, LP
+Copyright 2003-2008 Hewlett-Packard Development Company, LP
 .br
 collectl may be copied only under the terms of either the Artistic License
 or the GNU General Public License, which may be found in the source kit

@@ -998,6 +998,12 @@ Write bytes cancelled per second
 .RE
 
 .SH Slabs
+As of the 2.6.22 kernel, there is a new slab allocator, called SLUB, and since 
+there is not a 1:1 mapping between what it reports and the older slab allocator,
+the format of this listing will depend on which allocator is being used.
+
+The following two formats are for the older allocator:
+
 .nf
 # SLAB SUMMARY
 #<------------Objects------------><--------Slab Allocation-------><--Caches--->
@@ -1050,14 +1056,82 @@ The detail output form adds the name field and loses the caches fields
 
 .nf
 # SLAB DETAIL
-#                      <-----------Objects----------><---------Slab Allocation------>
-#Name                  InUse   Bytes   Alloc   Bytes   InUse   Bytes   Total   Bytes
+#              <-----------Objects----------><---------Slab Allocation------>
+#Name          InUse   Bytes   Alloc   Bytes   InUse   Bytes   Total   Bytes
 .fi
 
 .B Name
 .RS
 Name of the slab
 .RE
+
+and these two are for the newer, SLUB allocator.
+
+.nf
+# SLAB SUMMARY
+#<---Objects---><-Slabs-><-----memory----->
+# In Use   InUse  Number      Used    Total
+.fi
+
+One should note that this report summarizes those slabs being monitored.  In general
+this represents all slabs, but if filering is being used these numbers will only
+apply to those slabs that have matched the filter.
+
+.B "InUse"
+.RS
+The total number of objects that have been allocated to processes.
+.RE
+.B "Avail"
+.RS
+The total number of objects that are available in the currently allocated
+slabs.  This includes those that have already been allocated to processes.
+.RE
+.B "Number"
+.RS
+This is the number of individual slabs that have been allocated and
+taking physical memory.
+.RE
+.B "Used"
+.RS
+Used memory corresponds to those objects that have been allocated to
+processes.
+.RE
+.B "Total"
+.RS
+Total physical memory allocated to processes.  When there is no filtering
+in effect, this number will be equal to the Slabs field reported by -sm.
+.RE
+
+The detail report includes the fields of the slab summary report as well as adding 
+the name of each slab and the following fields:
+
+.nf
+# SLAB DETAIL
+#             <----------- objects -----------><--- slabs ---><----- memory ----->
+#Slab Name    Size  /slab   In Use     Avail    SizeK  Number      UsedK    TotalK
+.fi
+
+.B "Size"
+.RS
+The fixed size of an individual object never changes.
+.RE
+
+.B "/slab"
+.RS
+The number of objects/slab is also a fixed constant which depends on the sizes of the
+object as well as that of the individual slabs.
+.RE
+
+.B "SizeK"
+.RS
+This too is a fixed field which is the size of a single slab.
+.RE
+
+.B "UsedK"
+.RS
+The is the amount of memory used for objects which have been allocated to processes.
+.RE
+
 
 .SH Sockets
 .nf
@@ -1107,6 +1181,6 @@ Total number if socket allocated which can include additional types such as doma
 These are identical to the brief form
 
 .SH AUTHOR
-Copyright 2003-2007 Hewlett-Packard Development Company, LP
+Copyright 2003-2008 Hewlett-Packard Development Company, LP
 collectl may be copied only under the terms of either the Artistic License
 or the GNU General Public License, which may be found in the source kit

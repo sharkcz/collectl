@@ -44,9 +44,10 @@ those statistics will be provided but the warnings produced when they are not
 available you try to select them with \-s will not be displayed.
 .RE
 
-.B "\-A, --address address[:port] | server[:port]"
+.B "\-A, --address address[:port[:timeout]] | server[:port]"
 .RS
-In the first form, one species an address or hostname and optional port.
+In the first form, one specifies an address, optional port
+and timeout (the first colon is required to specify timeout for default port).
 All data is then written to that socket prefaced with the current host
 name at the named address and port until
 the socket is closed, at which time collectl will exit.
@@ -56,7 +57,6 @@ In this form, collectl runs as a server, waiting for a connection and
 once established writes data on that socket.  The key difference here is
 if the client exists collectl keeps running and will again look for a
 new connection, allowing it to survive client restarts or crashes.
-If collectl receives the text "exit" from the client, it will shut down.
 
 The default port is set at 2655 but can be changed \- see collectl.conf.  
 
@@ -222,6 +222,34 @@ field, the default is 7 days.  The
 .BR increment
 field which is also optional (but is position dependent) specifies the duration of
 an individual collection file in minutes the default of which is 1440 or 1 day.
+.RE
+
+.B "--rawdskfilt"
+.RS
+This switch overrides the DiskFilter setting in collectl.conf and explicitly defines
+a perl regx expression against which records from /prod/diskstats are selected for
+processing.  When there are a lot of disks to process, this can be a handy way to reduce
+the amount of data collected and actually improve performance since there are less
+patterns to match each input record against.
+Just remember that unlike --dskfilt which only filters during display, records filtered
+with this switch are never even recorded and so lost forever.
+
+As a side benefit of this switch, if you really want to look at partition level stats
+you can do so by leaving off the trailing space in the default pattern.
+
+One must be also be careful in selecting the correct pattern since it's easy to get it wrong
+and you may end up collecting the WRONG data!  To verify you are collecting what you think
+you are, make a test run using -d4 to see the raw data being recorded in real-time.
+.RE
+
+.B "--rawnetfilt"
+.RS
+This works just like --rawdskfilt except it applies to networks.  Unlike disk filtering
+which has an explicit default pattern, the default for network filtering is to simply
+record all network data from /proc/net/dev.
+
+The -d4 switch also works here, as well as everywhere, to see the raw data as it is being
+collected.
 .RE
 
 .B "--rawtoo"
@@ -1007,6 +1035,11 @@ P \- parent pid
 u \- any process ownerd by this user's UID or in the range specifide by uxxx\-yyy
 .br
 U \- any process owned by this username
+
+.B "caution:"
+the process names collectl tries to match with c and C is the second field in /proc/pid/stat
+which may not necessarily be what you think!  eg the name for X emacs is actually emacs-x
+
 .RE
 
 .B --procopts options

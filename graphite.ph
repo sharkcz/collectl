@@ -532,7 +532,7 @@ usage: --export=graphite,host[:port][,options]
 EOF
 
   print $text;
-  exit;
+  exit(0);
 }
 
 1;

@@ -69,3 +69,40 @@
 /^xTemp/BTempR/
 [ignore]
 /^Fan Redundant/
+
+>ProLiant SL230 Gen8,ProLiant SL250 Gen8<
+[pre]
+/^\d*-//
+/Inlet Ambient/ATemp/
+/CPU/CTemp/
+/Chipset/CTemp/
+/.*P(\d) DIMM (\d).*/$1Temp$2D/
+/HD Max/mTemp/
+/HD C.*/cTemp/
+/HD z.*/zTemp/
+/VR P(\d)Mem Zone/VTemp$1MZ/
+/VR P(\d) ([MZ]).*/VTemp$1$2/
+/VR P(\d)/VTemp$1/
+/SuperCap.*/STemp/
+/LOM Card/lTemp/
+/LOM/LTemp/
+/PCI 2 Zone/pTemp/
+/PCI 2/PTemp/
+/PS Board/uTemp/
+/Sys Ex.*/STemp/
+[post]
+/^STemp/STempE/
+/^cTemp/HTempC/
+/^mTemp/HTempM/
+/^zTemp/HTempZ/
+/^lTemp/LTempC/
+/^pTemp/PTempZ/
+/^uTemp/PTempS/
+
+>SE1170s<
+[pre]
+/Fan(\d)a/F$1a/
+/CPU(\d)_DIMM(.*)/$1Temp$2/
+/HDD BP(\d).*/HTemp$1/
+/PCIE.*/PTemp/
+/Front.*/ATemp/

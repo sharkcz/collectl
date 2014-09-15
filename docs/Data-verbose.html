@@ -83,7 +83,7 @@ If you specify filtering with <i>--dskfilt</i>, the disks that match the pattern
 will either be included or excluded from the the summary data.  However, the data will
 <i>still</i> be collected so if recorded to a file can later be viewed.
 
-<div class=terminal>
+<div class=terminal-wide14>
 <pre>
 # DISK SUMMARY (/sec)
 #KBRead RMerged  Reads SizeKB   KBWrit WMerged Writes SizeKB
@@ -103,7 +103,7 @@ will either be included or excluded from the the summary data.  However, the dat
 
 <p><h3>Inodes/Filesystem, <i>collectl -si</i></h3>
 
-<div class=terminal>
+<div class=terminal-wide14>
 <pre>
 # INODE SUMMARY
 #    Dentries      File Handles    Inodes
@@ -125,7 +125,7 @@ many files and/or directories I create, this number goes up!  Sholdn't it go dow
 
 <p><h3>Infiniband, <i>collectl -sx</i></h3>
 
-<div class=terminal>
+<div class=terminal-wide14>
 <pre>
 # INFINIBAND SUMMARY (/sec)
 #  KBIn   PktIn  SizeIn   KBOut  PktOut SizeOut  Errors
@@ -150,7 +150,7 @@ also detail data for these available as well.  Specifying -sL results in
 data broken out by the file system and --lustopts O further breaks it out by OST.
 Also note the average read/write sizes are only reported when --lustopts is <i>not</i> specified.
 
-<div class=terminal>
+<div class=terminal-wide14>
 <pre>
 # LUSTRE CLIENT SUMMARY
 # KBRead  Reads SizeKB  KBWrite Writes SizeKB
@@ -287,7 +287,7 @@ Note that this report is only available for HP's SFS.
 </table>
 
 <p><b>Lustre Object Storage Server</b>, <i>collectl -sl</i>
-<div class=terminal>
+<div class=terminal-wide14>
 <pre>
 # LUSTRE OST SUMMARY
 # KBRead   Reads  SizeKB KBWrite  Writes  SizeKB
@@ -306,7 +306,7 @@ Note that this report is only available for HP's SFS.
 <p>
 As with client data, when you only get read/write average sizes when
 --lustopt is <i>not</i> specified.
-<div class=terminal>
+<div class=terminal-wide14>
 <pre>
 # LUSTRE OST SUMMARY
 #<--------reads-----------|----writes-----------------
@@ -324,7 +324,7 @@ As with client data, when you only get read/write average sizes when
 
 <p><b>Lustre Object Storage Server</b>, <i>collectl -sl --lustopts D</i>
 
-<div class=terminal>
+<div class=terminal-wide14>
 <pre>
 # LUSTRE DISK BLOCK LEVEL SUMMARY
 #RdK  Rds 0.5K   1K   ...   WrtK Wrts 0.5K   1K   ...
@@ -409,14 +409,32 @@ and laundry pages.</td></tr>
 <td>Total number of pages written by block devices</td></tr>
 </table>
 <p>
-<center><b><i>Note</i></b></center>
-If you include --memopts R, memory and swap values wil be displayed as changes/sec between intervals 
+<center><b><i>Notes</i></b></center>
+If you include <i>--memopts R</i>, memory and swap values wil be displayed as changes/sec between intervals 
 rather than absolute values in addition to page fault information, which is already displayed as rates.
 This switch will also honor -on in that the values will not be normalized to a rate but rather displayed 
 as changes in size per interval.
+<p>
+If you include <i>--memopts</i> with P or V, collectl will only display Physical or Virtual memory.
+The default is PV and will display both.
+
+<p><h3>Memory, <i>collectl -sm --memopts ps</i></h3>
+<p>
+The p and s options allow you to display data about page and/or steal and scan information.  If you want this data combined with
+the standard physical or virtual data you must explicitly request them as well.  The columns show how the memory is allocated
+for the respective sections.
+
+<div class=terminal-wide14>
+<pre>
+# MEMORY SUMMARY
+#<---Other---|-------Page Alloc------|------Page Refill-----><------Page Steal-------|-------Scan KSwap------|------Scan Direct----->
+#  Free Activ   Dma Dma32  Norm  Move   Dma Dma32  Norm  Move   Dma Dma32  Norm  Move   Dma Dma32  Norm  Move   Dma Dma32  Norm  Move
+    14M  136K     2    69   13M     0     0     0     0     0     0     0     0     0     0     0     0     0     0     0     0     0
+</pre></div>
 
 <p><h3>Network, <i>collectl -sn</i></h3>
 <p>
+
 The entries for error counts in the following are actually the total of several
 types of errors.  To get individual error counts, you must either include <i>--netopts e</i>
 or report details on individual interfaces in plot format by specifying -P.  
@@ -427,7 +445,7 @@ If you specify filtering with <i>--netfilt</i>, the names that match the pattern
 will either be included or excluded from the the summary data.  However, the data will
 <i>still</i> be collected so if recorded to a file can later be viewed.
 
-<div class=terminal>
+<div class=terminal-wide14>
 <pre>
 # NETWORK SUMMARY (/sec)
 # KBIn  PktIn SizeIn  MultI   CmpI  ErrsI  KBOut PktOut  SizeO   CmpO  ErrsO
@@ -475,7 +493,7 @@ error counters use <i>--netopts e</i> </td></tr>
 This alternative format, which is displayed when you specify <i>--netopts e</i> enumerates
 the individual error types.  You cannot see both output formats at the same time.
 
-<div class=terminal>
+<div class=terminal-wide14>
 <pre>
 # NETWORK ERRORS SUMMARY (/sec)
 #  ErrIn  DropIn  FifoIn FrameIn    ErrOut DropOut FifoOut CollOut CarrOut
@@ -554,7 +572,7 @@ noting that not all types of nfs version report all as V3 clients/servers do.</t
 <p>The data reported for clients is slightly different, specifically the 
 retrans and authref fields.
 
-<div class=terminal>
+<div class=terminal-wide14>
 <pre>
 # NFS CLIENT (/sec)
 #<----------RPC---------><---NFS V3--->
@@ -613,7 +631,7 @@ counts.</td></tr>
 
 <p>This is format for the new <i>slub</i> allocator
 
-<div class=terminal>
+<div class=terminal-wide14>
 <pre>
 # SLAB SUMMARY
 #<---Objects---><-Slabs-><-----memory----->
@@ -649,7 +667,7 @@ in effect, this number will be equal to the Slabs field reported by -sm.</td></t
 
 <p><h3>Sockets, <i>collectl -ss</i></h3>
 
-<div class=terminal>
+<div class=terminal-wide14>
 <pre>
 # SOCKET STATISTICS
 #      <-------------Tcp------------->   Udp   Raw   <---Frag-->
@@ -675,7 +693,7 @@ in effect, this number will be equal to the Slabs field reported by -sm.</td></t
 
 <p><h3>TCP, <i>collectl -st</i></h3>
 
-<div class=terminal>
+<div class=terminal-wide14>
 <pre>
 # TCP SUMMARY (/sec)
 # PureAcks HPAcks   Loss FTrans

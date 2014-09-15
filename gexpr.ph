@@ -686,7 +686,7 @@ usage: --export=gexpr,host:port[,options]
 EOF
 
   print $text;
-  exit;
+  exit(0);
 }
 
 1;

@@ -531,7 +531,7 @@ usage: --export=lexpr[,options]
 EOF
 
   print $text;
-  exit;
+  exit(0);
 }
 
 1;

@@ -1,7 +1,5 @@
 # copyright, 2003-2009 Hewlett-Packard Development Company, LP
 
-# usage: snmp[,o=[icmtuIT]
-
 # NOTE - everyting in absolute value NOT /sec except:
 #    o=i  InReceives, InDelivers, OutRequests
 #    o=t  ActiveOpens, PassiveOpens, OutSegs, InSegs
@@ -10,10 +8,12 @@
 # Allow reference to collectl variables, but be CAREFUL as these should be treated as readonly
 our ($miniFiller, $rate, $SEP, $datetime, $intSecs, $showColFlag, $verboseFlag);
 
+use strict;
+
 # Global to this module
 my $intervalCounter=0;
 my $options='';
-my ($ipErrors, $icmpErrors, $tcpErrors, $udpErrors);
+my (%snmp, $ipErrors, $icmpErrors, $tcpErrors, $udpErrors);
 my ($tcpLossTOT, $tcpRetransTOT, $ipErrorsTOT, $icmpErrorsTOT, $tcpErrorsTOT, $udpErrorsTOT);
 
 sub snmpInit
@@ -22,19 +22,20 @@ sub snmpInit
   my $impKeyref= shift;
 
   # Options are 'icmtu', standing for Ip, Icmp, IcmpMsg, Tcp and Udp
-  $opts=$$impOptsref;
+  my $opts=$$impOptsref;
   $options='i'    if $verboseFlag;    # we need to set it to something!
   if (defined($opts))
   {
     foreach my $option (split(/,/,$opts))
     {
       my ($name, $value)=split(/=/, $option);
-      error("invalid snmp option: '$name'")    if $name !~/[o]/;
-      error("o= values must be a combination of 'icmtu'")    if $value!~/^[icmtuIT]+$/;
+      error("invalid snmp option: '$name'")    if $name !~/[ho]/;
+      error("o= values must be a combination of 'cimtuIT'")    if $name eq 'o' && $value!~/^[cimtuIT]+$/;
       $options=$value;
       $verboseFlag=1;    # forces --verbose
     }
   }
+  snmphelp()         if defined($$impOptsref) && $$impOptsref=~/h/;
   error('IcmpMsg not being recorded')    if $options=~/m/ && `cat /proc/net/snmp`!~/IcmpMsg/;
 
   # These may not always be available in all releases
@@ -157,7 +158,7 @@ sub snmpPrintVerbose
   my $homeFlag=   shift;
   my $lineref=    shift;
 
-  $line='';
+  my $line='';
   $$lineref='';
   if ($printHeader)
   {
@@ -316,4 +317,24 @@ sub snmpPrintExport
   }
 }
 
+sub snmphelp
+{
+  my $help=<<SNMPEOF;
+
+usage: snmp,o=[cimtuIT]
+
+where options can be any combination of
+  c - ICMP
+  i - IP Pkts
+  m - ICMP Msg
+  t - TCP
+  u - UDP
+  I - Extended IP
+  T - Extended TCP
+
+SNMPEOF
+
+  print $help;
+  exit;
+}
 1;

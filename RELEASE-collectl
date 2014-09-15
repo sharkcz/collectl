@@ -41,6 +41,52 @@ KNOWN PROBLEMS/RESTRICTIONS
 
 CHANGES
 
+3.6.3-2      May 01, 2012
+  - finally remembered to remove readS from the kit [thanks joseba]
+  - when filtering a process by the fill path with 'f', never include collectl itself
+  - documented utime in manpage
+  - if -i0 set $DefNetSpeed to 0 so we don't throw any 'bogus' network speed messages
+  - new switches, --rawdiskfilt and --rawnetfilt, allow one to filter disks/nets at time
+    of data collection so they never appear in raw file
+  - added call to IntervalEnd() (if it exists) for --import
+  - add option timeout to --address when connecting back to explicit address
+  - moved code that deal with fractional intervals and !HiRes closer to other interval processing
+  - added 'strict' to snmp module as well as 'help' option: snmp,h
+  - fixed problems with --import
+    - if --import is used to generate detail data with -f and -P not specified, collectl throws an error
+      trying to close the detail log which clearly hasn't been created
+    - when using interval other than the defaul AND -s-all, blank lines are printed for standard intervals
+      which don't have imported data.  this applied to brief, verbose AND detail data
+  - added some more systems to envrules: Proliant SL230
+/SL250 Gen 8 and SE1170s
+
+3.6.3-1      Mar 03, 2012
+  - fixed serious bug introduced a number of versions ago, which during playback of multiple files
+    and specifying date/time caused collectl to continue reading first timestamp in each file
+    and generating 'uninit variable' errors.  not harmful, but inefficient and ugly!
+  - added exit codes of 0/1 to all the exit points
+  - moved help text for --stats from basic to extended
+  - found $file=~/rawp/ near line 1440 clearing $1, $2 and $3 and so $prefix, $fileDate and $fileTime
+    were not getting set correctly
+  - clarified 'No files processed' message to be a little more explicit
+  - broaden where collectl looks for lustre modules and also fixed a typo
+    of $lustops to $lustOpts [thanks brian]
+  - procAnalize incorrectly totaling fault totals instead if interval values [thanks andy]
+  - limit sizes of -procfilt for username/command to 19 and 15 respectively
+  - change order of ps command in loadPids() so they return max length fields for user/command
+  - remove () from command field from /proc/pid/stat in pidNew()
+  - optimize new pid processing with --procfilt
+    - add new pids to pidSkip{} as appropriate
+    - undef pidSkip{} whenever pids wrap
+  - added hello.ph and graphite.ph to INSTALL
+  - was incorrectly setting DiskFilterFlag to 1 all the time, even when not overridden in 
+    collectl.conf.  while not a bug, it does cause a slight increase in overhead
+
+3.6.2-1    Feb 28, 2012
+  - changed behavior of --runas to no longer require a change to /etc/init.d/collectl
+    as it now uses /var/run to write collectl.pid into.  this means to ineract with a
+    non-root daemon, you still need to be root, which makes sense.
+
 3.6.1-4	   Feb 20, 2012
   - removed --ssh switch, making detecting the parent going away the default behavior
   - added switch --nohup which will allows collectl to continue running if parent exits,

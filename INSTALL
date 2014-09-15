@@ -31,6 +31,7 @@ cp UNINSTALL             $SHRDIR
 cp formatit.ph           $SHRDIR
 cp lexpr.ph sexpr.ph     $SHRDIR
 cp gexpr.ph misc.ph      $SHRDIR
+cp hello.ph graphite.ph  $SHRDIR
 cp envrules.std          $SHRDIR
 cp snmp.ph               $SHRDIR
 cp vmstat.ph             $SHRDIR

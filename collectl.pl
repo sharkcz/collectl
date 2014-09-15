@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 
-# Copyright 2003-2011 Hewlett-Packard Development Company, L.P. 
+# Copyright 2003-2012 Hewlett-Packard Development Company, L.P. 
 #
 # collectl may be copied only under the terms of either the Artistic License
 # or the GNU General Public License, which may be found in the source kit
@@ -20,7 +20,7 @@
 #               and ### if from formatit.ph
 # 1024 - show list of SLABS to be monitored
 # 2048 - playback preprocessing 
-# 4096 - not used
+# 4096 - report pidNew() management of pidSkip{}
 # 8192 - show creation of RAW, PLOT and files
 
 # debug tricks
@@ -108,8 +108,8 @@ require "Sys/Syslog.pm"    if !$PcFlag;
 $rootFlag=(!$PcFlag && `whoami`=~/root/) ? 1 : 0;
 $SrcArch= $Config{"archname"};
 
-$Version=  '3.6.1-4';
-$Copyright='Copyright 2003-2011 Hewlett-Packard Development Company, L.P.';
+$Version=  '3.6.3-2';
+$Copyright='Copyright 2003-2012 Hewlett-Packard Development Company, L.P.';
 $License=  "collectl may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
 
@@ -229,6 +229,7 @@ $PasswdFile='/etc/passwd';
 $umask='';
 $DiskMaxValue=-1;    # disabled
 
+# NOTE - the following line should match what is in collectl.conf.  If uncommented there, it will be replaced
 $DiskFilter='cciss/c\d+d\d+ |hd[ab] | sd[a-z]+ |dm-\d+ |xvd[a-z] |fio[a-z]+ | vd[a-z]+ |emcpower[a-z]+ |psv\d+ ';
 $DiskFilterFlag=0;   # only set when filter set in collectl.conf
 $ProcReadTest='yes';
@@ -348,6 +349,7 @@ $dskFilt=$netFilt='';
 $dskOpts=$netOpts=$xOpts='';
 $utimeMask=0;
 $comment=$runas='';
+$rawDskFilter=$rawNetFilter='';
 
 my ($extract,$extractMode)=('',0);
 
@@ -464,6 +466,8 @@ GetOptions('align!'     => \$alignFlag,
 	   'procopts=s'    => \$procOpts,
            'procstate=s'   => \$procState,
            'rawtoo!'       => \$rawtooFlag,
+           'rawdskfilt=s'  => \$rawDskFilter,
+           'rawnetfilt=s'  => \$rawNetFilter,
            'runas=s'       => \$runas,
            'showsubsys!'   => \$showSubsysFlag,
            'showoptions!'  => \$showOptionsFlag,
@@ -492,9 +496,6 @@ if ($runas ne '')
   my ($runasUser,$runasGroup)=split(/:/, $runas);
   error("--runas must at least specify a user")   if $runasUser eq '';
 
-  # make sure we write the pidfile in the logging directory instead of /var/run
-  $PidFile=(-d $filename) ? "$filename/collectl.pid" : "$filename-collectl.pid";
-
   if ($runasUser!~/^\d+$/)
   {
     $runasUid=(split(/:/, `grep $runasUser /etc/passwd`))[2];
@@ -508,11 +509,11 @@ if ($runas ne '')
   $runasUid=$runasUser     if $runasUser=~/^\d+/;
   $runasGid=$runasGroup    if defined($runasGroup) && $runasGroup=~/^\d+/;
 
-  # let's make sure the owner/group of the log directory match
-  my $piddir=dirname($PidFile);
-  ($uid,$gid)=(stat($piddir))[4,5];
+  # let's make sure the owner/group of the logging directory match
+  my $logdir=dirname("$filename/collectl");
+  ($uid,$gid)=(stat($logdir))[4,5];
 
-  error("Ownership of '$piddir' doesn't match '$runas'")
+  error("Ownership of '$logdir' doesn't match '$runas'")
       if ($uid!=$runasUid) || (defined($runasGid) && $gid!=$runasGid);
 
   # Daemon also means --nohup
@@ -539,8 +540,9 @@ if ($address ne '')
 {
   if ($address=~/\./)
   {
-    ($address,$port)=split(/:/, $address);
-    $port=$Port    if !defined($port);
+    ($address,$port,$timeout)=split(/:/, $address);
+    $port=$Port    if !defined($port) || $port eq '';
+    $Timeout=$timeout    if defined($timeout);
 
     $socket=new IO::Socket::INET(
         PeerAddr => $address,
@@ -611,7 +613,7 @@ if ($XSwitch)
   showTopopts(1);
   printText("$Copyright\n");
   printText("$License\n");
-  exit;
+  exit(0);
 }
 
 error('invalid value for --lustopts')                     if $lustOpts ne '' && $lustOpts!~/^[BDMOR]+$/;
@@ -650,6 +652,15 @@ if ($allFlag)
 $options= $userOptions;
 $interval=($userInterval ne '') ? $userInterval : $Interval;
 $subsys=  ($userSubsys ne '')   ? $userSubsys   : $SubsysCore;
+
+# NOTE - technically we could allow fractional polling intervals without
+# HiRes, but then we couldn't properly report the times.
+if ($interval=~/\./ && !$hiResFlag)
+{
+  $interval=int($interval+.5);
+  $interval=1    if $interval==0;
+  print "need to install HiRes to use fractional intervals, so rounding to $interval\n";
+}
 
 # ultimately we only use when doing process data
 error("password file '$passwdFile' doesn't exist")    if $passwdFile ne '' && !-e $passwdFile;
@@ -838,6 +849,7 @@ if ($import ne '')
     push @impGetData,      "${impName}GetData";
     push @impGetHeader,    "${impName}GetHeader";
     push @impInitInterval, "${impName}InitInterval";
+    push @impIntervalEnd,  "${impName}IntervalEnd";
     push @impAnalyze,      "${impName}Analyze";
     push @impUpdateHeader, "${impName}UpdateHeader";
     push @impPrintBrief,   "${impName}PrintBrief";
@@ -860,6 +872,7 @@ if ($import ne '')
       splice(@impGetData,      $i, 1);
       splice(@impGetHeader,    $i, 1);
       splice(@impInitInterval, $i, 1);
+      splice(@impIntervalEnd,  $i, 1);
       splice(@impAnalyze,      $i, 1);
       splice(@impUpdateHeader, $i, 1);
       splice(@impPrintBrief,   $i, 1);
@@ -929,6 +942,7 @@ error("--grep only applies to -p")                         if $grepPattern ne ''
 error('--headerrepeat must be an integer')                 if $headerRepeat!~/^[\-]?\d+$/;
 error('--headerrepeat must be >= -1')                      if $headerRepeat<-1;
 
+error("-i not allowed with -p")                            if $userInterval ne '' && $playback ne '';
 error("--rawtoo does not work in playback mode")           if $rawtooFlag && $playback ne '';
 error("--rawtoo requires -f")                              if $rawtooFlag && $filename eq '';
 error("--rawtoo requires -P or --export")                  if $rawtooFlag && !$plotFlag && $export eq '';
@@ -969,7 +983,15 @@ $allThreadFlag=($procOpts=~/t/) ? 1 : 0;
 $SEP=' '                    if !defined($SEP);
 $SEP=sprintf("%c", $SEP)    if $SEP=~/\d+/;
 
-# DISK and NETWORK filtering
+# Both kinds of DISK and NETWORK filtering
+# Remember, this filter overrides the one in collectl.conf
+if ($rawDskFilter ne '')
+{
+  $DiskFilter=$rawDskFilter;
+  $DiskFilterFlag=1;
+}
+
+# This is applied AFTER the raw disk records are read and possibly filtered
 $dskFiltKeep='';
 $dskFiltIgnore='';
 my $ignoreFlag=($dskFilt=~s/^\^//) ? 1 : 0;
@@ -982,6 +1004,9 @@ $dskFiltKeep=~s/^\|//;
 $dskFiltIgnore=~s/^\|//;
 print "DskFilt - Ignore: $dskFiltIgnore  Keep: $dskFiltKeep\n"    if $debug & 1;
 
+# Unlike the raw disk filter which uses a flag to decided whether or not to use
+# if, if the raw net filter is non-blank its very presence is the flag so nothing
+# to set
 $netFiltKeep='';
 $netFiltIgnore='';
 $ignoreFlag=($netFilt=~s/^\^//) ? 1 : 0;
@@ -1084,16 +1109,6 @@ error("Valid values for --lustsvcs are any combinations of cmoCMO")
     if $lustreSvcs!~/^[cmo]*$/i;
 error("lustre config check interval must be numeric")
     if $lustreConfigInt!~/^\d+$/;
-
-# NOTE - technically we could allow fractional polling intervals without
-# HiRes, but then we couldn't properly report the times.
-error("-i not allowed with -p")    if $userInterval ne '' && $playback ne '';
-if ($interval=~/\./ && !$hiResFlag)
-{
-  $interval=int($interval+.5);
-  $interval=1    if $interval==0;
-  print "need to install HiRes to use fractional intervals, so rounding to $interval\n";
-}
 
 # some restrictions of plot format -- can't send to terminal for slabs or
 # processes unless only 1 subsystem selected.  quite frankly I see no reason
@@ -1277,7 +1292,7 @@ if ($playback ne "")
     }
   }
   error("can't find any files matching '$playback'")    if !$foundFlag;
-  exit    if $showHeaderFlag;
+  exit(0)    if $showHeaderFlag;
 }
 
 # end time
@@ -1434,11 +1449,13 @@ if ($playback ne '')
   while (my $file=glob($playback))
   {
     next    if $file!~/(.*)-(\d{8})-(\d{6})\.(raw[p]*)/;
-    next    if $file=~/rawp/ && $statsFlag;    # we never look at rapw files when doing stats
-
     my $prefix=  $1;
     my $fileDate=$2;
     my $fileTime=$3;
+
+    # we never look at rawp files when doing stats
+    next    if $file=~/rawp/ && $statsFlag;
+
     $firstFileDate=$fileDate    if $firstFileDate==0;
     $numSelected++;
 
@@ -1502,6 +1519,7 @@ if ($playback ne '')
   $elapsedSecs=0;
   preprocessPlayback(\@playbackList);
 
+  $doneFlag=0;
   $lastPrefix=$lastHost=$prefixPrinted=$lastSubsys='';
   foreach $file (@playbackList)
   {
@@ -1915,6 +1933,7 @@ if ($playback ne '')
     $fullTime=0;        # so we don't get uninit first time we do $microInterval calculation
     $bytes=1;           # so no compression error on non-zipped files
     $numProcessed++;    # it's not until we get here that we can say this
+
     while (1)
     {
       # read a line from either zip file or plain ol' one
@@ -1965,7 +1984,13 @@ if ($playback ne '')
 	my $thisSeconds=$1+$timeAdjust;
         $lastSeconds[$rawPFlag]=(defined($newSeconds[$rawPFlag])) ? $newSeconds[$rawPFlag] : 0;
   	$skip=0    if $fromSecs && $thisSeconds>=$fromSecs;
-        last       if $thruSecs && $lastSeconds[$rawPFlag]>$thruSecs;
+
+        # since we're in an inner loop we need a flag
+        if ($thruSecs && $lastSeconds[$rawPFlag]>$thruSecs)
+        {
+	  $doneFlag=1;
+          last;
+        }
 
         # Always echo timestamp in extract mode when we're processing this interval
         if ($extractMode && !$skip)
@@ -2099,6 +2124,8 @@ if ($playback ne '')
 
     # This should be pretty rare..
     logmsg("E", "Error reading '$file'\n")    if $bytes==-1;
+
+      last    if $doneFlag;
   }
 
   # Close logs that are open from last pass
@@ -2118,8 +2145,9 @@ if ($playback ne '')
   }
 
   `stty echo`    if !$PcFlag && $termFlag && !$backFlag;   # in brief mode, we turned it off
-  print "No files processed\n"    if !$numProcessed;
-  exit;
+  my $temp=(!$msgFlag) ? '  Try again with -m.' : '';
+  print "No files selected contain the selected data.$temp\n"    if !$numProcessed;
+  exit(0);
 }
 
 ###########################
@@ -2195,7 +2223,7 @@ $recVersion=$Version;
 if ($envTestFile ne '')
 {
   envTest();
-  exit;
+  exit(0);
 }
 
 # Since we have to check subsystem specific options against data in recorded 
@@ -2251,7 +2279,7 @@ if ($daemonFlag)
 
   # fork a child and exit parent, but make sure fork really works
   defined(my $pid=fork())     or logmsg("F", "Can't fork: $!");
-  exit    if $pid;
+  exit(0)    if $pid;
 
   # Make REALLY sure we're disassociated
   setsid()                   or logmsg("F", "Couldn't setsid: $!");
@@ -2265,7 +2293,7 @@ if ($daemonFlag)
   # GID is optional.
   if ($runas ne '')
   {
-    # we have to make sure the owner ship of the message log and pidfile are correct.
+    # we have to make sure the owner ship of the message log is correct.
     # This is only an issue for the msglog when a new file gets created to log the first 
     # messge of the month and we've restarted as root.  Steal the code from logmsg() to
     # build its name.
@@ -2274,14 +2302,8 @@ if ($daemonFlag)
     $logname=(-d $filename) ? $filename : dirname($filename);
     $logname.="/$myHost-collectl-$yymm.log";
 
-    foreach my $file ($logname, $PidFile)
-    {
-      `chown $runasUid $file`;
-      if (defined($runasGid))
-      {
-        `chgrp $runasGid $file`;
-      }
-    }
+    `chown $runasUid $logname`;
+    `chgrp $runasGid $logname`    if defined($runasGid);
 
     # now we can change our process's ownership taking care to do the group first
     # since we won't be able to change anything once we change our UID.
@@ -2363,6 +2385,9 @@ else
   $limit3=($ui3 eq '') ? 30 : $ui3;
   $interval2=$interval3=0;
   print "Interval Lim2: $limit2  Lim3: $limit3\n"    if $debug & 1;
+
+  # make sure no 'bogus network speed' errors
+  $DefNetSpeed=0;
 }
 
 if ($groupFlag)
@@ -2373,7 +2398,7 @@ if ($groupFlag)
   # DUE to what seems to be a bug in zlib 2.02 (and maybe others), you cannot flush a buffer
   # twice in a row w/o writing to it.  A shorter interval causes that to happen to rawp.gz.
   error("cannot use -F0 with --tworaw when interval1 not equal interval2")             if !$flush && $interval!=$interval2;
-  error("flush time cannot be < process collection interval, when using --tworaw")    if $flush && $flush<$interval2;
+  error("flush time cannot be < process collection interval, when using --tworaw")     if  $flush && $flush<$interval2;
 }
 
 # Note that even if printing in plotting mode to terminal we STILL call newlog
@@ -2388,7 +2413,7 @@ if ($showHeaderFlag && $playback eq '')
   initRecord();
   my $temp=buildCommonHeader(0, undef);
   printText($temp);
-  exit;
+  exit(0);
 }
 
 # If HiRes had been loaded and we're NOT doing 'time' tests, we want to 
@@ -2484,6 +2509,7 @@ printf "%c[3;%dr", 27, $scrollEnd    if $scrollEnd;
 #    M a i n    P r o c e s s i n g    L o o p
 
 # This is where efficiency really counts
+my $lastFirstPid=0;
 for (; $count!=0 && !$doneFlag; $count--)
 {
   # When in server mode we always need to check for readable socket
@@ -2748,7 +2774,10 @@ for (; $count!=0 && !$doneFlag; $count--)
 
   if ($nFlag || $NFlag)
   {
-    getProc(0, "/proc/net/dev", "Net", 2);
+    if ($rawNetFilter eq '')
+    { getProc(0, "/proc/net/dev", "Net", 2); }
+    else
+    { getProc(7, "/proc/net/dev", "Net", 2); }
   }
 
   if ($xFlag || $XFlag)
@@ -2869,6 +2898,9 @@ for (; $count!=0 && !$doneFlag; $count--)
 
     if ($ZFlag)
     {
+      # need to know when we're looking at the first proc of this interval
+      $firstProcCycle=1;
+
       # Process Monitoring RULES
       # if --procopt p OR --procfilt p and only pids
       # - only look at pids in %pidProc and nothing more
@@ -3677,6 +3709,11 @@ sub getProc
       last    if $memOpts!~/s/ && $line=~/^pgst/;        # ignore from pgstead forward
       last    if $line=~/^pginode/;                      # ignore from pginodesteal and below
       record(2, "$line");
+    }
+
+    elsif ($type==7)
+    {
+      if ($line=~/$rawNetFilter/)        { record(2, "$tag $line"); next; }
     }
 
     # NFS
@@ -5057,8 +5094,8 @@ sub closeLogs
     $ZPRC-> gzclose()     if $ZFlag && $plotFlag && !$rawtooFlag && !$procAnalOnlyFlag;
   }
 
-  # Finally, close any detail logs that may have been opened via --import
-  for (my $i=0; $i<$impNumMods; $i++)
+  # Finally, if generating plot files, close any detail logs that may have been opened via --import
+  for (my $i=0; $plotFlag && $i<$impNumMods; $i++)
   {
     next    if $impOpts[$i]!~/d/;
     close $impText[$i]       if !$zFlag;
@@ -5232,7 +5269,7 @@ sub loadConfig
       $PasswdFile=$value       if $param=~/^Passwd/;
 
       $DiskMaxValue=$value     if $param=~/^DiskMaxValue/;
-      $DiskFilter=$value       if $param=~/^DiskFilter/;
+      $dISKfILTER=$value       if $param=~/^DiskFilter/;  # note different spelling!!!
 
       $ProcReadTest=$value     if $param=~/^ProcReadTest/;
     }
@@ -5261,10 +5298,13 @@ sub loadConfig
       $Ipmitool=$bin    if -e $bin;
   }
 
-  if (defined($DiskFilter))
+  # Unlike other parameters that can be overridden in collectl.conf, we DO need to know if
+  # that has been done with DiskFilter so we can set the flag correctly and only then
+  if (defined($dISKfILTER))
   {
     # the leading/trailing /s are just there for ease of reading in collectl.conf
     $DiskFilterFlag=1;
+    $DiskFilter=$dISKfILTER;
     $DiskFilter=~s/^\///;
     $DiskFilter=~s/\/$//;
     print "DiskFilter set in $configFile: >$DiskFilter<\n"    if $debug & 1;
@@ -5465,6 +5505,12 @@ sub loadPids
       # pids must be numeric
       error("pid $value not numeric in --procfilt")    if $type=~/p/i && $value!~/^\d+$/;
 
+      # max usernames returned by ps w/o converting to UID looks to be 19
+      error("cannot use usernames > 19 chars with procfilt")    if $type=~/U/ && length($value)>19;
+
+      # max command name length returned by ps o comm looks to be 15
+      error("cannot use commands > 15 chars with procfilt c/C")    if $type=~/c/i && length($value)>15;
+
       # when dealing with embedded string in command line, note that spaces
       # are converted to NULs, so do it to our match string so it only happens
       # once and also be sure to quote any meta charaters the user may have
@@ -5488,11 +5534,11 @@ sub loadPids
 
   # Step 3 - find pids of all processes that match selection criteria
   #          be sure to truncate leading spaces since pids are fixed width
-  # Note: $cmd incudes full directory path and args.  Furthermore, this is NOT
+  # Note: $cmd includes full directory path and args.  Furthermore, this is NOT
   # what gets stored in /proc/XXX/stat and to make sure we look at the same 
   # values dynamically as well as staticly, we better pull cmd from the stat
   # file itself.
-  @ps=`ps axo pid,ppid,user,uid`;
+  @ps=`ps axo pid,ppid,uid,comm,user`;
   my $firstFilePass=1;
   foreach $process (@ps)
   {
@@ -5500,14 +5546,7 @@ sub loadPids
     $process=~s/^\s+//;
 
     chomp $process;
-    ($pid, $ppid, $user, $uid)=split(/\s+/, $process, 4);
-
-    # if we can't read proc, process must have existed
-    next    if !open PROC, "</proc/$pid/stat";
-    $line=<PROC>;
-    close PROC;
-    $cmd=(split(/ /, $line))[1];
-    $cmd=~s/[()]//g;
+    ($pid, $ppid, $uid, $cmd, $user)=split(/\s+/, $process);
 
     # if no criteria, select ALL
     if ($procs eq '')
@@ -5678,8 +5717,10 @@ sub pidNew
       open PROC, "</proc/$pid/stat" or return(0);
       $temp=<PROC>;
       ($cmd, $ppid)=(split(/ /, $temp))[1,3];
+      $cmd=~s/[()]//g;
+
       if (($type eq 'P' && $param==$ppid)      ||
-          ($type eq 'C' && $cmd=~/^\($param/) ||
+          ($type eq 'C' && $cmd=~/^$param/) ||
           ($type eq 'c' && $cmd=~/$param/))
       {
         $match=$pid;
@@ -5712,6 +5753,41 @@ sub pidNew
       if $match && ($debug & 256);
   $pidProc{$match}=1     if $match!=0;
   findThreads($match)    if $match && $oneThreadFlag && $pidThreads{$pid};
+
+  # since this pid didn't match selection criteria, don't look at it again.
+  # but, whenever we cycle though all the pids and delete the entire 'skip'
+  # hash so in case someone we reuses a pid we skipped.
+  if (!$match)
+  {
+    $pidSkip{$pid}=1;
+
+    my $num=0;
+    foreach my $pid (keys %pidSkip)
+    { $num++; }
+
+    # we only care about the first pid seen at the start of a monitoring interval
+    if ($firstProcCycle)
+    {
+      if ($debug & 4096)
+      {
+       my $seconds=int($fullTime);
+       my $timenow=(split(/\s+/, localtime($seconds)))[3];
+       printf "$timenow New PID: %5d  LastNew: %5d NumPids: %4d NumSkip: $num\n", 
+           $pid, $lastFirstPid, $pid-$lastFirstPid;
+      }
+
+      if ($pid<$lastFirstPid)
+      {
+	undef(%pidSkip);
+	$pid=0;    # so we reset $lastFirstPid
+	print "skipped pids flushed...\n"    if $debug & 4096;;
+      }
+
+      $firstProcCycle=0;
+      $lastFirstPid=$pid;
+    }
+  }
+
   return($match);
 }
 
@@ -5721,6 +5797,10 @@ sub cmdHasString
   my $pid=   shift;
   my $string=shift;
   my $line;
+
+  # never include ourself when matching by a command line string since it will
+  # ALWAYS match the collectl command itself
+  return()    if $pid==$$;
 
   # Not an error because proc may have already exited
   return(0)    if (!open PROC, "</proc/$pid/cmdline");
@@ -5845,7 +5925,7 @@ sub showSlabAliases
     next    if $slab eq $aliaslist;
     printf "%-20s %s\n", $slab, $aliaslist    if $aliaslist=~/ /;
   }
-  exit;
+  exit(0);
 }
 
 sub showVersion
@@ -5858,7 +5938,7 @@ sub showVersion
   $version.="$Copyright\n";
   $version.="$License\n";
   printText($version);
-  exit;
+  exit(0);
 }
 
 sub showDefaults
@@ -5879,7 +5959,7 @@ sub showDefaults
   printText("  Timeout       = $Timeout\n");
   printText("  MaxZlibErrors = $MaxZlibErrors\n");
   printText("  Libraries     = $Libraries\n")    if defined($Libraries);
-  exit;
+  exit(0);
 }
 
 sub envTest
@@ -5938,8 +6018,6 @@ usage: collectl [switches]
                                   z - turn off compression of plot files
   -p, --playback   file       playback results from 'file'
   -P, --plot                  generate output in 'plot' format
-      --stats                 same as -oA
-      --sumstat               same as --stats but only summary
   -s, --subsys     subsys     specify one or more subsystems [default=cdn]
       --verbose               display output in verbose format (automatically
                               selected when brief doesn't make sense)
@@ -5965,7 +6043,7 @@ $Copyright
 $License
 EOF
 printText($help);
-exit;
+exit(0);
 }
 
 sub extendHelp
@@ -5977,7 +6055,8 @@ This is the complete list of switches, more details in man page
       --all                     selects 'all' summary subsystems except slabs,
                                 which means NO detail or process data either
 			          note: the opposite of --all is -s-all
-  -A, --address    addr         write output to socket
+  -A, --address    addr[:port[:time]]      open a socket/port on addr with optional
+                                timeout OR run as a server with no timeout
       --comment    string       add the string to the end of the header
   -C, --config     file         use alternate collectl.conf file
   -c, --count      count        collect this number of samples and exit
@@ -6022,8 +6101,10 @@ This is the complete list of switches, more details in man page
                                   where unit is w,d,h,m,s
       --sep        separator    specify an alternate plot format separator
       --slabanalyze             analyze slab data, generating slbs file
+      --stats                   same as -oA
   -s, --subsys     subsys       record/playback data from one or more subsystems
                                   --showsubsys for details
+      --sumstat                 same as --stats but only summary
       --thru       time         time thru which to playback data (see --from)
       --top        [type][,num] show top 'num' processes sorted by type
                                   --showtopopts for details
@@ -6067,7 +6148,7 @@ return    if defined($_[0]);
 
 printText("$Copyright\n");
 printText("$License\n");
-exit;
+exit(0);
 }
 
 sub showSubsys
@@ -6114,7 +6195,7 @@ immediately following -s with a + and/or -
              data collected with --import and you ONLY want to see that data
 EOF3
 printText($subsys);
-exit    if !defined($_[0]);
+exit(0)    if !defined($_[0]);
 }
 
 sub showOptions
@@ -6157,7 +6238,7 @@ File Header Information
                                    
 EOF4
 printText($options);
-exit    if !defined($_[0]);
+exit(0)    if !defined($_[0]);
 }
 
 sub showSubopts
@@ -6316,7 +6397,7 @@ Slab Options and Filters
 EOF5
 
 printText($subopts);
-exit    if !defined($_[0]);
+exit(0)    if !defined($_[0]);
 }
 
 sub showTopopts
@@ -6383,13 +6464,21 @@ TOP SLAB SORT FIELDS
 EOF5
 
 printText($subopts);
-exit    if !defined($_[0]);
+exit(0)    if !defined($_[0]);
 }
 
 sub whatsnew
 {
   my $whatsnew=<<EOF6;
 What's new in collectl since January 2011?
+
+version 3.6.3
+- new switch:   --rawdskfilt overrides DskFilter in collectl.conf
+- new switch:   --rawnetfilt does for networks what DiskFilter does for disks
+- fixed problem during process owner filtering
+
+version 3.6.2
+- changed behavior of how to use --runas for non-root daemons
 
 version 3.6.1
 - when using -on, CPU loads will now be reported in jiffies
@@ -6462,5 +6551,5 @@ Version 3.5.0
 EOF6
 
   printText($whatsnew);
-  exit;
+  exit(0);
 }

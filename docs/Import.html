@@ -130,6 +130,7 @@ checked by examining <i>$plotFlag</i> in your init routine),  you can safely lea
 <tr><td>GetHeader</td><td>During playback only, supply the header for additional initialization</td></tr>
 <tr><td>Init</td><td>One time initializations are performed here</td></tr>
 <tr><td>InitInterval<td>Initializations required for each processing cycle</td></tr>
+<tr><td>IntervalEnd<td>Optional routine, called at end of each processing cycle if defined</td></tr>
 <tr><td>PrintBrief</td><td>Build output strings for brief format</td></tr>
 <tr><td>PrintExport</td><td>Build output strings for formatting by gexpr, lexpr and sexpr, which are 
 3 standard collectl <i>--export</i> modules</td></tr>
@@ -252,6 +253,12 @@ During each data collection interval, collectl may need to reset some counters. 
 processing disk data, collectl adds together all the disk stats for each interval which are then
 reported as summary data.  At the beginning of each interval these counters must be reset to 0
 and it's at that point in the processing that this routine is called.
+
+<p><b>IntervalEnd()</b>
+<p>
+As described earlier, if this routine exists it is called at the end of an interval processing cycle.
+This makes it possible to do any post processing that may be require before the start of the next
+interval.  In many cases this is not necessary.
 
 <p><b>PrintBrief($type, \$line)</b>
 <p>

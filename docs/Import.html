@@ -1,7 +1,7 @@
 <html>
 <head>
 <link rel=stylesheet href="style.css" type="text/css">
-<title>Importing Custom Datag</title>
+<title>Importing Custom Data</title>
 </head>
 
 <body>
@@ -11,7 +11,7 @@
 <p>
 The mechanism for including custom recording/reporting code into collectl is very similar to that for
 exporting custom data.  One uses the switch <i>--import</i> followed by one or more file names, separated
-by colons.  Following each file name are one or more file-specfic arguments which if specified are
+by colons.  Following each file name are one or more file-specific arguments which if specified are
 comma separated as shown below:
 
 <div class=terminal>
@@ -34,7 +34,7 @@ any standard collectl data, record to raw or plot files, play back the data and 
 over a socket.
 <p>
 From time to time additional <i>import</i> modules may be included in collectl which may also be used
-as referencee.  For example, the module <i>misc.ph</i> is now also part of collectl.  It imports data
+as reference.  For example, the module <i>misc.ph</i> is now also part of collectl.  It imports data
 about the uptime, number of people logged in, the cpu frequency and the number of mounted nfs file
 systems.
 <p>
@@ -47,7 +47,7 @@ variable of the same name that collectl does and accidentally step on it.
 One of the key design objectives for collectl is efficiency and it is indeed very lightweight, 
 typically using less than 0.2% of the CPU when sampling once every 10 seconds.  Another way to 
 look at this is it often uses less than 192 CPU seconds in the course of an entire day.
-If you care about overhead, and your should, be sure to be as efficient as you can in your own code.
+If you care about overhead, and you should, be sure to be as efficient as you can in your own code.
 If you have to run a command to get your data instead of reading it from /proc, that will be more
 expensive.  If that command has to do a lot of work, it will be even more expensive.
 <p>
@@ -55,7 +55,7 @@ It is recommended your take advantage of collectl's
 <a href=http://collectl.sourceforge.net/Performance.html>built-in mechanism</a> for
 measuring its own performance.  For example, measuring the performance of the <i>hello.ph</i> module,
 which does almost nothing since it doesn't even look at /proc data, uses less than 1 second to read 8840 
-samples on an older 2GHz system, which is the equivilent of a full day's worth of sampling.  Monitoring
+samples on an older 2GHz system, which is the equivalent of a full day's worth of sampling.  Monitoring
 CPU performance data take about 3-1/2 seconds and memory counters take about
 7 seconds, just to give a few examples of the more efficient types of data it collects.
 
@@ -64,7 +64,7 @@ CPU performance data take about 3-1/2 seconds and memory counters take about
 Collectl is relatively big, at least for a perl script, consisting of over 100 internal subroutines, 
 most of which are simply for internal
 housekeeping, but some of which are of a more general purpose.  It also keeps most of its statistical
-data in single variables and one dimentional arrays.  Clearly hashes could make it more convenient
+data in single variables and one dimensional arrays.  Clearly hashes could make it more convenient
 for passing data around but it was felt that the use of more complex data structures would generate
 more overhead and so their use has been minimized.
 <p>
@@ -118,7 +118,7 @@ mymoduleGetData()</i> and several others as enumerated in the table below.  You 
 all these function call backs in your code or prevent them from being called by restricting which
 switches the user is allow to specify in the collectl command line.  For example if your module 
 doesn't want to support plot data and you generate an error if the user specified -P (which can be
-checked by examing <i>$plotFlag</i> in your init routine),  you can safely leave off the 
+checked by examining <i>$plotFlag</i> in your init routine),  you can safely leave off the 
 <i>PrintPlot</i> callback.
 <p>
 
@@ -163,7 +163,7 @@ you don't expect.
 <li><b>$type</b> is the first space-separated field from the recorded data.  It is completely under
 your control to decide how to process that data.  In some cases there will only be a single line to
 process and no further decisions will be required.  In other cases there
-may be multiple lines and it may be necessary to include an additional descriminator when recording the
+may be multiple lines and it may be necessary to include an additional discriminator when recording the
 data so that the analysis routine can figure out what to do with it.  For example, try running with
 -d4 and look at the data returned for -sf or -si.
 <li><b>$data</b> is a reference to the string of everything that follows <i>$type</i> in the current
@@ -225,7 +225,7 @@ code as does <i>init</i>.  Rather, one would simply end up reporting 0s for all 
 <p><b>Init(\$options, \$key)</b>
 <p>
 This function is called once by collectl, before any data collection begins.  If there are any
-one-time intializations of variables to do, this is the place to do them.  For example, when processing
+one-time initializations of variables to do, this is the place to do them.  For example, when processing
 incrementing variables one often subtracts the previous value from the current one and this is the
 ideal place to initialize their previous values to 0.  Naturally that will lead to erroneous results
 for the first interval, which is why collectl never includes those stats in its output.  However, if
@@ -233,7 +233,7 @@ you don't initialize them to something you will get <i>uninitialized variable</i
 time they're used.
 
 <ul>
-<li><b>$options</b> is a reference to the option string, if any, passed immediatedly
+<li><b>$options</b> is a reference to the option string, if any, passed immediately
 after the name following<i>--import</i> and specifies whether the user wants to see
 <i>summary data, detail data</i> or <i>both</i>.  If none specified it must be set to the
 default behavior desired for this module, typically 's'.</li>
@@ -262,7 +262,7 @@ is being constructed without any carriage returns.  Further, since there are 2 h
 processing, there are a number of places one needs to have their code called from.
 <p>
 <ul>
-<li><b>$type</b> is an interger from 1 to 6 and is used to decide which subfunction to execute.
+<li><b>$type</b> is an integer from 1 to 6 and is used to decide which subfunction to execute.
 Think of it this a <i>case statement</i> control variable. 
 <li><b>$line</b> is a reference to the current output line being constructed.  Simply append
 whatever makes sense for that function, be it a header or a value.  In the case of the running
@@ -274,7 +274,7 @@ totals, since that is always printed on the terminal and never goes to a socket 
 <p>
 What about custom export modules and how this effects them?  
 The good news is that at least for the standard 3, <i>sexpr, lexpr</i> and the newest
-<i>gexpr</i> all support <i>--import</i>.  In other words they too have callbacks that you must repond
+<i>gexpr</i> all support <i>--import</i>.  In other words they too have callbacks that you must respond
 to if your code is being run at the same time as one of these.
 <p>
 Again, see <i>hello.ph</i> for an example, but suffice it to say you need to do something when

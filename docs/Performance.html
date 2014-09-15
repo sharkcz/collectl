@@ -1,7 +1,7 @@
 <html>
 <head>
 <link rel=stylesheet href="style.css" type="text/css">
-<title>collectl - Perforamnce</title>
+<title>collectl - Performance</title>
 </head>
 
 <body>
@@ -69,8 +69,8 @@ sys     0m2.580s
 we can see that this takes a little over twice as much overhead even though it is 
 still pretty low.
 <p>
-One other example is worth mentioning and that is measuring process monitoring overhead,
-which is probably the highest overhead operation collectl can do and one of the reasons
+One other example worth mentioning and is process monitoring overhead,
+which is the highest overhead operation collectl can do and one of the reasons
 it has its own monitoring interval.  The overheard for collection of this type of data can
 vary quite broadly depending on how may processes are running at the time and on a 
 system with only 138 processes look at this:
@@ -82,9 +82,9 @@ user    0m54.650s
 sys     0m13.430s
 </pre>
 
-noting collectl is also smart enough to only look at 1/6 as many processes since that
-is the default relationship of process monitoring to other subsystem data.  This also
-leads to the mention of a way to further optimize process monitoring.  
+noting collectl is also smart enough to only look at 1/6 as many samples of process data
+since that is the default relationship of process monitoring to other subsystem data.
+This also leads to the mention of a way to further optimize process monitoring.  
 If you are monitoring a specify
 set of processes, say <i>http</i> daemons, collectl no longer has to look at as much data 
 in /proc and so we now see:
@@ -106,15 +106,26 @@ user    0m3.930s
 sys     0m1.130s
 </pre>
 
-And things get even better.  In fact, you could even imaging monitoring these processes
-at the same interval as everything else with almost no additional overheard!
+And things get even better as you could even image monitoring these processes
+at the same interval as everything else with almost no additional overhead!
 <p>
+<b>Another wrinkle - process I/O statistics</b>
+<p>
+Since the inclusion of process I/O stats, collectl now has to read an addition set
+of data for each process, specifically <i>/proc/pid/io</i>, which adds over 25% to
+the total process data collection load.  For most users, collectl's overhead is reasonable low
+enough for this extra overhead to not be a problem.  Remember - we're talking about
+an increase of 25% to a relatively small number.  But for those concerned with this
+extra overhead, a new --procopt value of <i>I</i> has been added to V3.6.1 which
+suppresses the reading of process I/O stats.
+<p>
+<h3>Remember - your milage can and will vary!</h3>
 The number of different combinations of switches one can measure far exceeds the scope
 of this discussion - for example we haven't even talked about the pros/cons of
 compression.  But in conclusion, the main thing to remember is collectl's overhead is 
 already pretty low but if you're really concerned, measure it yourself and adjust accordingly.
 
-<table width=100%><tr><td align=right><i>updated Feb 21, 2011</i></td></tr></colgroup></table>
+<table width=100%><tr><td align=right><i>updated Jan 15, 2012</i></td></tr></colgroup></table>
 
 </body>
 </html>

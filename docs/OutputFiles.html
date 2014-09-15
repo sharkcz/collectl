@@ -11,9 +11,9 @@
 All raw data is recorded in a single compressed file with the extension
 <i>raw.gz</i> if the perl compression library has been installed.  If that
 library is not there it will be written to a non-compressed file with the
-extention <i>raw</i>.  The only exception to this rule is the <i>process</i>
+extension <i>raw</i>.  The only exception to this rule is the <i>process</i>
 raw file which can be useful on systems with a large number of processes 
-(see the description of <i>--tworaw</i>) and which has the extention <i>rawp</i>.
+(see the description of <i>--tworaw</i>) and which has the extension <i>rawp</i>.
 <p>
 <h3>Plot Data</h3>
 There are actually 2 main types of plot data - <i>summary</i> and <i>detail</i>.
@@ -38,6 +38,12 @@ Exception data is written to a file in the same format as detail data with an
 across the entire device as is detail data, it cannot be written as a single
 line, but rather is written as one line per device.  Each line is prefaced with
 a date/time stamp and the number of the device (0 based).
+<p>
+<h3>Collectl Messages</h3>
+Periodically collectl logs various types of messages to its own message log to avoid
+situations in which an unexpected situation or a collectl bug might causes the
+flooding of /var/log/mesasages.  However, the more serious messages are written to
+both as described <a href=Messages.html>here.</a>
 
 <table width=100%><tr><td align=right><i>updated Feb 21, 2011</i></td></tr></colgroup></table>
 

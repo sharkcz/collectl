@@ -1,4 +1,4 @@
-# copyright, 2003-2009 Hewlett-Packard Development Company, LPENABLED
+# copyright, 2003-2009 Hewlett-Packard Development Company, LP
 #
 # collectl may be copied only under the terms of either the Artistic License
 # or the GNU General Public License, which may be found in the source kit
@@ -29,8 +29,35 @@ sub initRecord
   $HostLC=lc($Host);
 
   $Distro=cat('/etc/redhat-release')    if -e '/etc/redhat-release';
-  $Distro=cat('/etc/SuSE-release')      if -e '/etc/SuSE-release';
   chomp $Distro;
+
+  if (-e '/etc/redhat-release')
+  {
+    $Distro=cat('/etc/redhat-release');
+    chomp $Distro;
+  }
+  elsif (-e '/etc/SuSE-release')
+  {
+    my @temp=split(/\n/, cat('/etc/SuSE-release', 1));
+    $temp[2]=~/(\d+$)/;         # patchlevel
+    $Distro="$temp[0] SP$1";    # append onto release string as SP
+  }
+  elsif (-e '/etc/debian_version')
+  {
+    # Both debian and ubuntu have 2 files
+    $Distro='debian '.cat('/etc/debian_version');
+    chomp $Distro;
+
+    # append distro to base release, if there
+    if (-e '/etc/lsb-release')
+    {
+      my $temp=cat('/etc/lsb-release',1);
+      $temp=~/DESCRIPTION=(.*)/;
+      $temp=$1;
+      $temp=~s/\"//g;
+      $Distro.=", $temp";
+    }
+  }
 
   # For -sD calculations, we need the HZ of the system
   $HZ=POSIX::sysconf(&POSIX::_SC_CLK_TCK);
@@ -42,6 +69,23 @@ sub initRecord
   $processIOFlag=(-e '/proc/self/io')  ? 1 : 0;
   $slabinfoFlag= (-e '/proc/slabinfo') ? 1 : 0;
   $slubinfoFlag= (-e '/sys/slab')      ? 1 : 0;
+
+  $processCtxFlag=($subsys=~/Z/ && `$Grep ctxt /proc/self/status` ne '') ? 1 : 0;
+
+  # just because slab structures there, are they readable?  A chunk of extra work, but worth it.
+  if ($subsys=~/y/i && $slabinfoFlag || $slubinfoFlag)
+  {
+    $message='';
+    $message='/proc/slabinfo'    if $slabinfoFlag && !(eval {`cat /proc/slabinfo 2>/dev/null` or die});
+    $message='/sys/slab'         if $slubinfoFlag && !(eval {`cat /proc/slubinfo 2>/dev/null` or die});
+    if ($message ne '')
+    {
+      my $whoami=`whoami`;
+      chomp $whoami;
+      disableSubsys('y', "/proc/slabinfo is not readable by $whoami");
+      $interval=~s/(^\d*):\d+/$1:/    if $subsys!~/z/i;    # remove int2 if not needed or we'll get error
+    }
+  }
 
   # Get number of ACTIVE CPUs from /proc/stat and in case we're not running on a
   # kernel that will set the CPU states (or let us change them), enable CPU flag
@@ -101,8 +145,52 @@ sub initRecord
   $temp=`$Grep "cpu MHz" /proc/cpuinfo`;
   $CpuMHz=($temp=~/: (.*)/) ? $1 : '???';
   $Hyper=($CpuSiblings/$CpuCores==2) ? "[HYPER]" : "";
-  $CpuNodes=`ls /sys/devices/system/node|$Grep '^node[0-9]'|wc -l`;
+  if (-e "/sys/devices/system/node")
+  {
+    $CpuNodes=`ls /sys/devices/system/node |$Grep '^node[0-9]'|wc -l`;
+  }
+  else
+  {
+    # if doesn't exist set nodes to 1 and disable '-sM' if specified
+    $CpuNodes=1;
+    disableSubsys('M', "/sys/devices/system/node doesn't exist", 1)    if $subsys=~/M/;
+  }
   chomp $CpuNodes;
+
+  # /proc read speed test, note various reasons to skip it
+  # These tests should be updated as we learn more about other distros
+  $ProcReadTest='no'    if $NumCpus<32 || $Kernel lt '2.6.32';
+  $ProcReadTest='no'    if $Distro=~/Red Hat.*release (\S+)/ && $1>=6.2;
+  $ProcReadTest='no'    if $Distro=~/SUSE.*Server (\d+).*SP(\d+)/ && ($1!=11 || $2>=1);
+
+  if ($ProcReadTest=~/yes/i)
+  {
+    $procReadTested=1;    # can call this routine twice!
+
+    my $strace=`strace -c cat /proc/stat 2>&1`;
+    $strace=~/^\s*\S+\s+(\S+).*read$/m;
+    my $speed=$1;
+    print "ProcReadSpeed: $speed\n"    if $debug * 1;
+    if ($speed>0.01)
+    {
+      # may be going to a lot of effort here but I want to make sure these messages aren't
+      # recorded as errors and you don't have to include -m to see them as they are pretty
+      # important to the users to know about this.
+      my $line1="Slow /proc/stat read speed of $speed seconds";
+      my $line2="Consider a kernel patch/upgrade. See http://collectl.sourceforge.net/FAQ for more";
+      my $line3="Change 'ProcReadSpeed' in /etc/collectl.conf to suppress this message in the future";
+      if ($DaemonFlag)
+      {
+        logmsg('W', $line1);
+        logmsg('I', $line2);
+        logmsg('I', $line3);
+      }
+      else
+      {
+        print "$line1\n$line2\n$line3\n";
+      }
+    }
+  }
 
   $Memory=`$Grep MemTotal /proc/meminfo`;
   $Memory=(split(/\s+/, $Memory, 2))[1];
@@ -638,7 +726,7 @@ sub initRecord
   #    S L A B    C h e c k s
 
   # Header for /proc/slabinfo changed in 2.6
-  if ($slabinfoFlag)
+  if ($slabinfoFlag && $subsys=~/y/i)
   {
     $SlabGetProc=($slabFilt eq '') ? 99 : 14;
 
@@ -1033,9 +1121,10 @@ sub initFormat
 
     $flags=($header=~/Flags:\s+(\S+)/) ? $1 : '';
     $diskChangeFlag= ($flags=~/d/) ? 1 : 0;
-    $groupFlag=      ($flags=~/g/)      ? 1 : 0;
+    $groupFlag=      ($flags=~/g/) ? 1 : 0;
     $processIOFlag=  ($flags=~/i/) ? 1 : 0;
     $slubinfoFlag=   ($flags=~/s/) ? 1 : 0;
+    $processCtxFlag= ($flags=~/x/) ? 1 : 0;
     $cpuDisabledFlag=($flags=~/D/) ? 1 : 0;
 
     # If we're not processing CPU data, this message will never be set so
@@ -1199,10 +1288,18 @@ sub initFormat
   $procsRun=$procsBlock=0;
   $pagein=$pageout=$swapin=$swapout=$swapTotal=$swapUsed=$swapFree=0;
   $pagefault=$pagemajfault=0;
-  $memTot=$memUsed=$memFree=$memShared=$memBuf=$memCached=$memSlab=$memAnon=$memMap=$memCommit=0;
+  $memTot=$memUsed=$memFree=$memShared=$memBuf=$memCached=$memSlab=$memAnon=$memMap=$memCommit=$memLocked=0;
   $memHugeTot=$memHugeFree=$memHugeRsvd=$memSUnreclaim=0;
   $sockUsed=$sockTcp=$sockOrphan=$sockTw=$sockAlloc=0;
   $sockMem=$sockUdp=$sockRaw=$sockFrag=$sockFragM=0;
+
+  # extended memory stats, just in case some are missing
+  $pageFree=$pageActivate=0;
+  $pageAllocDma=$pageAllocDma32=$pageAllocNormal=$pageAllocMove=0;
+  $pageRefillDma=$pageRefillDma32=$pageRefillNormal=$pageRefillMove=0;
+  $pageStealDma=$pageStealDma32=$pageStealNormal=$pageStealMove=0;
+  $pageKSwapDma=$pageKSwapDma32=$pageKSwapNormal=$pageKSwapMove=0;
+  $pageDirectDma=$pageDirectDma32=$pageDirectNormal=$pageDirectMove=0;
 
   # Lustre MDS stuff - in case no data
   $lustreMdsReintCreate=$lustreMdsReintLink=$lustreMdsReintSetattr=0;
@@ -1398,7 +1495,7 @@ sub initLast
   $pagefaultLast=$pagemajfaultLast=0;
   $opsLast=$readLast=$readKBLast=$writeLast=$writeKBLast=0;
   $memFreeLast=$memUsedLast=$memBufLast=$memCachedLast=0;
-  $memInactLast=$memSlabLast=$memMapLast=$memAnonLast=$memCommitLast=0;
+  $memInactLast=$memSlabLast=$memMapLast=$memAnonLast=$memCommitLast=$memLockedLast=0;
   $swapFreeLast=$swapUsedLast=0;
 
   for ($i=0; $i<18; $i++)
@@ -1430,7 +1527,7 @@ sub initLast
     $numaStat[$i]->{hitsLast}=$numaStat[$i]->{missLast}=$numaStat[$i]->{forLast}=0;
     $numaMem[$i]->{freeLast}= $numaMem[$i]->{usedLast}=$numaMem[$i]->{actLast}=0;
     $numaMem[$i]->{inactLast}=$numaMem[$i]->{mapLast}= $numaMem[$i]->{anonLast}=0;
-    $numaMem[$i]->{slabLast}=0;
+    $numaMem[$i]->{lockLast}= $numaMem[$i]->{slabLast}=0;
   }
 
   # ...and disks
@@ -1485,12 +1582,14 @@ sub initLast
 # explicitly selects that subsys too
 sub disableSubsys
 {
-  my $type=shift;
-  my $why= shift;
+  my $type=  shift;
+  my $why=   shift;
+  my $unique=shift;
 
   # If user specified --all, they shouldn't see these messages
   logmsg("W", "-s$type disabled because $why")    if !$allFlag;
-  $subsys=~s/$type//ig;
+  $subsys=~s/$type//ig    if !defined($unique) || !$unique;    # disable using /i if unique not set
+  $subsys=~s/$type//g     if  defined($unique) &&  $unique;    # otherwise just disablehe one specified
 
   # Not really sure if need to do this but it certainly can't hurt.
   $EFlag=0           if $type=~/E/;
@@ -1716,13 +1815,24 @@ sub initInterval
 
   # Since the number of cpus can change dynamically, we need to clear these every pass,
   # BUT for now since we're only checking when monitoring CPUS and not interrupts we
-  # can't clear the '$cpuEnabled' when not do cpu stats since that's to much overhead
+  # can't clear the '$cpuEnabled' when not doing cpu stats since that's to much overhead
   # Further, if cpu data wasn't recorded but we're playing back, set the number enabled
   # to all so we don't report warnings that one or more are disabled
-  $cpusEnabled=($subsys=~/c/i && ($playback eq '' || $recSubsys=~/c/i)) ? 0 : $NumCpus;
+
+  # There are 2 major situations - either we're dealing with actual CPU stats or we're not.
+  # If we are (and the weren't finessed during playback when they weren't really recorded)
+  # clear the count since it will be incremented with each cpu processed.  Otherwise just
+  # set to the total since we have no other way of knowing what's going in.
+  # NOTE - if we record interrupts and not cpus and a CPU is or goes offline, this WILL 
+  # break!!!
+  my $reset=($subsys=~/c/i && ($playback eq '' || $recSubsys=~/c/i)) ? 1: 0;
+  $cpusEnabled=($reset) ? 0 : $NumCpus;
+
+  # if cpus are/were being recorded, reset their state since the cpu records will force
+  # then to be enabled
   for (my $i=0; $i<$NumCpus; $i++)
   {
-    $cpuEnabled[$i]=0    if $subsys=~/c/i;
+    $cpuEnabled[$i]=($reset & !$noCpusFlag) ? 0 : 1;    # only way to tell if $subsys reset
     $intrptTot[$i]=0;    # But these HAVE to be reset every interval
   }
 
@@ -1937,6 +2047,7 @@ sub dataAnalyze
       $procUTimeLast[$i]=$procSTimeLast[$i]=$procCUTimeLast[$i]=$procCSTimeLast[$i]=0;
       $procRCharLast[$i]=$procWCharLast[$i]=$procSyscrLast[$i]=	$procSyscwLast[$i]=0;
       $procRBytesLast[$i]=$procWBytesLast[$i]=$procCancelLast[$i]=0;
+      $procVCtxLast[$i]=$procNCtxLast[$i]=0;
       print "### new index $i allocated for $procPidNow\n"    if $debug & 256;
     }
 
@@ -1947,7 +2058,7 @@ sub dataAnalyze
     $i=$procIndexes{$procPidNow};
 
     # Since the counters presented here are zero based, they're actually
-    # the totalls already and all we need to is calculate the intervals
+    # the totals already and all we need to is calculate the intervals
     if ($data=~/^stat /)
     {
       # 'C' variables include the values for dead children
@@ -1981,6 +2092,11 @@ sub dataAnalyze
       $procMajFltLast[$i]=$procMajFltTot[$i];
       $procUTimeLast[$i]= $procUTimeTot[$i];
       $procSTimeLast[$i]= $procSTimeTot[$i];
+
+      # non-root users will no longer have access to io stats for anyone other than themselves, so make 
+      # sure 0s are printed instead of uninit vars.  this also means if collected by non-root but
+      # played back by root, the data won't be there either!
+      $procRKBC[$i]=$procWKBC[$i]=$procRSys[$i]=$procWSys[$i]=$procRKB[$i]=$procWKB[$i]=$procCKB[$i]=0;
     }
 
     # Handle the IO counters
@@ -2042,6 +2158,18 @@ sub dataAnalyze
     { 
       $uid=$1;
       $procUser[$i]=(defined($UidSelector{$uid})) ? $UidSelector{$uid} : $uid;
+    }
+    elsif ($data=~/^vol.*:\s+(\d+)/)
+    {
+      my $procVCtx=$1;
+      $procVCtx[$i]=$procVCtx-$procVCtxLast[$i];
+      $procVCtxLast[$i]=$procVCtx;
+    }
+    elsif ($data=~/^nonv.*:\s+(\d+)/)
+    {
+      my $procNCtx=$1;
+      $procNCtx[$i]=$procNCtx-$procNCtxLast[$i];
+      $procNCtxLast[$i]=$procNCtx;
     }
    }
   }
@@ -2216,12 +2344,13 @@ sub dataAnalyze
     $nice= fix($niceNow-$niceLast[$cpuIndex]);
     $sys=  fix($sysNow-$sysLast[$cpuIndex]);
     $idle= fix($idleNow-$idleLast[$cpuIndex]);
-   $wait= fix($waitNow-$waitLast[$cpuIndex]);
+    $wait= fix($waitNow-$waitLast[$cpuIndex]);
     $irq=  fix($irqNow-$irqLast[$cpuIndex]);
     $soft= fix($softNow-$softLast[$cpuIndex]);
     $steal=fix($stealNow-$stealLast[$cpuIndex]);
     $total=$user+$nice+$sys+$idle+$wait+$irq+$soft+$steal;
-    $total=1    if !$total;  # has seen to be 0 when interval=0;
+    $total=100    if $options=~/n/;    # when normalizing, this cancels '100*'
+    $total=1      if !$total;          # has seen to be 0 when interval=0;
 
     # For disk detail QueueLength and Util we need an accurate interval time when
     # no HiRes timer, and this is a pretty cool way to do it
@@ -3420,6 +3549,40 @@ sub dataAnalyze
       $swapout=fix($swapoutNow-$swapoutLast);
       $swapoutLast=$swapoutNow;
     }
+
+    if ($memOpts=~/p/)
+    {
+      $pageAllocDma=$data        if $type=~/^pgalloc_dma$/;
+      $pageAllocDma32=$data      if $type=~/^pgalloc_dma32/;
+      $pageAllocNormal=$data     if $type=~/^pgalloc_normal/;
+      $pageAllocMove=$data       if $type=~/^pgalloc_move/;
+
+      $pageRefillDma=$data       if $type=~/^pgrefill_dma$/;
+      $pageRefillDma32=$data     if $type=~/^pgrefill_dma32/;    
+      $pageRefillNormal=$data    if $type=~/^pgrefill_normal/;
+      $pageRefillMove=$data      if $type=~/^pgrefill_move/;
+
+      $pageFree=$data            if $type=~/^pgfree/;
+      $pageActivate=$data        if $type=~/^pgactivate/;
+    }
+
+    if ($memOpts=~/s/)
+    {
+      $pageStealDma=$data        if $type=~/^pgsteal_dma$/;
+      $pageStealDma32=$data      if $type=~/^pgsteal_dma32/;
+      $pageStealNormal=$data     if $type=~/^pgsteal_normal/;
+      $pageStealMove=$data       if $type=~/^pgsteal_move/;
+
+      $pageKSwapDma=$data        if $type=~/^pgscan_kswapd_dma$/;
+      $pageKSwapDma32=$data      if $type=~/^pgscan_kswapd_dma32/;
+      $pageKSwapNormal=$data     if $type=~/^pgscan_kswapd_normal/;
+      $pageKSwapMove=$data       if $type=~/^pgscan_kswapd_move/;
+
+      $pageDirectDma=$data       if $type=~/^pgscan_direct_dma$/;
+      $pageDirectDma32=$data     if $type=~/^pgscan_direct_dma32/;
+      $pageDirectNormal=$data    if $type=~/^pgscan_direct_normal/;
+      $pageDirectMove=$data      if $type=~/^pgscan_direct_move/;
+    }
   }
 
   elsif ($subsys=~/m/i && $type=~/^Mem/)
@@ -3435,7 +3598,7 @@ sub dataAnalyze
     }
   }
 
-  elsif ($subsys=~/m/i && $type=~/^Buffers|^Cached|^Dirty|^Active|^Inactive|^AnonPages|^Mapped|^Slab:|^Committed_AS:|^Huge|^SUnreclaim/)
+  elsif ($subsys=~/m/i && $type=~/^Buffers|^Cached|^Dirty|^Active|^Inactive|^AnonPages|^Mapped|^Slab:|^Committed_AS:|^Huge|^SUnreclaim|^Mloc/)
   {
     $data=(split(/\s+/, $data))[0];
     $memBuf=$data             if $type=~/^Buf/;
@@ -3446,6 +3609,7 @@ sub dataAnalyze
     $memSlab=$data            if $type=~/^Sla/;
     $memAnon=$data            if $type=~/^Anon/;
     $memMap=$data             if $type=~/^Map/;
+    $memLocked=$data          if $type=~/^Mlocked/;
     $memCommit=$data          if $type=~/^Com/;
     $memHugeTot=$data         if $type=~/^HugePages_T/;
     $memHugeFree=$data        if $type=~/^HugePages_F/;
@@ -3463,6 +3627,7 @@ sub dataAnalyze
       $memMapC=   $memMap-$memMapLast;
       $memAnonC=  $memAnon-$memAnonLast;
       $memCommitC=$memCommit-$memCommitLast;
+      $memLockedC=$memLocked-$memLockedLast;
 
       $memBufLast=   $memBuf;
       $memCachedLast=$memCached;
@@ -3471,6 +3636,7 @@ sub dataAnalyze
       $memMapLast=   $memMap;
       $memAnonLast=  $memAnon;
       $memCommitLast=$memCommit;
+      $memLockedLast=$memLocked;
     }
   }
 
@@ -3510,6 +3676,8 @@ sub dataAnalyze
       { $numaMem[$node]->{map}=$value; }
       elsif ($name=~/^Anon/)
       { $numaMem[$node]->{anon}=$value; }
+      elsif ($name=~/^Mlock/)
+      { $numaMem[$node]->{lock}=$value; }
 
       # currently the last entry read...
       elsif ($name=~/^Slab/)
@@ -3525,6 +3693,7 @@ sub dataAnalyze
           $numaMem[$node]->{inactC}=$numaMem[$node]->{inact}-$numaMem[$node]->{inactLast};
           $numaMem[$node]->{mapC}=  $numaMem[$node]->{map}-  $numaMem[$node]->{mapLast};
           $numaMem[$node]->{anonC}= $numaMem[$node]->{anon}- $numaMem[$node]->{anonLast};
+          $numaMem[$node]->{lockC}= $numaMem[$node]->{lock}- $numaMem[$node]->{lockLast};
           $numaMem[$node]->{slabC}= $numaMem[$node]->{slab}- $numaMem[$node]->{slabLast};
 
           $numaMem[$node]->{freeLast}= $numaMem[$node]->{free};
@@ -3533,6 +3702,7 @@ sub dataAnalyze
           $numaMem[$node]->{inactLast}=$numaMem[$node]->{inact};
           $numaMem[$node]->{mapLast}=  $numaMem[$node]->{map};
           $numaMem[$node]->{anonLast}= $numaMem[$node]->{anon};
+          $numaMem[$node]->{lockLast}= $numaMem[$node]->{lock};
           $numaMem[$node]->{slabLast}= $numaMem[$node]->{slab};
         }
       }
@@ -3706,8 +3876,9 @@ sub dataAnalyze
     # first, always ignore those in ignore list
     if ($netNameNow!~/^lo|^sit|^bond|^vmnet|^vlan/ && ($netFilt eq '' || $netNameNow!~/$netFiltIgnore/))
     {
-      # if specified, only include those we want
-      if ($netFiltKeep eq '' || $netNameNow=~/$netFiltKeep/)
+      # if filter specified, only include those we want.
+      # NOTE - we >>>never<<< include aliased networks in the summary calculations
+      if ($netNameNow!~/\./ && ($netFiltKeep eq '' || $netNameNow=~/$netFiltKeep/))
       {
         $netRxKBTot+= $netRxKB[$netIndex];
         $netRxPktTot+=$netRxPkt[$netIndex];
@@ -3962,7 +4133,7 @@ sub printPlotHeaders
   if ($subsys=~/m/)
   {
     $headers.="[MEM]Tot${SEP}[MEM]Used${SEP}[MEM]Free${SEP}[MEM]Shared${SEP}[MEM]Buf${SEP}[MEM]Cached${SEP}";
-    $headers.="[MEM]Slab${SEP}[MEM]Map${SEP}[MEM]Anon${SEP}[MEM]Commit${SEP}";    # always from V1.7.5 forward
+    $headers.="[MEM]Slab${SEP}[MEM]Map${SEP}[MEM]Anon${SEP}[MEM]Commit${SEP}[MEM]Locked${SEP}";    # always from V1.7.5 forward
     $headers.="[MEM]SwapTot${SEP}[MEM]SwapUsed${SEP}[MEM]SwapFree${SEP}[MEM]SwapIn${SEP}[MEM]SwapOut${SEP}";
     $headers.="[MEM]Dirty${SEP}[MEM]Clean${SEP}[MEM]Laundry${SEP}[MEM]Inactive${SEP}";
     $headers.="[MEM]PageIn${SEP}[MEM]PageOut${SEP}[MEM]PageFaults${SEP}[MEM]PageMajFaults${SEP}";
@@ -4455,6 +4626,7 @@ sub intervalPrint
   {
     logdiag('export data')    if $utimeMask & 1;
     &$expName($expOpts);
+    exit    if $showColFlag;    
   }
 }
 
@@ -4540,7 +4712,7 @@ sub printPlot
     {
       $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
                 $memTot, $memUsed, $memFree, $memShared, $memBuf, $memCached); 
-      $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS", $memSlab, $memMap, $memAnon, $memCommit);   # Always from V1.7.5 forward
+      $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS", $memSlab, $memMap, $memAnon, $memCommit, $memLocked);   # Always from V1.7.5 forward
       $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
                 $swapTotal, $swapUsed, $swapFree, $swapin/$intSecs, $swapout/$intSecs,
                 $memDirty, $clean, $laundry, $memInact,
@@ -5251,6 +5423,9 @@ sub printTerm
   local $seconds=shift;
   local $usecs=  shift;
   my ($ss, $mm, $hh, $mday, $mon, $year, $line, $i, $j);
+
+  # if someone wants to look at procs with --home and NOT --top, let them!
+  print "$clscr"   if !$numTop && $homeFlag;
 
   # There are a couple of things we want to do in interactive --top mode regardless
   # of --brief or --verbose
@@ -6140,39 +6315,59 @@ sub printTerm
       printText("# MEMORY SUMMARY$type\n");
       if ($memOpts!~/R/)
       {
-        $line=sprintf("#$miniFiller<-------------------------------Physical Memory------------------------------><-----------Swap------------><-------Paging------>\n");
-        printText($line);
-        printText("#$miniDateTime   Total    Used    Free    Buff  Cached    Slab  Mapped    Anon  Commit Inact Total  Used  Free   In  Out Fault MajFt   In  Out\n");
+        $line="#$miniFiller";
+        $line.="<-------------------------------Physical Memory-------------------------------------->"    if $memOpts eq '' || $memOpts=~/P/;
+        $line.="<-----------Swap------------><-------Paging------>"                                        if $memOpts eq '' || $memOpts=~/V/;
+        $line.="<---Other---|-------Page Alloc------|------Page Refill----->"                              if $memOpts=~/p/;
+        $line.="<------Page Steal-------|-------Scan KSwap------|------Scan Direct----->"                  if $memOpts=~/s/;
+        printText("$line\n");
+
+        $line="#$miniFiller";
+        $line.="   Total    Used    Free    Buff  Cached    Slab  Mapped    Anon  Commit  Locked Inact"    if $memOpts eq '' || $memOpts=~/P/;
+        $line.=" Total  Used  Free   In  Out Fault MajFt   In  Out"                                        if $memOpts eq '' || $memOpts=~/V/;
+        $line.="  Free Activ   Dma Dma32  Norm  Move   Dma Dma32  Norm  Move"                              if $memOpts=~/p/;
+        $line.="   Dma Dma32  Norm  Move   Dma Dma32  Norm  Move   Dma Dma32  Norm  Move"                  if $memOpts=~/s/;
+        printText("$line\n");
       }
       else
       {
-        $line=sprintf("#$miniFiller<-----------------------------------Physical Memory-----------------------------------><------------Swap-------------><-------Paging------>\n");
+        $line=sprintf("#$miniFiller<-----------------------------------Physical Memory-------------------------------------------><------------Swap-------------><-------Paging------>\n");
         printText($line);
-        printText("#$miniDateTime   Total     Used     Free     Buff   Cached     Slab   Mapped     Anon  Commit   Inact Total   Used   Free   In  Out Fault MajFt   In  Out\n");
+        printText("#$miniDateTime   Total     Used     Free     Buff   Cached     Slab   Mapped     Anon  Commit  Locked   Inact Total   Used   Free   In  Out Fault MajFt   In  Out\n");
       }
     exit    if $showColFlag;
     }
 
     if ($memOpts!~/R/)
     {
-      $line=sprintf("$datetime  %7s %7s %7s %7s %7s %7s %7s %7s %7s %5s %5s %5s %5s %4s %4s %5s %5s %4s %4s\n",
+      $line="$datetime ";
+      $line.=sprintf(" %7s %7s %7s %7s %7s %7s %7s %7s %7s %7s %5s",
                 cvt($memTot,7,1,1),          cvt($memUsed,7,1,1),         cvt($memFree,7,1,1),
-	        cvt($memBuf,7,1,1),          cvt($memCached,7,1,1),
-		cvt($memSlab,7,1,1),         cvt($memMap,7,1,1),          cvt($memAnon,7,1,1),
-	    	cvt($memCommit,7,1,1),	     cvt($memInact,5,1,1), 
-		cvt($swapTotal,5,1,1),       cvt($swapUsed,5,1,1),   	  cvt($swapFree,5,1,1),
-		cvt($swapin/$intSecs,5,1,1), cvt($swapout/$intSecs,5,1,1),
+                cvt($memBuf,7,1,1),          cvt($memCached,7,1,1),
+                cvt($memSlab,7,1,1),         cvt($memMap,7,1,1),          cvt($memAnon,7,1,1),
+                cvt($memCommit,7,1,1),       cvt($memLocked,7,1,1),       cvt($memInact,5,1,1))		  if $memOpts eq '' || $memOpts=~/P/;
+      $line.=sprintf(" %5s %5s %5s %4s %4s %5s %5s %4s %4s",
+                cvt($swapTotal,5,1,1),       cvt($swapUsed,5,1,1),        cvt($swapFree,5,1,1),
+                cvt($swapin/$intSecs,5,1,1), cvt($swapout/$intSecs,5,1,1),
                 cvt($pagefault/$intSecs,5),  cvt($pagemajfault/$intSecs,5),
-                cvt($pagein/$intSecs,4),     cvt($pageout/$intSecs,4));
-
+                cvt($pagein/$intSecs,4),     cvt($pageout/$intSecs,4))		 		  	  if $memOpts eq '' || $memOpts=~/V/;
+      $line.=sprintf(" %5s %5s %5s %5s %5s %5s %5s %5s %5s %5s",
+                cvt($pageFree,5),       cvt($pageActivate,5),
+		cvt($pageAllocDma,5),   cvt($pageAllocDma32,5),   cvt($pageAllocNormal,5),   cvt($pageAllocMove,5),
+		cvt($pageRefillDma,5),  cvt($pageRefillDma32,5),  cvt($pageRefillNormal,5),  cvt($pageRefillMove,5))   if $memOpts=~/p/;
+      $line.=sprintf(" %5s %5s %5s %5s %5s %5s %5s %5s %5s %5s %5s %5s",
+                cvt($pageStealDma,5),   cvt($pageStealDma32,5),   cvt($pageStealNormal,5),   cvt($pageStealMove,5),
+                cvt($pageKSwapDma,5),   cvt($pageKSwapDma32,5),   cvt($pageKSwapNormal,5),   cvt($pageKSwapMove,5),
+                cvt($pageDirectDma,5),  cvt($pageDirectDma32,5),  cvt($pageDirectNormal,5),  cvt($pageDirectMove,5))   if $memOpts=~/s/;
+      $line.="\n";
     }
     else
     {
-      $line=sprintf("$datetime  %7s %8s %8s %8s %8s  %7s  %7s  %7s %7s  %6s %5s %6s %6s %4s %4s %5s %5s %4s %4s\n",
+      $line=sprintf("$datetime  %7s %8s %8s %8s %8s  %7s  %7s  %7s %7s %7s  %6s %5s %6s %6s %4s %4s %5s %5s %4s %4s\n",
             	cvt($memTot/$intSecs,7,1,1),     cvt($memUsedC/$intSecs,7,1,1),   cvt($memFreeC/$intSecs,7,1,1),
             	cvt($memBufC/$intSecs,7,1,1),    cvt($memCachedC/$intSecs,7,1,1),
 		cvt($memSlabC/$intSecs,7,1,1),   cvt($memMapC/$intSecs,7,1,1),    cvt($memAnonC/$intSecs,7,1,1),
-		cvt($memCommitC/$intSecs,7,1,1), cvt($memInactC/$intSecs,5,1,1),
+		cvt($memCommitC/$intSecs,7,1,1), cvt($memLockedC/$intSecs,7,1,1), cvt($memInactC/$intSecs,5,1,1),
             	cvt($swapTotal,5,1,1),           cvt($swapUsedC/$intSecs,5,1,1),  cvt($swapFreeC/$intSecs,5,1,1),
             	cvt($swapin/$intSecs,5,1,1),     cvt($swapout/$intSecs,5,1,1),
             	cvt($pagefault/$intSecs,5),      cvt($pagemajfault/$intSecs,5),
@@ -6192,7 +6387,7 @@ sub printTerm
       {
         # we've got the room so let's use an extra column for each and have the same
         # headers for 'R' and because I'm lazy.
-        printText("#$miniFiller Node    Total     Used     Free     Slab   Mapped     Anon    Inact");
+        printText("#$miniFiller Node    Total     Used     Free     Slab   Mapped     Anon   Locked    Inact");
         printText(" Hit%")    if $memOpts!~/R/;
         printText("\n");
       }
@@ -6207,19 +6402,21 @@ sub printTerm
         # total hits can be 0 if no data collected
         my $misses=$numaStat[$i]->{for}+$numaStat[$i]->{miss};
         my $hitrate=($misses) ? $numaStat[$i]->{hits}/($numaStat[$i]->{hits}+$misses)*100/$intSecs : 0;
-        $line.=sprintf("$datetime  %4d %8s %8s %8s %8s %8s %8s %8s %4d\n", $i,
+        $line.=sprintf("$datetime  %4d %8s %8s %8s %8s %8s %8s %8s %8s %4d\n", $i,
                 cvt($numaMem[$i]->{used}+$numaMem[$i]->{free},7,1,1),
                 cvt($numaMem[$i]->{used},7,1,1),  cvt($numaMem[$i]->{free},7,1,1),
                 cvt($numaMem[$i]->{slab},7,1,1),  cvt($numaMem[$i]->{map},7,1,1),
-                cvt($numaMem[$i]->{anon},7,1,1),  cvt($numaMem[$i]->{inact},7,1,1), $hitrate);
+                cvt($numaMem[$i]->{anon},7,1,1),  cvt($numaMem[$i]->{lock},7,1,1),
+		cvt($numaMem[$i]->{inact},7,1,1), $hitrate);
       }
       else
       {
-        $line.=sprintf("$datetime  %4d %8s %8s %8s %8s %8s %8s %8s\n", $i,
+        $line.=sprintf("$datetime  %4d %8s %8s %8s %8s %8s %8s %8s %8s\n", $i,
                 cvt($numaMem[$i]->{usedC}+$numaMem[$i]->{freeC},7,1,1),
                 cvt($numaMem[$i]->{usedC},7,1,1), cvt($numaMem[$i]->{freeC},7,1,1),
                 cvt($numaMem[$i]->{slabC},7,1,1), cvt($numaMem[$i]->{mapC},7,1,1),
-                cvt($numaMem[$i]->{anonC},7,1,1), cvt($numaMem[$i]->{inactC},7,1,1));
+                cvt($numaMem[$i]->{anonC},7,1,1), cvt($numaMem[$i]->{lockC},7,1,1),
+		cvt($numaMem[$i]->{inactC},7,1,1));
       }
     }
     printText($line);
@@ -6613,6 +6810,9 @@ sub printTermSlab
   my $eol=sprintf("%c[K", 27);
   printf "%c[%d;H", 27, $scrollEnd ? $scrollEnd+1 : 0    if $numTop && $playback eq '';
 
+  # if someone wants to look at slabs with --home and NOT --top, let them!
+  print "$clscr"   if !$numTop && $homeFlag;
+
   if (printHeader() || $numTop)
   {
     if ($numTop)
@@ -6831,6 +7031,7 @@ sub printTermProc
 
         $tempHdr.="#${tempFiller} PID  User     $prHeader  PPID THRD S   VSZ   RSS CP  SysT  UsrT Pct  AccuTime ";
         $tempHdr.=" RKB  WKB "    if $processIOFlag;
+	$tempHdr.="VCtx NCtx "    if $procOpts=~/x/;
         $tempHdr.="MajF MinF Command\n";
       }
       elsif ($procOpts=~/i/)
@@ -6869,10 +7070,15 @@ sub printTermProc
   	  $accum=32767-$pid;                 # to sort ascending
 	} elsif ($topType eq 'cpu') {
   	  $accum=$NumCpus-$procCPU[$ipid];   # to sort ascending
+	} elsif ($topType eq 'syst') {
+          $accum=$procUTime[$ipid];
 	} elsif ($topType eq 'usrt') {
           $accum=$procUTime[$ipid];
 	} elsif ($topType eq 'time') {
   	  $accum=$procSTime[$ipid]+$procUTime[$ipid];
+	} elsif ($topType eq 'accum') {
+  	  $accum=$procSTimeTot[$ipid]+$procUTimeTot[$ipid];
+
 	} elsif ($topType eq 'thread') {
   	  $accum=$procTCount[$ipid];
 
@@ -6900,18 +7106,21 @@ sub printTermProc
   	  $accum=$procWSys[$ipid];
         } elsif ($topType eq 'iosys') {
   	  $accum=$procRSys[$ipid]+$procWSys[$ipid];
-
         } elsif ($topType eq 'iocncl') {
   	  $accum=$procCKB[$ipid];
 
-        } elsif ($topType eq 'majf') {
-  	  $accum=$procMajFlt[$ipid];
+   
+        } elsif ($topType eq 'vctx') {
+  	  $accum=$procVCtx[$ipid];
+        } elsif ($topType eq 'nctx') {
+  	  $accum=$procNCtx[$ipid];
+
         } elsif ($topType eq 'minf') {
   	  $accum=$procMinFlt[$ipid];
         } elsif ($topType eq 'flt') {
   	  $accum=$procMajFlt[$ipid]+$procMinFlt[$ipid];
         }
-        my $key=sprintf("%06d:%06d", 999999-$accum, $pid);
+        my $key=sprintf("%09d:%06d", 999999999-$accum, $pid);
         $procSort{$key}=$pid    if $procOpts!~/z/ || $accum!=0;
       }
     }
@@ -6981,6 +7190,9 @@ sub printTermProc
         $line.=sprintf("%4s %4s ", 
 		cvt($procRKB[$i]/$interval2Secs,4,0,1),
 		cvt($procWKB[$i]/$interval2Secs,4,0,1))     if $processIOFlag;
+        $line.=sprintf("%4s %4s ", 
+		cvt($procVCtx[$i]/$interval2Secs,4,0,1),
+		cvt($procNCtx[$i]/$interval2Secs,4,0,1))    if $procOpts=~/x/;
         $line.=sprintf("%4s %4s %s %s", 
 		cvt($majFlt), cvt($minFlt), $cmd0, $cmd1);
       }
@@ -7152,18 +7364,15 @@ sub cvtT2
   my $nsFlag= shift;
   my ($hour, $mins, $secs, $time, $hsec);
 
-  # set formatting for minutes according to 'no space' flag
-  $MF=(!$nsFlag) ? '%3d' : '%d';
-
   $secs=int($jiffies/$HZ);
   $jiffies=$jiffies-$secs*$HZ;
   $hsec=$jiffies/$HZ*100;
 
   $mins=int($secs/60);
   $secs=$secs-$mins*60;
-  $time=sprintf("$MF:%02d", $mins, $secs);
-  $time.=sprintf('.%02d', $hsec);
-  $time=sprintf("%9s", (split(/\./, $time))[0])    if length($time)>9;    # for time > 999 minutes
+  $time=($mins<60) ? sprintf("%02d:%02d.%02d", $mins % 60, $secs, $hsec) : 
+		    sprintf("%02d:%02d:%02d", int($mins/60), $mins % 60, $secs);
+  $time=" $time"    if !$nsFlag && length($time)==8;    # usually 8, but room for 3 digit mins
   return($time);
 }
 
@@ -7521,6 +7730,7 @@ sub printBrief
     if ($showColFlag)
     { printText($line); exit; }
   }
+  goto statsSummary    if $statsFlag && $statOpts!~/i/i;
 
   # leading space not needed for date/time
   $line.=sprintf(' ')    if !$miniDateFlag && !$miniTimeFlag;
@@ -7762,6 +7972,9 @@ sub printBrief
     }
   }
 
+# come here from collectl's ONLY goto statement!
+statsSummary:
+
   # Minor subtlety - we want to print the totals as soon as the hot-key
   # is entered and so we print the sub-total so far which DOESN'T
   # include this latest line!  Then we count the data.
@@ -7937,7 +8150,7 @@ sub printBriefCounters
   {
     # Totals are NOT normalized so for averages we need to divide by total seconds.
     $totSecs=($playback eq '') ? $seconds-$miniStart+$interval : $elapsedSecs;
-    $datetime=' ' x length($datetime);
+    $datetime=' ' x length($datetime)    if $statOpts!~/s/i;    # when not in summary mode, include date/time stamps
   }
 
   chomp $type;

@@ -56,6 +56,7 @@
 
 use POSIX;
 use Config;
+use English;
 use 5.008000;
 use Getopt::Long;
 Getopt::Long::Configure ("bundling");
@@ -77,9 +78,9 @@ $Lctl=         '/usr/sbin/lctl';
 $Dmidecode=    '/usr/sbin/dmidecode';
 $ReqDir=       '/usr/share/collectl';    # may not exist
 
-%TopProcTypes=qw(vsz '' rss '' syst '' usrt '' time '' rkb '' wkb '' iokb ''
+%TopProcTypes=qw(vsz '' rss '' syst '' usrt '' time '' accum '' rkb '' wkb '' iokb ''
                  rkbc '' wkbc '' iokbc '' ioall '' rsys '' wsys '' iosys  ''
-                 iocncl '' majf '' minf '' flt '' pid '' cpu '' thread '');
+                 iocncl '' majf '' minf '' flt '' pid '' cpu '' thread '' vctx '' nctx '');
 %TopSlabTypes=qw(numobj '' name '' actobj '' objsize '' numslab '' objslab '' totsize '' totchg '' totpct '');
 
 # Constants and removing -w warnings
@@ -93,7 +94,7 @@ $numBrwBuckets=$cfsVersion=$sfsVersion='';
 $Resize=$IpmiCache=$IpmiTypes=$ipmiExec='';
 $i1DataFlag=$i2DataFlag=$i3DataFlag=0;
 $lastSecs=$interval2Print=0;
-$diskRemapFlag=$diskChangeFlag=$cpuDisabledFlag=$cpusDisabled=$cpusEnabled=0;
+$diskRemapFlag=$diskChangeFlag=$cpuDisabledFlag=$cpusDisabled=$cpusEnabled=$noCpusFlag=0;
 
 # Find out ASAP if we're linux or WNT based as well as whether or not XC based
 $PcFlag=($Config{"osname"}=~/MSWin32/) ? 1 : 0;
@@ -107,7 +108,7 @@ require "Sys/Syslog.pm"    if !$PcFlag;
 $rootFlag=(!$PcFlag && `whoami`=~/root/) ? 1 : 0;
 $SrcArch= $Config{"archname"};
 
-$Version=  '3.6.0-3';
+$Version=  '3.6.1-4';
 $Copyright='Copyright 2003-2011 Hewlett-Packard Development Company, L.P.';
 $License=  "collectl may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
@@ -230,6 +231,7 @@ $DiskMaxValue=-1;    # disabled
 
 $DiskFilter='cciss/c\d+d\d+ |hd[ab] | sd[a-z]+ |dm-\d+ |xvd[a-z] |fio[a-z]+ | vd[a-z]+ |emcpower[a-z]+ |psv\d+ ';
 $DiskFilterFlag=0;   # only set when filter set in collectl.conf
+$ProcReadTest='yes';
 
 # Standard locations
 $SysIB='/sys/class/infiniband';
@@ -249,6 +251,7 @@ $envDebug=0;
 $envTestFile='';
 $envFilt=$envRemap='';
 
+$hiResFlag=0;    # must be initialized before ANY calls to error/logmsg
 $configFile='';
 $ConfigFile='collectl.conf';
 $daemonFlag=$debug=$formatitLoaded=0;
@@ -327,10 +330,10 @@ $numTop=0;
 $briefFlag=1;
 $showColFlag=$showMergedFlag=$showHeaderFlag=$showSlabAliasesFlag=$showRootSlabsFlag=0;
 $verboseFlag=$vmstatFlag=$alignFlag=$whatsnewFlag=0;
-$quietFlag=$utcFlag=0;
-$address=$flush=$fileRoot='';
+$quietFlag=$utcFlag=$statsFlag=0;
+$address=$flush=$fileRoot=$statOpts='';
 $limits=$lustreSvcs=$runTime=$playback=$playbackFile=$rollLog='';
-$groupFlag=$msgFlag=$niceFlag=$plotFlag=$sshFlag=$wideFlag=$rawFlag=$ioSizeFlag=0;
+$groupFlag=$msgFlag=$niceFlag=$plotFlag=$nohupFlag=$wideFlag=$rawFlag=$ioSizeFlag=0;
 $userOptions=$userInterval=$userSubsys='';
 $import=$export=$expName=$expOpts=$topOpts=$topType='';
 $impNumMods=0;  # also acts as a flag to tell us --import code loaded
@@ -344,6 +347,7 @@ $grepPattern=$pname='';
 $dskFilt=$netFilt='';
 $dskOpts=$netOpts=$xOpts='';
 $utimeMask=0;
+$comment=$runas='';
 
 my ($extract,$extractMode)=('',0);
 
@@ -398,6 +402,7 @@ GetOptions('align!'     => \$alignFlag,
            'options=s'  => \$userOptions,
 	   'N!'         => \$niceFlag,
            'nice!'      => \$niceFlag,
+           'nohup!'     => \$nohupFlag,
            'passwd=s'   => \$passwdFile,
 	   'p=s'        => \$playback,
            'playback=s' => \$playback,
@@ -410,8 +415,9 @@ GetOptions('align!'     => \$alignFlag,
            'runtime=s'  => \$runTime,
            's=s'        => \$userSubsys,
            'sep=s'      => \$SEP,
+           'stats!'     => \$statsFlag,
+           'statopts=s' => \$statOpts,
            'subsys=s'   => \$userSubsys,
-           'ssh!'       => \$sshFlag,
 	   'top=s'      => \$topOpts,
            'utc!'       => \$utcFlag,
            'umask=s'    => \$umask,
@@ -429,6 +435,7 @@ GetOptions('align!'     => \$alignFlag,
 	   'procfilt=s' => \$procFilt,
 
            'all!'          => \$allFlag,
+           'comment=s'     => \$comment,
            'dskfilt=s'     => \$dskFilt,
            'dskopts=s'     => \$dskOpts,
            'export=s'      => \$export,
@@ -457,6 +464,7 @@ GetOptions('align!'     => \$alignFlag,
 	   'procopts=s'    => \$procOpts,
            'procstate=s'   => \$procState,
            'rawtoo!'       => \$rawtooFlag,
+           'runas=s'       => \$runas,
            'showsubsys!'   => \$showSubsysFlag,
            'showoptions!'  => \$showOptionsFlag,
            'showsubopts!'  => \$showSuboptsFlag,
@@ -473,11 +481,49 @@ GetOptions('align!'     => \$alignFlag,
            'xopts=s'       => \$xOpts,
            ) or error("type -h for help");
 
+# This needs to be done BEFORE processing --pname since we end up changing $PidFile
+if ($runas ne '')
+{
+  error("canot use --runas without -D")    if !$daemonFlag;
+
+  # temporariluy disable daemon mode in debug mode so we can see messages on terminal.
+  $daemonFlag=0    if $debug;
+
+  my ($runasUser,$runasGroup)=split(/:/, $runas);
+  error("--runas must at least specify a user")   if $runasUser eq '';
+
+  # make sure we write the pidfile in the logging directory instead of /var/run
+  $PidFile=(-d $filename) ? "$filename/collectl.pid" : "$filename-collectl.pid";
+
+  if ($runasUser!~/^\d+$/)
+  {
+    $runasUid=(split(/:/, `grep $runasUser /etc/passwd`))[2];
+    error("can't find '$runasUser' in /etc/passwd.  Consider UID.")    if !defined($runasUid);
+  }
+  if (defined($runasGroup) && $runasGroup!~/^\d+$/)
+  {
+    $runasGid=(split(/:/, `grep $runasGroup /etc/group`))[2];
+    error("can't find '$runasGroup' in /etc/group.  Consider GID.")    if !defined($runasGid);
+  }
+  $runasUid=$runasUser     if $runasUser=~/^\d+/;
+  $runasGid=$runasGroup    if defined($runasGroup) && $runasGroup=~/^\d+/;
+
+  # let's make sure the owner/group of the log directory match
+  my $piddir=dirname($PidFile);
+  ($uid,$gid)=(stat($piddir))[4,5];
+
+  error("Ownership of '$piddir' doesn't match '$runas'")
+      if ($uid!=$runasUid) || (defined($runasGid) && $gid!=$runasGid);
+
+  # Daemon also means --nohup
+  $daemonFlag=$nohupFlag=1;
+}
+
 if ($pname ne '')
 {
   # We need to include switches because collectl-generic expects to find them in the process name
   $0="collectl-$pname $cmdSwitches";
-  $PidFile=~s/collectl/collectl-$pname/;
+  $PidFile=~s/collectl\.pid/collectl-$pname.pid/;
   print "Set PName to collectl-$pname\n"    if $debug & 1;
 }
 
@@ -501,7 +547,7 @@ if ($address ne '')
         PeerPort => $port,
         Proto    => 'tcp',
         Timeout  => $Timeout) or
-              error("Could not create socket to $address:$port")
+              error("Could not create socket to $address:$port.  Reason: $!")
         if !defined($socket);
     print "Socket opened on $address:$port\n"    if $debug & 64;
     push @sockets, $socket;
@@ -519,7 +565,7 @@ if ($address ne '')
         Type=>SOCK_STREAM,
         Reuse=>1, Listen => 1,
         LocalPort => $port) ||
-             error("Could not create local socket on port $port");
+             error("Could not create local socket on port $port  Reason: $!");
     print "Server socket opened on port $port\n"    if $debug & 64;
     $select=new IO::Select($sockServer);
     $serverFlag=1;
@@ -568,9 +614,10 @@ if ($XSwitch)
   exit;
 }
 
-error('invalid value for --lustopts')    if $lustOpts ne '' && $lustOpts!~/^[BDMOR]+$/;
-error('invalid value for --nfsopts')     if $nfsOpts ne '' && $nfsOpts ne 'z';
-error('invalid value for --memopts')     if $memOpts ne '' && $memOpts!~/^[R]+$/;
+error('invalid value for --lustopts')                     if $lustOpts ne '' && $lustOpts!~/^[BDMOR]+$/;
+error('invalid value for --nfsopts')                      if $nfsOpts ne '' && $nfsOpts ne 'z';
+error('invalid value for --memopts')                      if $memOpts ne '' && $memOpts!~/^[pPsRV]+$/;
+error('--memopts R cannot be user with any of [psPV]')    if $memOpts=~/R/ && $memOpts=~/[psPV]/;
 
 # in playback mode all we're really doing is verifying the options
 setNFSFlags($nfsFilt);
@@ -654,7 +701,12 @@ $userVerbose=$verboseFlag;
 setOutputFormat();
 
 # switch validations once we know whether brief or verbose
-error("-oA not allowed in verbose mode")   if $verboseFlag && $options=~/A/;
+error("only choose 1 of -oA and --stats")         if $statsFlag>1;
+error("statistics not allowed in verbose mode")   if $statsFlag && $verboseFlag;
+error("statistics not allowed interactively")     if $statsFlag && $playback eq '';
+error("--statopts required --stats")              if $statOpts ne '' && !$statsFlag;
+error("valid --statopts are [ais]")               if $statOpts ne '' && $statOpts!~/[ais]/;
+$headerRepeat=0    if $statsFlag && $statOpts!~/i/;    # force single header line when not including interval data
 
 #    S p e c i a l    F o r m a t s
 
@@ -736,6 +788,9 @@ if ($topOpts ne '')
   error("you cannot select process and slab subsystems in --top mode")
       if ($subsys=~/Y/ && $subsys=~/Z/) || 
          ($subsys=~/Y/ && $topProcFlag) || ($subsys=~/Z/ && $topSlabFlag);
+
+  # if sorting by v/n context switches, force --procopts x if not specified
+  $procOpts.='x'    if $topType=~/vctx|nctx/ && $procOpts!~/x/;
 
   if ($playback eq '')
   {
@@ -867,9 +922,6 @@ $utcFlag=1    if $options=~/U/;
 # should I migrate a lot of other simple tests here?
 error("you cannot specify -f with --top")                  if $topOpts ne '' && $filename ne '';
 error("--home does not apply to -p")                       if $homeFlag && $playback ne '';
-error("--home and -sY doesn't make sense.  use --top")     if $homeFlag && $subsys=~/Y/ && $topOpts eq '';
-error("--home and -sZ doesn't make sense.  use --top")     if $homeFlag && $subsys=~/Z/ && $topOpts eq '';
-error('--procopts only makes sense with --top or -sZ')     if $procOpts ne '' && $subsys!~/Z/ && !$topType;
 error("--envopts M does not apply to -P")                  if $userEnvOpts ne '' && $userEnvOpts=~/M/ && $plotFlag;
 error("--envopts are only fptCFMT and/or a number")        if $userEnvOpts ne '' && $userEnvOpts!~/^[fptCFMT0-9]+$/;
 error("--envrules does not exist")                         if $envRules ne '' && !-e $envRules;
@@ -1025,9 +1077,6 @@ if ($filename ne '')
 printf "RawFlag: %d PlotFlag: %d Repeat: %d Log2Flag: %d Export: %s\n", 
     $rawFlag, $plotFlag, $headerRepeat, $logToFileFlag, $export    if $debug & 1;
 
-error("--tworaw requires data collection to a file") 
-    if $groupFlag && ($playback ne '' || $filename eq '');
-
 ($lustreSvcs, $lustreConfigInt)=split(/:/, $lustreSvcs);
 $lustreSvcs=""                      if !defined($lustreSvcs);
 $lustreConfigInt=$LustreConfigInt   if !defined($lustreConfigInt);
@@ -1083,18 +1132,10 @@ if ($SrcArch!~/linux/)
   error("-N only works on linux")            if $niceFlag;
 }
 
-# flush
-if ($flush ne '')
-{
-  error("-F must be numeric")             if $flush!~/^\d+$/;
-  error("-p not allowed with -F")         if $playback ne '';
-}
-
-# daemon node
+# daemon mode
 if ($daemonFlag)
 {
   error("no debugging allowed with -D")      if $debug;
-  error("-D can only be used by root")       if !$rootFlag;
   error("-D requires -f OR -A server")       if $filename eq '' && !$serverFlag;
   error("-p not allowed with -D")            if $playback ne "";
 
@@ -1141,7 +1182,7 @@ if ($limits ne '')
 }
 
 # options
-error("invalid option")    if $options ne "" && $options!~/^[\^12aAcdDGgimnTuUxXz]+$/g;
+error("invalid option")    if $options ne "" && $options!~/^[\^12acdDGgimnTuUxXz]+$/g;
 error("-oi only supported interactively with -P to terminal")    
     if $options=~/i/ && ($playback ne '' || !$plotFlag || $filename ne '');
 $miniDateFlag=($options=~/d/i) ? 1 : 0;
@@ -1186,6 +1227,8 @@ error('--extract only applies to playback mode')       if $playback eq '' && $ex
 
 if ($playback ne "")
 {
+  error("-p not allowed with -F")         if $flush ne '';
+
   error("--offsettime must be in seconds with optional leading '-'")
       if defined($offsetTime) && $offsetTime!~/^-?\d+/;
 
@@ -1373,14 +1416,9 @@ if ($homeFlag)
 error("-sT only works with -P for now (too much data)")
     if $TFlag && !$plotFlag;
 
-if ($sshFlag)
-{
-  error("--ssh doesn't apply to daemon mode")      if $daemonFlag;
-  error("--ssh doesn't apply to playback mode")    if $playback ne '';
-  $stat=`cat /proc/$$/stat`;
-  $myPpid=(split(/\s+/, $stat))[3];
-  pushmsg('I', "Started by PID: $myPpid");
-}
+# get parent pid so we can check later to see it still there
+$stat=`cat /proc/$$/stat`;
+$myPpid=(split(/\s+/, $stat))[3];
 
 ###############################
 #    P l a y b a c k    M o d e
@@ -1396,6 +1434,7 @@ if ($playback ne '')
   while (my $file=glob($playback))
   {
     next    if $file!~/(.*)-(\d{8})-(\d{6})\.(raw[p]*)/;
+    next    if $file=~/rawp/ && $statsFlag;    # we never look at rapw files when doing stats
 
     my $prefix=  $1;
     my $fileDate=$2;
@@ -1573,7 +1612,7 @@ if ($playback ne '')
     # the best example being playing back  *.gz files which have been collected with --tworaw and only
     # requestion data in one typw.  In those cases both files will be processed and we need to skip
     # the ones w/o data.  The logmsg() below only reports the message when -m included.
-    if (!$impNumMods && $subsys eq $tempSys)
+    if (!$numProcessed && !$impNumMods && $subsys eq $tempSys)
     {
       logmsg("w", "none of the requested subsystems are recorded in selected file");
       next;
@@ -1631,12 +1670,13 @@ if ($playback ne '')
     # We can only do this test after figuring out what's in the header.  NOTE that since the number
     # of enabled CPUs can change dynamically when doing -sC and we've already skipped the code in 
     # formatit that sets the number to 0, we have to do it here too.
-    if ($subsys=~/j/i && $subsys!~/C/ && $plotFlag)
+    if ($subsys=~/j/i && $subsys!~/C/i && $plotFlag)
     {
       logmsg('I', "-sj or -sJ with -P also requires CPU details so adding -sC.  See FAQ for details.");
       $subsys.='C';
       $subsysAll.='C';
-      $cpusEnabled=0;
+      $noCpusFlag=1;    # we need to know elsewhere when this was done
+      $cpusEnabled=0    if $recSubsys=~/c/i;    # if recorded, WILL be dynamically reset
     }
 
     # the way the process/slab tests work is if raw file not built with -G, look at all files.
@@ -1697,7 +1737,7 @@ if ($playback ne '')
     # raw and rawp, with the latter requiring verbose, always reset to the default
     # of brief, unless if course user specified --verbose.
     checkSubsysOpts();       # Make sure valid
-    $verboseFlag=($userVerbose) ? 1 : 0;
+    $verboseFlag=1    if $userVerbose;
     setOutputFormat();
 
     # We need to set the 'coreFlag' based on whether or not any core 
@@ -1851,12 +1891,13 @@ if ($playback ne '')
 
     # when processing data for a new prefix/date and printing on a terminal
     # we need to print totals from previous file(s) if there were any and 
-    # reset total
-    if ($filename eq '' && $newPrefixDate)
+    # reset total.  However is --statopts s (as opposed to S), we do subtotals
+    # for each file
+    if ($filename eq '' && ($newPrefixDate || $statOpts=~/s/))
     {
-      if ($options=~/A/ && $numProcessed>1)
+      if ($statsFlag && $numProcessed)
       {
-        printBriefCounters('A');
+        printBriefCounters('A')    if $statOpts=~/a/;
         printBriefCounters('T');
       }
       $elapsedSecs=0;
@@ -1996,7 +2037,7 @@ if ($playback ne '')
       }
 
       # Either we're processing a timestamp marker OR data entries
-      # When using a single raw file that has inteval markers for all record and newer rawp
+      # When using a single raw file that has interval markers for all record and newer rawp
       # files that only have them for interval2 only we need to force the 'print' flag each time
       $interval2Print=1    if $rawPFlag && $recVersion ge '3.3.5';
       if ($timestampFlag)
@@ -2068,11 +2109,11 @@ if ($playback ne '')
   printSlabAnalyze()    if $slabAnalCounter;
 
   # if printing to terminal, be sure to print averages & totals for last file processed
-  if (!$rawPFlag && $options=~/A/ && $filename eq '')
+  if (!$rawPFlag && $statsFlag && $filename eq '')
   {
     $subsys=$subsysAll;    # in case mixed raw/rawp we need to reset
     $subsys=~s/y//;
-    printBriefCounters('A');
+    printBriefCounters('A')    if $statOpts=~/a/;
     printBriefCounters('T');
   }
 
@@ -2094,8 +2135,10 @@ loadUids($passwdFile)   if $subsys=~/Z/;
 
 # In case running on a cluster, record the name of the host we're running on.
 # Track in collecl's log as well as syslog
-my $temp=($pname ne '') ? "(running as '$pname') " : '';
-$message="V$Version Beginning execution ${temp}on $myHost...";
+my $nohup=($nohupFlag && !$daemonFlag) ? '[--nohup]' : '';    # only announce --nohup if not daemon
+my $temp=($runas ne '') ? "as user '$runas' " : '';
+$temp.=($pname ne '') ? "(running as '$pname') " : '';
+$message="V$Version Beginning execution$nohup ${temp}on $myHost...";
 logmsg("I", $message);
 logsys($message);
 checkHiRes()        if $daemonFlag;      # check for possible HiRes/glibc incompatibility
@@ -2111,9 +2154,14 @@ foreach my $message (@messages)
 # on this platform, initRecord() will have deselected them!
 initRecord();
 error("no subsystems selected")    if $subsys eq '' && $import eq '';  # ok in --import mode
+
+# Process I/O stats are a little tricky.  initRecord() sets $processIOFlag based on kernel's
+# capabilities, but if user has disabled them, we then need to clear that flag.
+error("process I/O features not enabled in this kernel")       if $procOpts=~/i/i && !$processIOFlag;
+error("process options i and I are mutually exclusive")        if $procOpts=~/i/ && $procOpts=~/I/;
 error("you cannot use --top and IO options with this kernel")  if $topIOFlag && !$processIOFlag;
-error("process I/O features not enabled in this kernel")       if $procOpts=~/i/   && !$processIOFlag;
-error("process I/O statistics not available in this kernel")   if $procOpts=~/[s]/ && !$processIOFlag;
+error("you cannot use --top and IO options with --procopt I")  if $topIOFlag && $procOpts=~/I/;
+$processIOFlag=0    if $procOpts=~/I/;
 
 if ($subsys=~/y/i && !$slabinfoFlag && !$slubinfoFlag)
 {
@@ -2211,19 +2259,51 @@ if ($daemonFlag)
   open STDOUT, '>/dev/null'  or logmsg("F", "Can't write to /dev/null: $!");
   open STDERR, '>/dev/null'  or logmsg("F", "Can't write to /dev/null: $!");
   `echo $$ > $PidFile`;
+
+  # Now that we're set up to start, if '--runas' has been sprecified we need to do a
+  # few things that require privs before actually changing our UID.  Also note the
+  # GID is optional.
+  if ($runas ne '')
+  {
+    # we have to make sure the owner ship of the message log and pidfile are correct.
+    # This is only an issue for the msglog when a new file gets created to log the first 
+    # messge of the month and we've restarted as root.  Steal the code from logmsg() to
+    # build its name.
+    ($ss, $mm, $hh, $day, $mon, $year)=localtime(time);
+    $yymm=sprintf("%d%02d", 1900+$year, $mon+1);
+    $logname=(-d $filename) ? $filename : dirname($filename);
+    $logname.="/$myHost-collectl-$yymm.log";
+
+    foreach my $file ($logname, $PidFile)
+    {
+      `chown $runasUid $file`;
+      if (defined($runasGid))
+      {
+        `chgrp $runasGid $file`;
+      }
+    }
+
+    # now we can change our process's ownership taking care to do the group first
+    # since we won't be able to change anything once we change our UID.
+    $EGID=$runasGid    if defined($runasGid);
+    $EUID=$runasUid;
+
+  }
 }
 
 ######################################################
 #
 # ===>   WARNING: No Writing to STDOUT beyond   <=====
-#                 since we're now daemonized!
+#                 since we may be daemonized!
 #
 ######################################################
 
 $SIG{"INT"}=\&sigInt;      # for ^C
 $SIG{"TERM"}=\&sigTerm;    # default kill command
 $SIG{"USR1"}=\&sigUsr1;    # for flushing gz I/O buffers
-$SIG{"PIPE"}=\&sigPipe;    # socket comm errors
+
+# to catch collectl's socket I/O errors, noting graphite.ph sets its own handler
+$SIG{"PIPE"}=\&sigPipe     if $address ne '';
 
 $flushTime=($flush ne '') ? time+$flush : 0;
 
@@ -2270,13 +2350,30 @@ if ($interval!=0)
 }
 else
 {
-  # While we don't want any pauses, we also want to limit the number
-  # of collections to the same number as would be taken during normal
-  # activities.
+  # While we don't want any pauses, we also want to limit the number of collections
+  # to the same number as would be taken during normal activities.  The magic here 
+  # is we can only get here is if $userInterval is not null.  By default we assume
+  # the ratios between ints 1/2/3 to be 1/6/30, but if i2 or i3 specified use those
+  # as the ratios, not actual intervals.  eg  for -i5:20, use -i0:4
+  my ($ui, $ui2, $ui3)=split(/:/, $userInterval);
+  $ui2=''    if !defined($ui2);
+  $ui3=''    if !defined($ui3);
+
+  $limit2=($ui2 eq '') ?  6 : $ui2;
+  $limit3=($ui3 eq '') ? 30 : $ui3;
   $interval2=$interval3=0;
-  $limit2=6;
-  $limit3=30;
   print "Interval Lim2: $limit2  Lim3: $limit3\n"    if $debug & 1;
+}
+
+if ($groupFlag)
+{
+  error("--tworaw require BOTH process and non-procss data")    if !$recFlag0 || !$recFlag1;
+  error("--tworaw requires data collection to a file")   if $filename eq '';
+
+  # DUE to what seems to be a bug in zlib 2.02 (and maybe others), you cannot flush a buffer
+  # twice in a row w/o writing to it.  A shorter interval causes that to happen to rawp.gz.
+  error("cannot use -F0 with --tworaw when interval1 not equal interval2")             if !$flush && $interval!=$interval2;
+  error("flush time cannot be < process collection interval, when using --tworaw")    if $flush && $flush<$interval2;
 }
 
 # Note that even if printing in plotting mode to terminal we STILL call newlog
@@ -2295,7 +2392,10 @@ if ($showHeaderFlag && $playback eq '')
 }
 
 # If HiRes had been loaded and we're NOT doing 'time' tests, we want to 
-# align each interval via sigalrm
+# align each interval via sigalrm.  We HAVE to clear doneFlag here rather
+# than at loop top because when collectl receives a sigterm it sets the flag
+# and we don't want to set it back to 0. 
+$doneFlag=0;
 if ($hiResFlag && $interval!=0)
 {
   # Default for deamons is to always align to the primary interval
@@ -2384,7 +2484,6 @@ printf "%c[3;%dr", 27, $scrollEnd    if $scrollEnd;
 #    M a i n    P r o c e s s i n g    L o o p
 
 # This is where efficiency really counts
-$doneFlag=0;
 for (; $count!=0 && !$doneFlag; $count--)
 {
   # When in server mode we always need to check for readable socket
@@ -2397,7 +2496,7 @@ for (; $count!=0 && !$doneFlag; $count--)
       print "Socket 'can read'\n"    if $debug & 64;
       if ($newHandle==$sockServer)
       {
-        $socket=$sockServer->accept() || logmsg('F', "Couldn't accept socket request");
+        $socket=$sockServer->accept() || logmsg('F', "Couldn't accept socket request.  Reason: $!");
 	$select->add($socket);
         push @sockets, $socket;
         my $client=inet_ntoa((sockaddr_in(getpeername($socket)))[1]);
@@ -2801,7 +2900,7 @@ for (; $count!=0 && !$doneFlag; $count--)
 	  $pidSeen{$pid}=getProc(16, "/proc/$task/$pid/cmdline", "proc:$pid cmd", undef, 1)
 	      if $pidSeen{$pid}==1;
 	  $pidSeen{$pid}=getProc(17, "/proc/$taskio/$pid/io", "proc:$pid io")
-	      if $pidSeen{$pid}==1 && $processIOFlag;
+	      if $pidSeen{$pid}==1 && $processIOFlag && ($rootFlag || -r "/proc/$taskio/$pid/io");
 	  findThreads($pid)     if $allThreadFlag || ($oneThreadFlag && $procOpts!~/p/ && $pidThreads{$pid});
         }
       }
@@ -2826,7 +2925,7 @@ for (; $count!=0 && !$doneFlag; $count--)
 	  $pidSeen{$pid}=getProc(16, "/proc/$task/$pid/cmdline", "proc:$pid cmd", undef, 1)
 	      if $pidSeen{$pid}==1;
 	  $pidSeen{$pid}=getProc(17, "/proc/$taskio/$pid/io", "proc:$pid io")
-	      if $pidSeen{$pid}==1 && $processIOFlag;
+	      if $pidSeen{$pid}==1 && $processIOFlag && ($rootFlag || -r "/proc/$taskio/$pid/io");
 	  findThreads($pid)     if $allThreadFlag || ($oneThreadFlag && $procOpts!~/p/ && $pidThreads{$pid});
         }
       }
@@ -2845,7 +2944,7 @@ for (; $count!=0 && !$doneFlag; $count--)
 	  $tpidSeen{$pid}=getProc(13, "/proc/$task/$pid/status", "procT:$pid")
 	      if $tpidSeen{$pid}==1; 
 	  $tpidSeen{$pid}=getProc(17, "/proc/$taskio/$pid/io", "procT:$pid io")
-	      if $tpidSeen{$pid}==1 && $processIOFlag;
+	      if $tpidSeen{$pid}==1 && $processIOFlag && ($rootFlag || -r "/proc/$taskio/$pid/io");
         }
       }
 
@@ -2901,8 +3000,12 @@ for (; $count!=0 && !$doneFlag; $count--)
   }
   $diskChangeFlag=0;
 
-  # If -S specified, see if our parent's pid went away and if so, we're done
-  last    if $sshFlag && !-e "/proc/$myPpid";
+  # If our parent's pid went away we're done, unless --nohup specified or we're a daemon
+  if (!-e "/proc/$myPpid" && !$daemonFlag && !$nohupFlag)
+  {
+    logmsg('W', 'parent exited and --nohup not specified');
+    last;
+  }
 
   # if we'll pass the end time while asleep, just get out now.
   last    if $endSecs && ($intSeconds+$interval)>$endSecs;
@@ -3307,11 +3410,12 @@ sub checkSubsysOpts
   if ($procOpts ne '')
   {
     $procCmdWidth=($procOpts=~s/w(\d+)/w/) ? $1 : 1000;
-    error("invalid process option '$procOpts'")                if $procOpts!~/^[cfimprRtwz]+$/;
-    error("process options i and m are mutually exclusive")    if $procOpts=~/i/ && $procOpts=~/m/;
-    error("--procopts z can only be used with --top")          if !$numTop && $procOpts=~/z/;
+    error("invalid process option '$procOpts'")                   if $procOpts!~/^[cfiImprRtwxz]+$/;
+    error("process options i and m are mutually exclusive")       if $procOpts=~/i/ && $procOpts=~/m/;
+    error("your kernel doesn't support process extended info")    if $procOpts=~/x/ && !$processCtxFlag;
+    error("--procopts z can only be used with --top")             if !$numTop && $procOpts=~/z/;
   }
-  error("--procstate not one or more of 'DRSTWZ'")             if $procState ne '' && $procState!~/^[DRSTWZ]+$/;
+  error("--procstate not one or more of 'DRSTWZ'")                if $procState ne '' && $procState!~/^[DRSTWZ]+$/;
 
 
   # it's possible this is not recognized as running a particular type of service
@@ -3439,6 +3543,7 @@ sub checkLustre
   else
   {
     $services=$lustreSvcs;
+    $thisConfig=$lustreSvcs;
   }
 
   #    C h e c k    O p t i o n s
@@ -3568,7 +3673,9 @@ sub getProc
     {
       next    if $line=~/^nr/;
       next    if $line=~/^numa/;
-      last    if $line=~/^pgre/;
+      last    if $memOpts!~/[ps]/ && $line=~/^pgre/;     # ignore from pgrefill forward
+      last    if $memOpts!~/s/ && $line=~/^pgst/;        # ignore from pgstead forward
+      last    if $line=~/^pginode/;                      # ignore from pginodesteal and below
       record(2, "$line");
     }
 
@@ -3642,14 +3749,16 @@ sub getProc
     # /proc/*/status - save it all!
     elsif ($type==13)
     {
-      # only saving 3 types of data
+      # only saving a subset because there is a lot of 'noise' in here
+      # looks like not exiting early via ^Threads is costing ~10 seconds.  If this
+      # ever turns out to be an issue we could always make collecting the context
+      # switches optional but for at least now I'm thinking we just do it!
+      # since ^nonvol is the last entry no need for a test to exit loop earlier
       if ($line=~/^Tgid/)       { record(2, "$tag $line", undef, 1); next; }
       if ($line=~/^Uid/)        { record(2, "$tag $line", undef, 1); next; }
       if ($line=~/^Vm/)         { record(2, "$tag $line", undef, 1); next; }
-
-      # since VmSwap isn't available with all kernels, this looks like the first thing
-      # in command on older/newer kernels
-      last    if $line=~/^Threads/;
+      if ($line=~/^vol/)        { record(2, "$tag $line", undef, 1); next; }
+      if ($line=~/^nonv/)       { record(2, "$tag $line", undef, 1); next; }
     }
 
     # /proc/slabinfo - only if not doing all of them
@@ -3740,7 +3849,7 @@ sub getExec
       # Perfquery V1.5 adds an extra field called CounterSelect2 so ignore.
       next    if ++$lineNum==13 && ($PQVersion ge '1.5.0');
 
-      if ($line=~/^#.*(\d+)$/)
+      if ($line=~/^#.*port (\d+)/)
       {
         # The 0 is a place holder we don't care about, at least not now
         $oneLine="$1 0 ";
@@ -3833,8 +3942,6 @@ sub record
   my $recMode= shift;    # error recovery mode
   my $rawpFlag=shift;    # if defined, write to rawp or zrawp
 
-  # This essentially replaces -H in that it let's us see everything read
-  # from /proc.  Combine with -d32 to prevent any other output.
   print "$data"     if $debug & 4;
 
   #    W r i t e    T o    R A W    F i l e
@@ -3872,7 +3979,7 @@ sub record
     {
       # Same logic as for compressed data above.
       my $rawNorm=(defined($rawpFlag) && $recFlag1) ? $RAWP : $RAW;
-      printf $rawNorm $data;
+      print $rawNorm $data;
     }
   }
 
@@ -4329,6 +4436,7 @@ sub buildCommonHeader
   $flags.='g'    if $groupFlag;
   $flags.='i'    if $processIOFlag;
   $flags.='s'    if $slubinfoFlag;
+  $flags.='x'    if $processCtxFlag;
   $flags.='D'    if $cpuDisabledFlag;
 
   my $commonHeader='';
@@ -4378,6 +4486,7 @@ sub buildCommonHeader
 	if ($lustOpts=~/D/);
   }
   for (my $i=0; $i<$impNumMods; $i++) { &{$impUpdateHeader[$i]}(\$commonHeader); }
+  $commonHeader.="# Comment:    $comment\n"    if $comment ne '';
   $commonHeader.='#'x80;
   $commonHeader.="\n";
 
@@ -4423,6 +4532,7 @@ sub setOutputFormat
   # By default, brief has been initialized to 1 and verbose to 0 but in these
   # cases (when not doing --import) we switch to verbose automatically
   $verboseFlag=1    if ($subsys ne '' && $subsys!~/^[$BriefSubsys]+$/) || $lustOpts=~/[BDM]/;
+  $verboseFlag=1    if $memOpts=~/[psPV]/;
 
   # except as where noted below, columns in verbose mode are assumed different
   $sameColsFlag=($verboseFlag) ? 0 : 1;
@@ -4673,16 +4783,22 @@ sub logmsg
   my ($ss, $mm, $hh, $day, $mon, $year, $msg, $time, $logname, $yymm, $date);
 
   # may need time if in debug and this routine gets called infrequently enough
-  # that the extra processing is no big deal
-  ($ss, $mm, $hh, $day, $mon, $year)=localtime(time);
+  # that the extra processing is no big deal.  Also note that time and gettimeofday
+  # are not always exactly in sync so when hires loaded, ALWAYS use it
+  my $timesecs=($hiResFlag) ? (Time::HiRes::gettimeofday())[0] : time();
+  ($ss, $mm, $hh, $day, $mon, $year)=localtime($timesecs);
   $time=sprintf("%02d:%02d:%02d", $hh, $mm, $ss);
 
   # always report non-informational messages and if not logging, we're done
-  # BUT - if running as a daemon we CAN'T print because no terminal to talk to
-  # We ONLY write to the log when writing to a file and -m
+  # BUT - if not attached to a terminal or not running as a daemon we CAN'T print 
+  # because no terminal to talk to.
+  # Also, not that we ONLY write to the log when writing to a file and -m
   $text="$time $text"      if $debug & 1;
-  print STDERR "$text\n"   if !$daemonFlag && ($msgFlag || ($severity eq 'W' && !$quietFlag) || $severity=~/[EF]/ || $debug & 1);
+  print STDERR "$text\n"   if $termFlag && !$daemonFlag && ($msgFlag || ($severity eq 'W' && !$quietFlag) || $severity=~/[EF]/ || $debug & 1);
   exit(1)                  if !$msgFlag && $severity eq "F";
+
+  # Remember: if running as a daemon and NOT -m, we'll never see any messages
+  # in collectl log OR syslog.
   return                   unless $msgFlag && $filename ne '';
 
   $yymm=sprintf("%d%02d", 1900+$year, $mon+1);
@@ -5117,6 +5233,8 @@ sub loadConfig
 
       $DiskMaxValue=$value     if $param=~/^DiskMaxValue/;
       $DiskFilter=$value       if $param=~/^DiskFilter/;
+
+      $ProcReadTest=$value     if $param=~/^ProcReadTest/;
     }
   }
   close CONFIG;
@@ -5506,9 +5624,9 @@ sub loadUids
 # here we have just found a new pid neither in the list to skip nor to process so
 # we have to go back to our selector list and see if it meets the selection specs.
 # if so, return the pid AND be sure to add to pidProc{} so we don't come here again.
-# It seems that there are time we get called and /proc/$pid doesn't exist anymoe.
-# My theory if these are short lived processes that are there whent he directory
-# if first read but are gone by the time we want to open them.  For efficiency
+# There are time we get called and /proc/$pid doesn't exist anymore.  This is
+# because these are short lived processes that are there where in the directory
+# when first read but are gone by the time we want to open them.  For efficiency
 # we do a test to see if the pid directory exists and then trap later opens in case it
 # disappeared by then!
 # NOTE - we could probably return 0/1 depending on whether or not pid found, but since
@@ -5528,7 +5646,7 @@ sub pidNew
   if ($uidSelFlag)
   {
     $uid=0;
-    open TMP, "</proc/$pid/status" or last;
+    open TMP, "</proc/$pid/status" or return(0);    # went away between first check and now!
     while ($line=<TMP>)
     {
       if ($line=~/^Uid:\s+(\d+)/)
@@ -5820,6 +5938,8 @@ usage: collectl [switches]
                                   z - turn off compression of plot files
   -p, --playback   file       playback results from 'file'
   -P, --plot                  generate output in 'plot' format
+      --stats                 same as -oA
+      --sumstat               same as --stats but only summary
   -s, --subsys     subsys     specify one or more subsystems [default=cdn]
       --verbose               display output in verbose format (automatically
                               selected when brief doesn't make sense)
@@ -5856,7 +5976,9 @@ This is the complete list of switches, more details in man page
       --align                   align on time boundary
       --all                     selects 'all' summary subsystems except slabs,
                                 which means NO detail or process data either
+			          note: the opposite of --all is -s-all
   -A, --address    addr         write output to socket
+      --comment    string       add the string to the end of the header
   -C, --config     file         use alternate collectl.conf file
   -c, --count      count        collect this number of samples and exit
   -d, --debug      debug        see source for details or try -d1 to get started
@@ -5881,6 +6003,7 @@ This is the complete list of switches, more details in man page
   -l, --limits     limits       override default exceptions name:val[-name:val]
   -m, --messages                write messages to log file and/or terminal
   -N, --nice                    give yourself a 'nicer' priority
+      --nohup                   do not exit if the process that started collectl exits
       --offsettime secs         seconds by which to offset times during playback
   -o, --options                 misc formatting options, --showoptions for all
   -p, --playback   file         playback results from 'file'
@@ -5891,11 +6014,14 @@ This is the complete list of switches, more details in man page
       --quiet                   do note echo warning messages on the terminal
   -r, --rolllogs   time,d,m     roll logs at 'time', retaining for 'd' days, 
                                   every 'm' minutes [default: d=7,m=1440]
+      --rawtoo                  when run with -P, this tell collectl to also
+                                  create a raw log file as well
+      --runas      uid[:gui]    collectl will change its uid/gid in daemon mode
+                                  see man page for details
   -R, --runtime    duration     time to run in <number><units> format
                                   where unit is w,d,h,m,s
       --sep        separator    specify an alternate plot format separator
       --slabanalyze             analyze slab data, generating slbs file
-      --ssh                     started by ssh so disconnect if caller exits
   -s, --subsys     subsys       record/playback data from one or more subsystems
                                   --showsubsys for details
       --thru       time         time thru which to playback data (see --from)
@@ -5984,6 +6110,8 @@ An alternative format lets you add and/or subtract subsystems to the defaults by
 immediately following -s with a + and/or -
   eg: -s+YZ-x adds slabs & processes and removes interconnet summary data
       -s-n removes network summary data
+      -s-all removes ALL subsystems, something that can handy when playing back
+             data collected with --import and you ONLY want to see that data
 EOF3
 printText($subsys);
 exit    if !defined($_[0]);
@@ -6006,9 +6134,6 @@ Date and Time
 Numerical Formats
   g - include/substitute 'g' for decimal point for numbers > 1G
   G - include decimal point (when it will fit) for numbers > 1G
-
-Statistics (-p only, brief mode)
-  A - show averages and totals after each file processed
 
 Exception Reporting
   x - report exceptions only (see man page)
@@ -6098,7 +6223,16 @@ Interconnect
       
 Memory
   --memopts
+      P - display physical portion of verbose display
+      V - display virtual portion of verbose display
+      p - display/record alloc/refill number of pages
+      s - display/record steal/kswap/direct number of pages
       R - show changes in memory as rates, not instantaneous values
+
+      note that including p or s will collect more data and will slightly increase in processing
+      time.  if neither P or V are specified none of the basic memory stats will be displayed BUT
+      they will be recorded making it possible to display later either by including P/V as an
+      option OR leaving off both p and s.
 
 Network
   --netfilt perl-regx[,perl-regx...]
@@ -6130,6 +6264,8 @@ Processes
       c - include cpu time of children who have exited (same as ps S switch)
       f - use cumulative totals for page faults in proc data instead of rates
       i - show io counters in display
+      I - disable collection/display of I/O stats.  saves over 25% in data
+          collection overhead
       m - show memory breakdown and faults in display
       p - never look for new pids or threads to match processing criteria
             This also improves performance!
@@ -6138,6 +6274,7 @@ Processes
       t - include ALL threads (can be a lot of overhead if many active threads)
       w - make format wider by including entire process argument string
           you can also set a max number of chars, eg w32
+      x - include extended process attributes (currently only for context switches)
       z - exclude any processes with 0 in sort field
 
    --procfilt: restricts which procs are listed, where 'procs' is of the
@@ -6199,6 +6336,7 @@ Time
   syst   system time
   usrt   user time
   time   total time
+  accum  accumulated time
 
 I/O
   rkb    KB read
@@ -6220,6 +6358,10 @@ Page Faults
   majf   major page faults
   minf   minor page faults
   flt    total page faults
+
+Context Switches
+  vctx   volunary context switches
+  nctx   non-voluntary context switches
 
 Miscellaneous (best when used with --procfilt)
   cpu    cpu number
@@ -6248,6 +6390,32 @@ sub whatsnew
 {
   my $whatsnew=<<EOF6;
 What's new in collectl since January 2011?
+
+version 3.6.1
+- when using -on, CPU loads will now be reported in jiffies
+- new switch:   --comment will add a user comment to the end of the header
+- new switch:   --runas will allow collectl to run as non-root when daemonized
+- new switch:   --nohup will allow collectl to continue running when parent exists
+- new switch:   --stats the same as -oA, -oA will eventually go away
+- new switch:   --statopts controls how --stats behaves, the default is record/day
+                a - include averages
+                i - include data for all intervals
+                s - summary for every file processed
+- new export:   graphite willl now send output to a graphite/carbon daemon
+- new memopt:   P displays physical portion of verbose display
+                V displays virtual portion of verbose display
+                p displays/records alloc/refill number of pages
+                s displays/records steal/kswap/direct number of pages
+                    NOTE - collectl ALWAYS records P/V memory
+- new procopt:  I disables collection/reporting of I/O stats.  This has been
+                measured to save over 25 in collection overhead
+- new procopt:  x will include 'extended' process options in standard format
+                and support sorting by them with --top.  currently
+                voluntary/nonvoluntary context switches
+- new topopt:   sort by accumulated time
+- removed:      --ssh, as this is now he default behavior to exit when parent does
+- removed:      -oA
+- experimental: --import snmp.ph, see http://collectl.sourceforge.net/Snmp.html for details
 
 Version 3.6.0
 - dropped support for 2.4 kernels, collectl data prior to V2

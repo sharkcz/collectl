@@ -66,14 +66,12 @@ specifying a combination of \-P and \-f.  See
 for more details.
 .RE
 
-.B "\-c, --count Samples"
+.B "\--comment string"
 .RS
-The number of samples to record. This is one way of 3 ways of describing
-how long collectl should run (see
-.BR \-r
-and
-.BR \-R
-).  Note that these 3 switches are mutually exclusive.
+Add the specified string to the end of the headers in the data files. If any embedded
+spaces be sure to quote it.  This can be very useful when doing characterizations or
+benchmarking and you're frequently changing system/application parameters and restarting
+collectl between tests.
 .RE
 
 .B "\-C, --config filename"
@@ -86,6 +84,16 @@ searches for
 first in /etc (the default), then in the same directory the
 .BR collectl
 executable is in, and finally the current working directory.
+.RE
+
+.B "\-c, --count Samples"
+.RS
+The number of samples to record. This is one way of 3 ways of describing
+how long collectl should run (see
+.BR \-r
+and
+.BR \-R
+).  Note that these 3 switches are mutually exclusive.
 .RE
 
 .B "\-D, --daemon"
@@ -148,6 +156,19 @@ also known as the home position (non-plot format only).  This generates a
 real-time, continously refreshing display when the data fits on a single screen.
 .RE
 
+.B --import file1[,options][:file2[,options]...]
+.RS
+This loads the named files and executes callbacks to them, which is the API mechanism for
+importing additional metrics into collectl.  See the webpage on the API for further detail.
+
+Since these files also include instructions for how to report the output in all the various
+forms, you will also need to include --import during playback.  Finally, since the
+default is to seamlessly include imported data with everything else collectl reports, if you ONLY
+want to display imported data you much explicitly deselect all other subsystems either
+by including -s- (note the trailing minus sign) followed by all the subsystems were recorded OR 
+simply say -s-all.
+.RE
+
 .B "\-i, --interval interval[:interval2[:interval3]]"
 .RS
 This is the sampling interval in seconds.  The default is 10 seconds when run
@@ -167,18 +188,14 @@ To sample only processes once every 10 seconds
 use \-i:10.
 .RE
 
-.B "\-r, --rolllogs time[[,days][,minutes]]"
+.B --nohup
 .RS
-When selected, 
-.BR collectl
-runs indefinately (or at least until the system reboots).
-The maximum number of raw and/or plot files that will be retained 
-(older ones are automatically deleted) is controlled by the
-.BR days
-field, the default is 7 days.  The
-.BR increment
-field which is also optional (but is position dependent) specifies the duration of
-an individual collection file in minutes the default of which is 1440 or 1 day.
+Whenever collectl finishes a data collection interval, it checks to see if the starting parent
+has exited.  This is to prevent the case in which someone might start a copy of collectl
+and then the process dies and collectl keeps running.  If that is the behavior someone
+actually intends, they should start collectl with --nohup.
+
+NOTE - when running as a daemon, --nohup is implied.
 .RE
 
 .B "--quiet"
@@ -193,6 +210,20 @@ warnings can be annoying and one can suppress these with --quiet though they wil
 written to the message log in \-f.  You cannot suppress Error or Fatal errors.
 .RE
 
+.B "\-r, --rolllogs time[[,days][,minutes]]"
+.RS
+When selected, 
+.BR collectl
+runs indefinately (or at least until the system reboots).
+The maximum number of raw and/or plot files that will be retained 
+(older ones are automatically deleted) is controlled by the
+.BR days
+field, the default is 7 days.  The
+.BR increment
+field which is also optional (but is position dependent) specifies the duration of
+an individual collection file in minutes the default of which is 1440 or 1 day.
+.RE
+
 .B "--rawtoo"
 .RS
 Only available in conjunction with \-P, this switch causes the creation/logging
@@ -200,6 +231,25 @@ of raw data in addition to plottable data.  While this may seem excessive,
 keep in mind that unlike plottable data, raw data can be played back with different
 switches potentially providing more details.  The overhead to write out this 
 additional data is minimal, the only real cost being that of extra disk space.
+.RE
+
+.B "\-R, --runas uid[:gid]"
+.RS
+This switch only works when running in daemon mode and so must be specified in
+the DaemonCommands line.  Its presence will cause collectl to write the collectl.pid
+file into the same directory as its other output files as specified by -f, since 
+/var/run does not normally grant non-privileged users write access.  Furthermore, 
+the ownership of that directory must match the specified ownership since collectl
+needs to write ALL it's files to that directory and can no longer assume global
+permissions when run as root.
+
+This WILL also require manually modifying /etc/init.d/collectl to change the 
+PIDFILE variable to point to the same directory which the -f switch in the 
+DaemonCommands line of collectl.conf points to.
+
+As a final note of caution, since this mechanism changes where collectl reads/writes
+its pid file, once you start using --runas, all calls to run collectl as a daemon
+must use it or it may be confused and exhibit unpredictable behavior.
 .RE
 
 .B "\-R, --runtime duration"
@@ -218,15 +268,6 @@ interpretted as the decimal value of the associated ASCII character code.  Other
 is interpretted as the character itself.  In other words, "--sep :" sets the separator 
 character to a colon and "--sep 9" sets it to a horizontal tab.  "--sep 58" would also
 set it to a colon.
-.RE
-
-.B --ssh
-.RS
-This is typically used when starting collectl on another system via ssh or
-rsh.  It causes collectl to "watch" for its parent (who started it locally) to
-exit at which point it will exit as well.  The reason for this switch is that
-when the remote command that started collectl exists, collectl's parent will exit
-as well but NOT collectl, unless --s is specified.
 .RE
 
 .B --tworaw
@@ -462,12 +503,6 @@ allowing muliple recorded files to be processed and written to a single plot
 file.
 .RE
 
-.B A
-.RS
-When playing back one or more files to the terminal in brief mode, append the
-Average and Totals.
-.RE
-
 .B c
 .RS
 Always open newly named plot fies in 
@@ -519,7 +554,10 @@ to the time.
 .RS
 Where appropriate, data such as disk KBs or transfers are normalized to units per 
 second by taking the change in a counter and dividing by the number of seconds in 
-that interval.  Normalization can be disabled via this option, the result being 
+that interval.  In the case of CPUs, utilization (calculated in jiffies) is 
+normalized as a percentage of the interval.
+
+Normalization can be disabled via this option, the result being 
 the reported values are not divided by the duration of the interval.  This can be
 particulary useful for reporting values that are < 1/2 the sampling, which will be
 rounded to 0.
@@ -588,6 +626,25 @@ elements written to one or
 more files, one per detail subsystem.  
 If \-f is not specified, all output is sent to the terminal.  
 Output is always one line per sampling interval.
+.RE
+
+.B "--stats"
+.RS
+This switch will cause brief data to be reported as both totals and averages
+after processing one or more files for the same day or in playback mode.
+.RE
+
+.B "--statopts option(s)"
+.RS
+This switch controls the way brief stats are reported, the default is to report the totals once, at the end of a
+day's worth of raw files, if more than one.
+
+.br
+a \- include averages along with totals
+.br
+i \- include the interval data itself, which is the equivalent of -oA
+.br
+s \- print summary stats at the end of each file processed even if more than one per day
 .RE
 
 .B "\-s, --subsys subsystem"
@@ -924,17 +981,24 @@ z \- only display detail lines which have data
 
 .B "--procfilt Process Filters"
 .RS
-These filters restrict which processes are selected for collection/display
-and replaces \-Z which is now deprecated.  The format of a filter is a one
-charter type followed by a match string.  Multiple filters may be specified
-if separated by commas.
+These filters restrict which processes are selected for collection/display.
+Using this filter will significanly reduce the load on process data collection
+since collectl creates a blacklist of those existing processes that do not
+pass the filter and so are permanently excluded from any future processing.
+
+The format of a filter is a one charter type followed by a match string.
+Multiple filters may be specified if separated by commas.
 
 .br
-c \- substring of the command being executed
+c \- substring of the command being executed as explicitly read from /proc/pid/stat.
+Note that this can actually be a perl expression, so if you want a command that ends
+in a particular string all you need to is append a \$ to the end of the string.
+Otherwise it would match any commands containing that string.
 .br
 C \- any command that starts with the specified string
 .br
-f \- full path of the command, including arguments
+f \- full path of the command, including arguments, as read from /proc/pid/cmdline.  Like
+the c modifier this too can be a perl expression.
 .br
 p \- pid
 .br
@@ -947,7 +1011,7 @@ U \- any process owned by this username
 
 .B --procopts options
 .RS
-These options control the way data is displayed and can also improved data
+These options control the way data is displayed and can also improve data
 collection  performance
 
 .br
@@ -956,6 +1020,8 @@ c \- include CPU time of children who have exited (same as ps \-S)
 f \- use cumulative totals for page faults in process data instead of rates
 .br
 i \- show process I/O counters in display instead of default format
+.br
+I \- disable collection of I/O counters, see note below
 .br
 m \- show breakdown of memory utilization instead of default format
 .br
@@ -969,7 +1035,25 @@ t \- include ALL process threads (increases collection overhead)
 .br
 w \- widen display by including whole argument string, with optional max width
 .br
+x \- include extended process attributes (currently only for context switches)
+.br
 z \- exclude any processes with 0 in sort field (in --top mode)
+
+Process data is the most expensive type of data collected, costing as much as 3
+times the CPU load as all other types of data combined.  Collecting thread data
+makes this even more expensive.  One can significantly reduce this load by over
+25 percent by disabling the collection of I/O stats.  However, keep in mind that
+even if you don't try to optimize process data collection, the overall system 
+load by collectl can still be on the order of about 0.2% when running as a daemon
+with default collection rates.  See the online documentation on measuring 
+performance for more information.
+
+A security hole was identified that allowed non-priviledged users to read
+/proc/pid/io and guess password lengths and noe many distros retrict
+access to the owner or root.  As a result, non-priviledged users will see 
+all 0 I/O counts for processes that are not theirs when specifying --procopt i.
+
+
 .RE
 
 .RE

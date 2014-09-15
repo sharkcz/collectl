@@ -17,6 +17,8 @@ my $lexCounter=0;
 my $lexFlags;
 sub lexprInit
 {
+  error('--showcolheader not supported by lexpr')    if $showColFlag;
+
   # If we ever run with a ':' in the inteval, we need to be sure we're
   # only looking at the main one.
   my $lexInterval1=(split(/:/, $interval))[0];
@@ -31,7 +33,7 @@ sub lexprInit
   foreach my $option (@_)
   {
     my ($name, $value)=split(/=/, $option);
-    error("invalid lexpr option '$name'")    if $name!~/^[dfisx]?$|^co$|^ttl$|^min$|^max$|^avg$/;
+    error("invalid lexpr option '$name'")    if $name!~/^[dfhisx]?$|^co$|^ttl$|^min$|^max$|^avg$/;
 
     $lexCOFlag=1           if $name eq 'co';
     $lexDebug=$value       if $name eq 'd';
@@ -43,6 +45,8 @@ sub lexprInit
     $lexMinFlag=1          if $name eq 'min';
     $lexMaxFlag=1          if $name eq 'max';
     $lexAvgFlag=1          if $name eq 'avg';
+
+    help()                 if $name eq 'h';
   }
 
   # If importing data, and if not reporting anything else, $subsys will be ''
@@ -253,7 +257,9 @@ sub lexpr
       $memString.=sendData("meminfo.cached", $memCached);
       $memString.=sendData("meminfo.slab", $memSlab);
       $memString.=sendData("meminfo.map", $memMap);
+      $memString.=sendData("meminfo.anon", $memAnon);
       $memString.=sendData("meminfo.dirty", $memDirty);
+      $memString.=sendData("meminfo.locked", $memLocked);
       $memString.=sendData("meminfo.inactive", $memInact);
       $memString.=sendData("meminfo.hugetot", $memHugeTot);
       $memString.=sendData("meminfo.hugefree", $memHugeFree);
@@ -274,7 +280,7 @@ sub lexpr
     {
       for (my $i=0; $i<$CpuNodes; $i++)
       {
-        foreach my $field ('used', 'free', 'slab', 'map', 'anon', 'act', 'inact')
+        foreach my $field ('used', 'free', 'slab', 'map', 'anon', 'lock', 'act', 'inact')
         {
           $memDetString.=sendData("numainfo.$field.$i", $numaMem[$i]->{$field});
         }
@@ -502,6 +508,30 @@ sub sendData
     $lexTTL[$lexDataIndex]=$lexTTL    if $valSentFlag || $lexTTL[$lexDataIndex]==0;
   }
   return($returnString);
+}
+
+sub help
+{
+  my $text=<<EOF;
+
+usage: --export=lexpr[,options]
+  where each option is separated by a comma, noting some take args themselves
+    co          only reports changes since last reported value
+    d=mask      debugging options, see beginning of graphite.ph for details
+    f=file      snapshot filename
+    h           print this help and exit
+    i=seconds   reporting interval, must be multiple of collect's -i
+    s=subsys    only report subsystems, must be a subset of collectl's -s
+    ttl=num     if data hasn't changed for this many intervals, report it
+                only used with 'co', def=5
+    x=file      do a 'require' on specified file to extend lexpr functionality
+    min         report minimal value since last report
+    max         report maximum value since last report
+    avg         report average of values since last report
+EOF
+
+  print $text;
+  exit;
 }
 
 1;

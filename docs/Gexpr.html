@@ -33,7 +33,7 @@ since enough people are currently using it to verify it works as described.
 
 <h3>Ganglia Configuration</h3>
 The following figure shows one possible configuration of a large cluster running ganglia and
-is only intended to be illustrative.  For complete documentaion on how to set up and configure
+is only intended to be illustrative.  For complete documentation on how to set up and configure
 ganglia see the <a href=http://ganglia.wiki.sourceforge.net/>official wiki</a>.
 <p>
 This configuration assumes one has set up ganglia <i>gmond</i>s in a hierarchy, such that those at
@@ -46,10 +46,10 @@ a <a href=http://oss.oetiker.ch/rrdtool/>round-robin database</a>.
 </center>
 <p>
 To use collectl as a data source there are 2 alternatives.  In the diagram below at the left
-you simply have collectl send data to a local gmond to suppliment whatever data it is
+you simply have collectl send data to a local gmond to supplement whatever data it is
 already collecting, noting there won't be any way to record any of gmond's data
 locally.  The diagram at the right would replace all gmonds and have collectl do all the data
-collection, optionall logging data locally, and sending data to an aggregration level gmond.
+collection, optionall logging data locally, and sending data to an aggregation level gmond.
 Whatever method you chose you must ensure the gmond(s) are listening on their udp receive
 channel and enable the ganglia communications feature in collectl as described
 in the following sections.  There are probably other hybrid
@@ -70,7 +70,7 @@ There are also 2 more switched unique to gexpr and they are:
 <li><b>g</b> - only send <i>core</i> variables to gmond, using the standard names gmond
 has predefined graphs for (<i>see the second verification example below</i>).</li>
 <li><b>G</b> - send <i>core</i> variables to gmond, using the standard names gmond
-has predefined graphs for, <i>but</i> also include any additional varibles collected
+has predefined graphs for, <i>but</i> also include any additional variables collected
 by collectl and possibly filtered by gexpr's <i>s</i> switch</li>
 </ul>
 
@@ -98,10 +98,10 @@ collectl -scdfijmntx --export gexpr,gmond:8108,s=cdmn,i=20 -i5 -f /tmp -P
 There are 2 ways to make sure everything is working as expected, the first is to make sure you're
 using the ganglia export module correctly and to do this you can use the <i>debugging</i> parameter.
 Like collectl itself, which has its own debugging variable (see <i>d</i>), the value of this
-debugging variable should be interpretted as setting a bit mask, where each bit results in
+debugging variable should be interpreted as setting a bit mask, where each bit results in
 different behavior.  Refer to the header of <i>gexpr</i> for the complete set, noting
-the following example uses only 1 bit, namey the one for printing the data being set over the socket.
-If for some reason you want to simultaneously disable actually sendind the data over the socket
+the following example uses only 1 bit, namely the one for printing the data being set over the socket.
+If for some reason you want to simultaneously disable actually sending the data over the socket
 to ganglia use the debugging value of 8 or a combined value of 8.  Note that in this latter case
 you are still required to supply a socket:port because they will be opened  but also realize 
 you can use just about anything you want since no data is actually sent over it.
@@ -130,7 +130,7 @@ you can use just about anything you want since no data is actually sent over it.
 
 This second example shows the use of the <i>g</i> option which only sends the
 core ganglia data using <i>ganglia</i> variable naming.  Also notice a nifty
-trick that since we're tellign gexpr not to send the data over a socket, we
+trick that since we're telling gexpr not to send the data over a socket, we
 can use a dummy network address/port and same ourselves some typing.  Also
 note that since we didn't select memory or network stats, they aren't sent
 to ganglia either.
@@ -155,7 +155,7 @@ to ganglia either.
 </pre></div>
 
 Assuming you're now successfully calling gexpr and can see the output above, it's time to
-make sure it is going to the expected gmond.  The easiet way to do this is to simply run
+make sure it is going to the expected gmond.  The easiest way to do this is to simply run
 the gmond with debugging enabled at a level of at least 2 
 and make sure it can see the data from collectl, being sure you haven't set a debug level 
 of 8 in gexpr.  If it can see data in gmond (note that only the variable names and not their

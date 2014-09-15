@@ -21,7 +21,7 @@ Node 2, zone   Normal    865    357     37      1      6      0      2      1   
 Node 3, zone   Normal    651     47     19     10      1      1      1      1      0      1      0
 </pre></div>
 
-Running collectl with <i>-sb --verbose</i> would produce a single line of output that shows he totals
+Running collectl with <i>-sb --verbose</i> would produce a single line of output that shows the totals
 of each column.  For example, taking 1 second samples with timestamps included:
 
 <div class=terminal><pre>
@@ -56,7 +56,7 @@ different.  Since we're mainly interested in seeing what's happening as the numb
 <li>map the 0 through 9 to the characters 0 through 9</li>
 <li>map the numbers 10-99 to the characters <i>a</i> through <i>i</i> by dividing these values by 10</li>
 <li>fragments in the range of 100-999 will be divided by 100 and mapped to the letters <i>j</i> through r</i></li>
-<li>this only leaves us with the 8 letters <i>s</i> though <i>z</i> and being the coarsest
+<li>this only leaves us with the 8 letters <i>s</i> through <i>z</i> and being the coarsest
 will be mapped to powers of 10 by essentially dividing the value by 1000 and taking the log10() of it</li>
 </ul>
 
@@ -73,7 +73,7 @@ collectl -sb -oT
 16:24:17   rmji9576040
 </pre></div>
 
-As a final example of what this looks like when combined with other data, remembering you can chose
+As a final example of what this looks like when combined with other data, remembering you can choose
 virtually any combination of subsystem for your display both in collection and playback modes:
 
 <div class=terminal-wide14><pre>

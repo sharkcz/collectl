@@ -84,7 +84,7 @@ by wrapping it with scripts that reformat the data:
 <a name="gen2"></a>
 <h2>Isn't a default monitoring frequency of 1 second going to kill my system?</h2>
 Running collectl interactively at a 1 second interval has been shown to provide
-mininal load.  However, for running collectl for long periods of time it is 
+minimal load.  However, for running collectl for long periods of time it is 
 recommended to use a default monitoring period of 10 second and in fact is the 
 default when collectl is run as a daemon and started using the 'service start
 collectl command'.
@@ -153,7 +153,7 @@ Collectl supports saving data in plot format - space separated fields - through
 the use of the -P switch.  The resultant output can then be easily plotted 
 using gnuplot, excel or any other packages that understand this format.  You
 can redirect collectl's output to a file OR it's much easier to just use the
--f switch to speficy a location to write the data.
+-f switch to specify a location to write the data.
 
 <a name="run3"></a>
 <h2>How do I drill down to get a closer look at what's going on?</h2>
@@ -226,7 +226,7 @@ output in some other format that your application
 may prefer to see it in.  There are currently 2 such routines:
 <ul>
 <li>lexpr.ph formats data as a list</li>
-<li>sexpr.ph formats data as an s-expresstion</li>
+<li>sexpr.ph formats data as an s-expression</li>
 </ul>
 If you don't like either, you're free to write your own.
 <p>
@@ -237,7 +237,7 @@ is more efficient, but the choice is all yours.
 <p>
 An example parser script called <i>readS</i> had been provided as a convenient
 way to parse a file that is an s-expression, but just keep in mind that it is 
-written in perl and every invocation involved starting up the perl interpretter
+written in perl and every invocation involved starting up the perl interpreter
 which may be a little heavier-weight than you wish to use.
 <p>
 If you do choose to use it, the arguments to readS take the following form:
@@ -264,14 +264,14 @@ they can cause misunderstanding of what is being reported.
 <h2>Round-off vs normalization</h2>
 
 Since most of the numbers collectl reports are large, certainly greater than the number of
-seconds in an interval,  they are not effected and so this is rarely an issue.  However there 
+seconds in an interval,  they are not affected and so this is rarely an issue.  However there 
 are values that can be quite low such as the number of processes created/second or network errors.
 This can also be the case for many of the nfs metadata operations counters, some of which report
 values as low as 1 over many minutes.
-The issue is if you're looking at data at some inteval other than 1 second, the result of dividing
+The issue is if you're looking at data at some interval other than 1 second, the result of dividing
 these numbers by the interval size can result in values less than 0.5 and since collectl rounds off,
-those values would be reported as 0 and you could miss a critial data point.  If you
-tell collectl not to normalize the data, in other words NOT to divide the the interval, you'll
+those values would be reported as 0 and you could miss a critical data point.  If you
+tell collectl not to normalize the data, in other words NOT to divide by the interval, you'll
 always see the actual numbers.  However, since most people prefer values/sec, it's easy to
 forget.  Try not to...
 
@@ -292,8 +292,8 @@ By default, collectl will collect a lot of data - as much as 10 or more MB/day!
 If the perl-Compress library is installed, these logs will automatically be 
 compressed and are typically less than 2MB/day.
 <br>
-The output file size is also effected by the number of devices being monitored.
-In geneneral, even on large systems the number network interfaces is small and
+The output file size is also affected by the number of devices being monitored.
+In general, even on large systems the number network interfaces is small and
 shouldn't matter, but if the number of disks gets very high, say in the dozens
 or more, this can begin to have an effect on the file size.  The other big
 variable is the number of processes when collecting process data.  As this 
@@ -318,7 +318,7 @@ they are processed.
 There may be two reasons for this, the most obvious being that by default the 
 intermediate numbers are normalized into a /sec rate and the averages/totals
 are based on the raw numbers.  If the monitoring interval is 1 sec or you use
--on to supress normalization, the results will be very close.
+-on to suppress normalization, the results will be very close.
 <br>
 The other point to consider is that numbers are often stored at a higher 
 resolution than displayed and so there is less round-off error with the averages
@@ -419,7 +419,7 @@ not be included as well by <i>collectl -s-jC...</i>.
 You need to be running version 2.6.22 of the kernel or greater <i>and</i> it must have
 process I/O statistics enabled.  The easiest way to check is to see if <i>/proc/self/io</i>
 exists.  If not, you don't have them enabled and will need to rebuild your kernel and the
-instructions for doing so are beyong the scope of this FAQ.  If you do rebuild, make sure
+instructions for doing so are beyond the scope of this FAQ.  If you do rebuild, make sure
 you have the following symbols enabled: <i>CONFIG_TASKSTATS, CONFIG_TASK_XACCT</i> and
 <i>CONFIG_TASK_IO_ACCOUNTING</i>.
 
@@ -438,7 +438,7 @@ simply specify the complete path in the final link.
 Awhile back I found a problem on a SuSE 10 system that was running with a new version
 of glibc that changed the granularity of timers from micro-seconds to nanoseconds and
 therefore went from 32 to 64 bits.  Guess what, 4.3 seconds is > 32 bits!  Once I
-reported this to the author of HiRes he immediately (whithin hours) release version
+reported this to the author of HiRes he immediately (within hours) release version
 1.91 which addressed the problem.  A newer version of HiRes should be the remedy.
 
 <a name="ops14"></a>
@@ -455,7 +455,7 @@ playback too and that's why when you playback data from a file you never see the
 sample.  Since process/slab data are usually collected at a different frequency, collectl
 has to read more intervals to get to the proper baselevel.  As an example, consider data collected
 at 00:01AM.  When you play it back, collectl is able to include processes/slabs in its baselevel
-since this data is typicall collected on an intergral minute boundary.  It will therefore start playing back non-process
+since this data is typically collected on an intergral minute boundary.  It will therefore start playing back non-process
 data at 00:01:10 and process data at 00:02:00.  In fact, if you play back data from 00:01:10 
 collectl reads data from the previous interval and will still report process data for 00:02:00.
 However if you play back data from 00:01:20 it will set its baselevel to 00:01:10 which does not
@@ -470,7 +470,7 @@ This will happen when you try to convert interrupt data to plot format file.  In
 -m you will see a <a href=FAQ-collectl.html#ops17>message</a> that this is automatically being done for you.  The basic problem is that by
 definition summary data is written in a fixed format to help ease the automated processing of the tab
 file.  However interrupt data by definition is variable since there is a counter for each CPU.  By
-forcing a CPU detail file, there is now a plce to put the interrupt data.  To get rid of the message
+forcing a CPU detail file, there is now a place to put the interrupt data.  To get rid of the message
 simply include cpu detail when in playback mode.
 
 <a name="ops17"></a>
@@ -541,7 +541,7 @@ situations will occur.
 <a name="ops26"></a>
 <h2>What does this mean: NumNets in header is 'x' but only 'y' listed...?</h2>
 This message only occurs during playback.  Versions of collectl older than 3.5.1 were 
-updating the internal number of network devices when a new one was encoutered in real-time or during 
+updating the internal number of network devices when a new one was encountered in real-time or during 
 playback, but they were forgetting to update the names used the header as well.  This meant when a 
 new logfile was created after midnight (or whenever it was rotated), the new value for the number of
 networks was changed in the header but not their names.  If you see this message it's simply pointing 

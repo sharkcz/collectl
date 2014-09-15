@@ -37,10 +37,82 @@ KNOWN PROBLEMS/RESTRICTIONS
   - if system time is changed by more then the log rolling frequency after
     collectl starts, multiple log files will be created during the next polling
     cycle(s)
-  - added 2 new fields to verbose cpu Summary Stats - Run Total and Blocked Total
-  - added VmSwap to process/memory display
+  - never include aliased networks in the network summary calculations
 
 CHANGES
+
+3.6.1-4	   Feb 20, 2012
+  - removed --ssh switch, making detecting the parent going away the default behavior
+  - added switch --nohup which will allows collectl to continue running if parent exits,
+    which is more consistent with how --nohup itself works
+  - in logmsg ONLY write to STDERR when attached to a terminal
+  - serious problem when using --tworaw and a flush interval < that for the process data
+    occurs because newer versions of zlib will fail if you try to flush to a file that
+    has not been updated.  since I don't know which version of zlib this started happening
+    in and feel this is a relatively rare case, we're just rejecting this combination
+    regardless of zlib version.  I do have an email out to the zlib author and if I ever
+    get to the bottom of this will be ble to relax this restriction.
+  - use getimeofday() for timestamps in logmsg()
+  - enhanced timing parameters when -i0 used.  if specified user 2nd/3rd parameter as ratio
+    to first making it possibily to measure loads of different rations other than 1:6:30.
+  - discovered --import was missing from man pages and so added it
+  - when playing back a file, set $verboseFlag if user specified --verbose but NEVER clear it
+  - experimental import: snmp, see http://collectl.sourceforge.net/Snmp.html for details
+  - printf in record() blows up if formatting chars in command string!  [thanks mike]
+  - added accumulated time as a --top sort option
+  - changed formatting of accumulated time in process output to simply be hh:mm:ss or
+    mm::ss.ss when less than an hour to be more in line with top
+  - new swithes, --stats and --sumstats report stats in brief mode, the latter only summary
+    data
+  - during playback need to check $numProcessed before reporting none were processed
+  - stats reporting logic wasn't processing 1st file, checking for $numProcessed>1
+  - removed -oA and replaced/extended functionality with --stats/--statopts
+  - wasn't allowing --procopts playing back process data unless -sZ which was silly
+  - subtle problem found: illegal 'last' in pidNew() because file disappeared between initial -e
+    and trying to open it a few usecs later!  can't exit a sub via last so changed to return(0) 
+  - our friends at OFED slightly changed the output of perfquery again [thanks frederic]
+
+3.6.1-3    Jan 13, 2012
+  - added 'Reason: $!' to socket open failures
+  - was not reporting interrupts in playback mode correctly
+  - added $memAnon to lexpr
+  - need to initialize $thisConfig when --lustopts set [thanks joe]
+  - do not allow -f with gexpr and not one or both of -P/--rawtoo [thanks again, joe]
+  - modify misc.ph to honor --showcolheader
+  - modify lexpr, sexpr, gexpr to reject --showcolheader
+  - if --showcolheader and --export (only works with vmstat for now), exit after first
+    print call
+  - remove restriction of not letting someone use --home with proc/slab data since they
+    may want to apply filters and therefore not need more than a terminal full
+  - new switch, --comment, allows a user to add a comment to the header
+  - only read /proc/slabinfo IF slab monitoring requested AND if slab monitoring requested
+    make sure /proc/slabinfo is readable (some admins only allow root access)
+  - added code for slow proc read speed test on all system >= 32 CPUs except for RHEL6.2
+    and SLES 11 SP1
+  - if /sys/devices/system/node doesn't exist, set CpuNodes to 1 and disable -sM if set
+  - fixed a lot of typos in a lot of docs
+  - only set a socket failure handler with a socket is explicitly being opened
+  - added 'h' option to gexpr, lexpr and sexpr
+  - changed the way vmstat.ph decides to print its header
+  - added new process option: x, which adds extended data to standard display
+  - added Mlocked to verbose memory output as well as numa stats [for fred]
+  - changed root name for cpu detail data in gexpr from cputotals to cpuinfo [thanks evan]
+  - new export: graphite
+  - normalization for CPU load reports jiffes instead of a percentage [thanks guy]
+  - removed restriction against using -D as non-root user
+  - as per https://bugzilla.redhat.com/show_bug.cgi?id=716825, non-root access to /proc/pid/io
+    is now considered a security hole and so may not have read access!  therefore we need to
+    check to see is the io structure is readable before trying.  if it isn't, zeros will be
+    reported for non-readable structures
+  - new procopts option I, disables collection of IOSTATS and reading of /proc/pid/io,
+    a performance optimization at the expense of less process information
+  - newswitch, --runas will cause collectl to run as a non-root daemon.  this WILL require
+    changes to the init.d script to work!  be sure and read the man page
+  - changed location where $doneFlag was getting cleared because stopping the daemon before
+    initializtion was completed was causing the flag to be reset to 0 and not left at 1
+  - change sort limit for process counters from 6-9s to 9-9s [thanks stig]
+  - added SUSE SP info to header
+  - added debian and ubuntu release/distro info to header
 
 3.6.0-3 Oct 17, 2011
   - added dirty memory to lexpr
@@ -92,6 +164,8 @@ CHANGES
   - in newLog() need to use gettimeofday for current time when hires::time is used otherwise you'll
     occasionally get a time 1 second earlier and new files names are wrong!  [thanks hank]
   - exclude vlan from network totals to avoid duplicate counts [thanks andrey]
+  - added 2 new fields to verbose cpu Summary Stats - Run Total and Blocked Total
+  - added VmSwap to process/memory display
 
 3.5.1-1 May 23, 2011
   - change expression used to find CPU count in /sys since -P isn't necessarily

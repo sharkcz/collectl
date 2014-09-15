@@ -17,6 +17,8 @@ sub sexpr
 
 sub sexprInit
 {
+  error('--showcolheader not supported by sexpr')    if $showColFlag;
+
   $sexprDebug=0;
   $sexprDispatch=0;
   $sexprFilename='';
@@ -25,13 +27,15 @@ sub sexprInit
   foreach my $option (@_)
   {
     my ($name, $value)=split(/=/, $option);
-    error("invalid sexpr option '$name'")    if $name!~/^[dfs]$|^raw$|^rate$/;
+    error("invalid sexpr option '$name'")    if $name!~/^[dfhs]$|^raw$|^rate$/;
 
     $sexprDebug=$value       if $name eq 'd';
     $sexprFilename=$value    if $name eq 'f';
     $sexprDispatch=1         if $name eq 'raw';
     $sexprDispatch=2         if $name eq 'rate';
     $sexprSubsys=$value      if $name eq 's';
+
+    help()                   if $name eq 'h';
   }
 
   error("sexpr must be called with at least 'raw' or 'rate'")    if !$sexprDispatch;
@@ -236,7 +240,7 @@ sub sexprRaw
 
   if ($subsys=~/M/)
   {
-    my ($names,$used,$free,$slab,$map,$anon,$act,$inact)=('','','','','','','','');
+    my ($names,$used,$free,$slab,$map,$anon,$lock,$act,$inact)=('','','','','','','','','');
     for (my $i=0; $i<$CpuNodes; $i++)
     {
       $names.=" $i";
@@ -245,6 +249,7 @@ sub sexprRaw
       $slab.=  " $numaMem[$i]->{slab}";
       $map.=   " $numaMem[$i]->{map}";
       $anon.=  " $numaMem[$i]->{anon}";
+      $lock.=  " $numaMem[$i]->{lock}";
       $act.=   " $numaMem[$i]->{act}";
       $inact.= " $numaMem[$i]->{inact}";
     }
@@ -255,6 +260,7 @@ sub sexprRaw
     $memDetString.="  (slab$slab)\n";
     $memDetString.="  (map$map)\n";
     $memDetString.="  (anon$anon)\n";
+    $memDetString.="  (anon$lock)\n";
     $memDetString.="  (inact$inact))\n";
   }
 
@@ -776,4 +782,23 @@ sub sexprHeaderPrint
     $sexprHeaderPrinted=1;
   }
 }
+
+sub help
+{
+  my $text=<<EOF;
+
+usage: --export=sexpr,{raw|rate}][,options]
+    raw         reports raw counters
+    rate        reports rate of counters (previous-current)
+  each option is separated by a comma, noting some take args themselves
+    d=mask      debugging options, see beginning of graphite.ph for details
+    f=file      snapshot filename
+    h           print this help and exit
+    s=subsys    only report subsystems, must be a subset of collectl's -s
+EOF
+
+  print $text;
+  exit;
+}
+
 1;

@@ -14,7 +14,7 @@ Since interrupt counts are actually reported in the kernel for each CPU
 by individual interrupt number, that information will now be made available both
 in summary and detail formats.
 However, a slightly different methodology for categorization will be used because
-interrupt summary data will be reportd by CPU and detailed interrupt data will 
+interrupt summary data will be reported by CPU and detailed interrupt data will 
 break out the data by individual interrupts for each CPU.
 <p>
 <h3>Requesting Interrupt Statistics</h3>
@@ -81,7 +81,7 @@ shown for two sampling periods on a 4 processor system:
 </pre>
 </div>
 
-A third form that can be particulary useful is the <i>Interrupt Details</i> which shows
+A third form that can be particularly useful is the <i>Interrupt Details</i> which shows
 the distribution of the individual interrupts across the CPUs.  What makes this form
 especially handy is it only shows those interrupts that changed during the
 monitoring cycle which is considerable easier to read than /proc/interrupts itself.
@@ -107,7 +107,7 @@ monitoring cycle which is considerable easier to read than /proc/interrupts itse
 If the number of CPUs change during processing, this can only be detected when monitoring CPU data
 at the same time.  If you are only monitoring interrupt data and there is a state change things will
 get very messy.  As users typically monitor Interrupts and CPU data at the same time it is not
-felt to be worth the extra effort or processng overhead to try and accommodate this rare case.
+felt to be worth the extra effort or processing overhead to try and accommodate this rare case.
 
 <table width=100%><tr><td align=right><i>updated June 25, 2010</i></td></tr></colgroup></table>
 

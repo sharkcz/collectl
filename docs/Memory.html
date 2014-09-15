@@ -26,7 +26,7 @@ report values of most use.
 there are a few important caveats to note:
 <ul>
 <li><i>Brief</i> mode combines mapped and anonymous memory into a single value of <i>Map</i>
-primarily as a mechanism to try an reduce the width of the memory columns since including too 
+primarily as a mechanism to try and reduce the width of the memory columns since including too 
 many defeats the whole purpose of brief data reporting, which is to allow multiple types of 
 data on a single line.</li>
 <li>Unlike other subsystems that report summary and detail data, memory summary data is <i>not</i>
@@ -89,7 +89,7 @@ structures than collectl reports.  So does that mean you're out of luck if you w
 see the value of say <i>Committed_AS</i>?
 Absolutely not, at least not during playback.  Since collectl actually records the contents of
 <i>/proc</i> data in its original formats in the <i>raw</i> files, you could always use linux's
-grep (or zgrep) commands to seach them for a particular pattern like this:
+grep (or zgrep) commands to search them for a particular pattern like this:
 
 <div class=terminal>
 <pre>
@@ -127,7 +127,7 @@ collectl -p /var/log/collectl/poker-20110928-000000.raw.gz --grep Committed_AS -
 
 Pretty slick!  And since this is collectl/playback, you can use other switches like
 <i>from/thru</i> or even change the timestamp format and/or see msec too.  Also remember 
-this trick can be applied to any data collectl records, though memory tends to the the most
+this trick can be applied to any data collectl records, though memory tends to be the most
 interesting.
 
 <p><table width=100%><tr><td align=right><i>updated September 29, 2011</i></td></tr></colgroup></table>

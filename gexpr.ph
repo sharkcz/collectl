@@ -24,6 +24,13 @@ my $gexMcastFlag=0;
 sub gexprInit
 {
   my $hostport=shift;
+  help()    if $hostport eq 'h';
+
+  error('--showcolheader not supported by gexpr')    if $showColFlag;
+
+  # Just like vmstat
+  error("-f requires either --rawtoo or -P")     if $filename ne '' && !$rawtooFlag && !$plotFlag;
+  error("-P or --rawtoo require -f")             if $filename eq '' && ($rawtooFlag || $plotFlag);
 
   # If we ever run with a ':' in the inteval, we need to be sure we're
   # only looking at the main one.
@@ -37,7 +44,7 @@ sub gexprInit
   foreach my $option (@_)
   {
     my ($name, $value)=split(/=/, $option);
-    error("invalid gexpr option '$name'")    if $name!~/^[dgGis]?$|^co$|^ttl$|^min$|^max$|^avg$/;
+    error("invalid gexpr option '$name'")    if $name!~/^[dgGhis]?$|^co$|^ttl$|^min$|^max$|^avg$/;
 
     $gexCOFlag=1           if $name eq 'co';
     $gexDebug=$value       if $name eq 'd';
@@ -49,6 +56,8 @@ sub gexprInit
     $gexMinFlag=1          if $name eq 'min';
     $gexMaxFlag=1          if $name eq 'max';
     $gexAvgFlag=1          if $name eq 'avg';
+
+    help()                 if $name eq 'h';
   }
 
   error("only 1 of 'g' or 'G' with 'gexpr'")                            if $gexGFlag>2;
@@ -156,15 +165,15 @@ sub gexpr
     {
       for (my $i=0; $i<$NumCpus; $i++)
       {
-        sendData("cputotals.user.cpu$i",  'percent', $userP[$i]);
-        sendData("cputotals.nice.cpu$i",  'percent', $niceP[$i]);
-        sendData("cputotals.sys.cpu$i",   'percent', $sysP[$i]);
-        sendData("cputotals.wait.cpu$i",  'percent', $waitP[$i]);
-        sendData("cputotals.irq.cpu$i",   'percent', $irqP[$i]);
-        sendData("cputotals.soft.cpu$i",  'percent', $softP[$i]);
-        sendData("cputotals.steal.cpu$i", 'percent', $stealP[$i]);
-        sendData("cputotals.idle.cpu$i",  'percent', $idleP[$i]);
-        sendData("cputotals.intrpt.cpu$i",'percent', $intrptTot[$i]);
+        sendData("cpuinfo.user.cpu$i",  'percent', $userP[$i]);
+        sendData("cpuinfo.nice.cpu$i",  'percent', $niceP[$i]);
+        sendData("cpuinfo.sys.cpu$i",   'percent', $sysP[$i]);
+        sendData("cpuinfo.wait.cpu$i",  'percent', $waitP[$i]);
+        sendData("cpuinfo.irq.cpu$i",   'percent', $irqP[$i]);
+        sendData("cpuinfo.soft.cpu$i",  'percent', $softP[$i]);
+        sendData("cpuinfo.steal.cpu$i", 'percent', $stealP[$i]);
+        sendData("cpunifo.idle.cpu$i",  'percent', $idleP[$i]);
+        sendData("cpuinfo.intrpt.cpu$i",'percent', $intrptTot[$i]);
       }
     }
   }
@@ -337,7 +346,7 @@ sub gexpr
   {
     for (my $i=0; $i<$CpuNodes; $i++)
     {
-      foreach my $field ('used', 'free', 'slab', 'map', 'anon', 'act', 'inact')
+      foreach my $field ('used', 'free', 'slab', 'map', 'anon', 'lock', 'act', 'inact')
       {
         sendData("numainfo.$field.$i", 'kb', $numaMem[$i]->{$field});
       }
@@ -654,6 +663,30 @@ sub dumpUDP
 #    print "\n"    if $i % 4 == 3;
   }
   print "\n";
+}
+
+sub help
+{
+  my $text=<<EOF;
+
+usage: --export=gexpr,host:port[,options]
+  where each option is separated by a comma, noting some take args themselves
+    co          only reports changes since last reported value
+    d=mask      debugging options, see beginning of graphite.ph for details
+    h           print this help and exit
+    g           only report 'standard' ganglia variables/names
+    G           report 'standard' names plus any additional collectl data
+    i=seconds   reporting interval, must be multiple of collect's -i
+    s=subsys    only report subsystems, must be a subset of collectl's -s
+    ttl=num     if data hasn't changed for this many intervals, report it
+                only used with 'co', def=5
+    min         report minimal value since last report
+    max         report maximum value since last report
+    avg         report average of values since last report
+EOF
+
+  print $text;
+  exit;
 }
 
 1;

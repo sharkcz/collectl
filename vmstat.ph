@@ -9,7 +9,7 @@ sub vmstatInit
 sub vmstat
 {
   my $line;
-  if (($headerRepeat==0 && !$headersPrinted) || $headerRepeat==1 || ($headerRepeat>0 && ($totalCounter % $headerRepeat)==1))
+  if (printHeader())
   {
     $line= "${clscr}#${miniBlanks}procs ---------------memory (KB)--------------- --swaps-- -----io---- --system-- ----cpu-----\n";
     $line.="#$miniDateTime r  b   swpd   free   buff  cache  inact active   si   so    bi    bo   in    cs us sy  id wa\n";
@@ -25,6 +25,13 @@ sub vmstat
     $datetime=sprintf("%04d%02d%02d %s", $year+1900, $mon+1, $mday, $datetime)    if $options=~/D/;
     $datetime.=".$usecs"                                                          if ($options=~/m/);
     $datetime.=" ";
+  }
+
+  # currently only happens when called by colmux
+  if ($showColFlag)
+  {
+    printText($line);
+    return;
   }
 
   my $i=$NumCpus;

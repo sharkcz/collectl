@@ -1,4 +1,4 @@
-`><html>
+<html>
 <head>
 <link rel=stylesheet href="style.css" type="text/css">
 <title>collectl - CPU Monitoring</title>
@@ -49,38 +49,7 @@ If you are only monitoring interrupt data and there is a state change things wil
 As users typically monitor Interrupts and CPU data at the same time it is not felt to be worth 
 the extra effort or processng overhead to try and accommodate this rare case.
 
-<center><b><i>Caution:</i> Large numa systems and the performance impact with kernels >= 2.6.32</b></center>
-<br>Systems with higher CPU and numa node counts will now see additional monitoring
-overhead, which can be as much as a factor or 50 or more, depending on the actual hardware
-configuration!  The specific reason is that it's now more expensive to read /proc/stat.
-<p>
-In this first example, which is a 4 core/2 node system runnng rhel5.3, we measure the
-system overhead for monitoring cpu stats at about 3 seconds/day using <i>standard</i> 
-way to measure collectl overhead:
-
-<div class=terminal><pre>
-time collectl -sc -i0 -c 8640 -f/tmp
-real    0m2.879s
-user    0m1.908s
-sys     0m0.913s
-</pre></div>
-
-In this example we're measuring 1/10th the number of samples (I get impatient) on an 48 core/8 node
-system running fedora 14, which is a 2.6.35 kernel, and this alone is over 5 times the overhead
-of the previous example which normalizing to a full day would be over 50 times the load:
-
-<div class=terminal><pre>
-time collectl -sc -i0 -c 864 -f/tmp
-real    0m16.783s
-user    0m3.003s
-sys     0m13.523s
-</pre></div>
-
-This overhead will also be felt when monitoring memory as well, but by a
-much smaller factor if only doing -sm.  The -sM command will suffer a similar fate to cpu
-stats, though more in the range of a factor of 10.
-
-<table width=100%><tr><td align=right><i>updated Sept 15, 2011</i></td></tr></colgroup></table>
+<table width=100%><tr><td align=right><i>updated Dec 13, 2011</i></td></tr></colgroup></table>
 
 </body>
 </html>

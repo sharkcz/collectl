@@ -48,11 +48,11 @@ The following example illustrates several of things worth noting:
 
 As described in the section on performance, it actually takes over a second
 to read the data from a GPU and that is visually illustrated above because one can see
-gaps in the data being resported.  Since we're running collectl interactively, it wants
+gaps in the data being reported.  Since we're running collectl interactively, it wants
 to report once a second but when it reads the GPU data it misses an interval.
 More specifically, the data is actually read during the interval that
 started 06:23:41 and since it took over a second the next interval didn't start until 2
-seconds later!  Then at 06:23:43 and 06:23:44, the data read eariler is reported.  At
+seconds later!  Then at 06:23:43 and 06:23:44, the data read earlier is reported.  At
 06:23:45 data is again read from the GPU and since we miss an interval, the next one 
 occurs are 06:23:47.
 <p>

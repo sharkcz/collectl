@@ -505,6 +505,13 @@ of <i>2, 3</i> or <i>4</i></td></tr>
 <p>
 <h3>Process Data, <i>collectl -sZ</i></h3>
 <p>
+There are actually multiple formats process data can be displayed in, the default being the one
+shown immediately below.  By using <i>--procopts</i> as shown in later examples, you can change
+what is displayed, noting that when playing back the data from a raw file, <i>all</i> information
+has been recorded and so you can actually play it back multiple times and see different views.
+<p>
+These switched can also be use in conjunction with <i>--top</i>.
+<p>
 <div class=terminal-wide14><pre>
 # PROCESS SUMMARY (faults are /sec)
 # PID  User     PR  PPID S   VSZ   RSS  CP  SysT  UsrT Pct  AccuTime  RKB  WKB MajF MinF Command
@@ -570,11 +577,27 @@ monitoring enabled which is not the default as of 2.6.23.</td></tr>
 unless <i>--procopts w</i></td></tr>
 </table>
 <p>
+
+<h3>Process Data, <i>collectl -sZ --procopts x</i></h3>
+<p>
+This format is essentially idential to the last except that it adds <i>extended</i> information
+to the display, specifically <i>VCtx</i> and <i>NCtx</i>.
+<p>
+<div class=terminal-wide14><pre>
+# PROCESS SUMMARY (counters are /sec)
+# PID  User     PR  PPID THRD S   VSZ   RSS CP  SysT  UsrT Pct  AccuTime  RKB  WKB VCtx NCtx MajF MinF Command
+</pre></div>
+<table>
+<tr valign=top><td><b>VCtx &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;<b></td>
+<td>Voluntary context switches</td></tr>
+<tr valign=top><td><b>NCtx<b></td>
+<td>Non-voluntary context switches</td></tr>
+</table>
+<p>
 <h3>Process I/O Data, <i>collectl --procopts i</i></h3>
 <div class=terminal-wide14><pre>
 # PID  User    PPID S  SysT  UsrT   Pct AccuTime   RKB   WKB  RKBC  WKBC  RSys  WSys  Cncl  Command
 </pre></div>
-
 <table>
 <tr valign=top><td><b>PID<b></td>
 <td>Pid of the process</td></tr>
@@ -807,7 +830,7 @@ with playback mode.
 <tr><td><b>Name</b></td><td>Slab Name</td></tr>
 </table>
 
-<table width=100%><tr><td align=right><i>updated September 12, 2011</i></td></tr></colgroup></table>
+<table width=100%><tr><td align=right><i>updated January 05, 2012</i></td></tr></colgroup></table>
 
 </body>
 </html>

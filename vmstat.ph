@@ -33,7 +33,7 @@ sub vmstat
   $line.=sprintf("%s %2d %2d %6s %6s %6s %6s %6s %6s %4d %4d %5d %5d %4d %5d %2d %2d %3d %2d\n",
                 $datetime, $procsRun, $procsBlock,
                 cvt($swapUsed,6,1,1),  cvt($memFree,6,1,1),  cvt($memBuf,6,1,1),
-                cvt($memCached,6,1,1), cvt($inactive,6,1,1), cvt($active,6,1,1),
+                cvt($memCached,6,1,1), cvt($memInact,6,1,1), cvt($memAct,6,1,1),
                 $swapin/$intSecs, $swapout/$intSecs, $pagein/$intSecs, $pageout/$intSecs,
                 $intrpt/$intSecs, $ctxt/$intSecs,
                 $usr, $sys, $idleP[$i], $waitP[$i]);

@@ -61,7 +61,6 @@ sub sexprInit
     logmsg('W',"adding -s+C because 'sexpr' requires it with 'j'");
     $subsys.='C';
     $CFlag=1;
-    logmsg('W',"adding -s+C because 'sexpr' requires it with 'j'");
   }
 }
 
@@ -230,7 +229,7 @@ sub sexprRaw
   {
     $memString= "$pad(meminfo (memtot $memTot) (memused $memUsed) (memfree $memFree) ";
     $memString.="(memshared $memShared) (membuf $memBuf) (memcached $memCached) ";
-    $memString.="(memslab $memSlab) (memmap $memMap) (meminact $inactive) ";
+    $memString.="(memslab $memSlab) (memmap $memMap) (meminact $memInact) ";
     $memString.="(memhugetot $memHugeTot) (memhugefree $memHugeFree) (memhugersvd $memHugeRsvd) ";
     $memString.="(swaptot $swapTotal) (swapused $swapUsed) (swapfree $swapFree))\n";
   }
@@ -501,7 +500,7 @@ sub sexprRate
   {
     $memString= "$pad(meminfo (memtot $memTot) (memused $memUsed) (memfree $memFree) ";
     $memString.="(memshared $memShared) (membuf $memBuf) (memcached $memCached) ";
-    $memString.="(memslab $memSlab) (memmap $memMap) (meminact $inactive) ";
+    $memString.="(memslab $memSlab) (memmap $memMap) (meminact $memInact) ";
     $memString.="(memhugetot $memHugeTot) (memhugefree $memHugeFree) (memhugersvd $memHugeRsvd) ";
     $memString.="(swaptot $swapTotal) (swapused $swapUsed) (swapfree $swapFree)\n";
   }

@@ -405,6 +405,12 @@ and laundry pages.</td></tr>
 <tr><td><b>Paging Out</b></td>
 <td>Total number of pages written by block devices</td></tr>
 </table>
+<p>
+<center><b><i>Note</i></b></center>
+If you include --memopts R, memory and swap values wil be displayed as changes/sec between intervals 
+rather than absolute values in addition to page fault information, which is already displayed as rates.
+This switch will also honor -on in that the values will not be normalized to a rate but rather displayed 
+as changes in size per interval.
 
 <p><h3>Network, <i>collectl -sn</i></h3>
 <p>
@@ -675,7 +681,7 @@ in effect, this number will be equal to the Slabs field reported by -sm.</td></t
 <tr><td><b>FTrans</b></td><td>Fast retransmissions/sec.</td></tr>
 </table>
 
-<table width=100%><tr><td align=right><i>updated Feb 21, 2011</i></td></tr></colgroup></table>
+<table width=100%><tr><td align=right><i>updated May 12, 2011</i></td></tr></colgroup></table>
 
 </body>
 </html>

@@ -243,6 +243,11 @@ cache as buffered I/O uses this memory to cache the data.</td></tr>
 <tr><td><b>slab</b></td><td>Total memory allocated to slabs.</td></tr>
 <tr><td><b>map</b></td><td>Total mapped memory, which include AnonPages.</td></tr>
 </table>
+<p>
+<center><b><i>Note</i></b></center>
+If you include <i>--memopts R</i>, these values wil be displayed as changes/sec between intervals
+rather than absolute values.  This switch will also honor <i>-on</i> in that the values will not
+be normalized to a rate but rather displayed as changes in size per interval.
 
 <p><h3>Network, <i>collectl -sn</i></h3>
 
@@ -341,7 +346,7 @@ not all types of nfs version report all as V3 clients/servers do.</td></tr>
 <tr><td><b>FTrans</b></td><td>Fast retransmissions/sec.</td></tr>
 </table>
 
-<table width=100%><tr><td align=right><i>updated Feb 21, 2011</i></td></tr></colgroup></table>
+<table width=100%><tr><td align=right><i>updated May 12, 2011</i></td></tr></colgroup></table>
 
 </body>
 </html>

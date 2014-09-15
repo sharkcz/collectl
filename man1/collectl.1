@@ -840,7 +840,6 @@ systems and you want consistent column names.
 .RE
 
 .B "--lustopts Lustre Options"
-
 .RS
 .br
 B - For clients and servers, show buffer stats
@@ -852,6 +851,12 @@ M - For clients, collect metadata
 O - For OSTs, show detail level stats
 .br
 R - For client, collect readahead stats
+.RE
+
+.B "--memopts Memory Options"
+.RS
+R - show memory values (including swap space) as rates of change as opposed to absolute
+values.  One can also show absolute changes between intervals by including -on.
 .RE
 
 .B "--netfilt perl-regx[,perl-regx...]"

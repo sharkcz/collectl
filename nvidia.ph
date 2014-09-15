@@ -13,11 +13,15 @@ use strict;
 our ($Version, $miniFiller, $rate, $SEP, $datetime, $miniInstances, $interval, $showColFlag, $playback);
 
 my ($nvidiaInterval, $nvidiaImportCount, $nvidiaSampleCounter, $nvidiaAllFlag);
-my ($nvidiaOpts, $nvidiaGpuNum, $nvidiaNumGpus, $nvidiaProdName, $nvidiaDriverVer);
+my ($nvidiaOpts,    $nvidiaNumGpus,$nvidiaProdName,   $nvidiaDriverVer);
 my (@nvidiaTemp,    @nvidiaFan,    @nvidiaGpuUtil,    @nvidiaMemUtil);
 my ($nvidiaTempTot, $nvidiaFanTot, $nvidiaGpuUtilTot, $nvidiaMemUtilTot);
 my ($nvidiaTempTOT, $nvidiaFanTOT, $nvidiaGpuUtilTOT, $nvidiaMemUtilTOT);
 
+my $nvidiaGpuFirst;
+my $nvidiaGpuNum=-1;
+my $nvidiaSection=0;
+my $nvidiaLastValFlag;
 my $nvidiaCommand='/usr/bin/nvidia-smi';
 my $nvidiaFullCmd="$nvidiaCommand -q -a";
 
@@ -68,9 +72,9 @@ sub nvidiaInit
   {
     if ($playback eq '' && !-e $nvidiaCommand || $Version lt '3.5.0-3')
     {
-      my $message="cannot find '$nvidiaCommand'"                  if !-e $nvidiaCommand;
-      $message="nvidia.ph requires at least collectl V3.5.0-3"    if $Version lt '3.5.0-3';
-      logmsg('W', "$message.  GPU monitoring disabled");
+      my $message="cannot find '$nvidiaCommand'"                     if !-e $nvidiaCommand;
+      $message="this nvidia.ph requires at least collectl V3.5.1"    if $Version lt '3.5.1';
+      pushmsg('W', "$message.  GPU monitoring disabled");
       $$impOptsref=$$impKeyref='';
       return(-1);
     }
@@ -81,7 +85,7 @@ sub nvidiaInit
     my $output=`$nvidiaFullCmd`;
     if ($output=~/nvidia-smi/)
     {
-      logmsg('W', "nvidia GPU doesn' support '$nvidiaFullCmd'.  GPU monitoring disabled");
+      pushmsg('W', "nvidia GPU doesn' support '$nvidiaFullCmd'.  GPU monitoring disabled");
       $$impOptsref=$$impKeyref='';
       return(-1);
     }
@@ -117,16 +121,17 @@ sub nvidiaGetHeader
 
   # Make sure playback file contains nvidia gpu data and if not, just set number
   # of gpus to 1 to make display logic work because maybe this is intended.
-  if ($$headerref!~/GPU:.*Type: (.*).*Version.*NumGPU: (\d+)/ || $1!~/nvidia/)
+  if ($$headerref!~/GPU:(.*)Version/ || $1!~/nvidia/)
   {
     logmsg('W', "playback file does not contain nvidia data");
     $nvidiaNumGpus=1;
   }
   else
   {
-    # Not really sure why we need a second regx, but we do
-    $$headerref=~/GPU:.*Type: (.*).*Version.*NumGPU: (\d+)/;
-    $nvidiaNumGpus=$2;
+    # Now parse header for real
+    $$headerref=~/GPU:.*Type: (.*).*Version: (.*)\s+NumGPU: (\d+)/;
+    $nvidiaDriverVer=$2;
+    $nvidiaNumGpus=$3;
   }
 }
 
@@ -140,7 +145,8 @@ sub nvidiaGetData
 
 sub nvidiaInitInterval
 {
-  # initialization totals MUST be done in Analyze()!
+  # all initialization totals MUST be done in Analyze() because this not called
+  # each pass when writing to a raw file.
 }
 
 sub nvidiaAnalyze
@@ -148,25 +154,72 @@ sub nvidiaAnalyze
   my $type=   shift;
   my $dataref=shift;
 
-  # GPU number always preceeds data
-  $nvidiaGpuNum=$1      if $$dataref=~/^GPU (\d+)/;
+  # we need to know when last counter seen AND we can't use InitInterval()
+  $nvidiaLastValFlag=0;
 
-  my $i=$nvidiaGpuNum;
-  $nvidiaTemp[$i]=$1       if $$dataref=~/^Temp.*?(\d+)/;
-  $nvidiaFan[$i]=$1        if $$dataref=~/^Fan.*?(\d+)/;
-  $nvidiaGpuUtil[$i]=$1    if $$dataref=~/^GPU.*: (\d+)/;
-
-  # This indicates the end of a set of data.  If more data elements
-  # are ever added, we'll need a different 'last' variable test
-  if ($$dataref=~/^Memory.*?(\d+)/)
+  # This is a mess!  Difference drivers generate different output
+  if ($nvidiaDriverVer lt '270.41.19')    # until I know better
   {
-    $nvidiaMemUtil[$i]=$1;
+    # GPU number always preceeds data
+    $nvidiaGpuNum=$1      if $$dataref=~/^GPU (\d+)/;  
 
-    # Since init code doesn't get called when logging to raw file, there's
-    # no 1 place to control $sampleCounter.  This is really the only place
-    # when we'll really know it's time to clear totals!
-    $nvidiaTempTot=$nvidiaFanTot=$nvidiaGpuUtilTot=$nvidiaMemUtilTot=0
-		if $nvidiaGpuNum==0;
+    my $i=$nvidiaGpuNum;
+    $nvidiaTemp[$i]=$1       if $$dataref=~/^Temp.*?(\d+)/;
+    $nvidiaFan[$i]=$1        if $$dataref=~/^Fan.*?(\d+)/;
+    $nvidiaGpuUtil[$i]=$1    if $$dataref=~/^GPU.*: (\d+)/;
+
+    # This indicates the end of a set of data.  If more data elements
+    # are ever added, we'll need a different 'last' variable test
+    if ($$dataref=~/^Memory.*?(\d+)/)
+    {
+      $nvidiaMemUtil[$i]=$1;
+      $nvidiaLastValFlag=1;
+    }
+  }
+  elsif ($nvidiaDriverVer ge '270.41.19')
+  {
+    # for this driver version this isn't a number but a string so just bump index
+    # and make a note of it so we recognize the start of a new interval
+    if ($$dataref=~/^GPU (.*)/ && $$dataref!~/UUID/)
+    {
+      $nvidiaGpuFirst=$1     if !defined($nvidiaGpuFirst);
+      $nvidiaGpuNum=-1       if $1 eq $nvidiaGpuFirst;
+      $nvidiaGpuNum++;
+    }
+
+    $nvidiaSection=10      if $$dataref=~/^PCI/;
+    $nvidiaSection=20      if $$dataref=~/^Fan/;
+    $nvidiaSection=30      if $$dataref=~/^Memory Usage/;
+    $nvidiaSection=40      if $$dataref=~/^Utilization/;
+    $nvidiaSection=50      if $$dataref=~/^Ecc Mode/;
+    $nvidiaSection=60      if $$dataref=~/^ECC Errors/;
+    $nvidiaSection=70      if $$dataref=~/^Temperature/;
+    $nvidiaSection=80      if $$dataref=~/^Power Readings/;
+    $nvidiaSection=90      if $$dataref=~/^Clocks/;
+
+    # for now we only care about Fan, Utiliztion and Temp
+    return    if  $nvidiaSection!=20 && $nvidiaSection!=40 && $nvidiaSection!=70;
+
+    my $i=$nvidiaGpuNum;
+    $nvidiaFan[$i]=$1        if $nvidiaSection==20 && $$dataref=~/^Fan.*?(\d+)/;
+    $nvidiaGpuUtil[$i]=$1    if $nvidiaSection==40 && $$dataref=~/^Gpu.*: (\d+)/;
+    $nvidiaMemUtil[$i]=$1    if $nvidiaSection==40 && $$dataref=~/^Memory.*?(\d+)/;
+
+    if ($nvidiaSection==70 && $$dataref=~/^Gpu.*?(\d+)/)
+    {
+      $nvidiaTemp[$i]=$1;
+      $nvidiaLastValFlag=1;
+    }
+  }
+
+  # We can only do initialization and update totals when we see last data element (actually
+  # we could have updated the totals as each element seen but this is a little easier.
+  if ($nvidiaLastValFlag)
+  {
+    my $i=$nvidiaGpuNum;
+
+    # These only done once/interval, not per GPU
+    $nvidiaTempTot=$nvidiaFanTot=$nvidiaGpuUtilTot=$nvidiaMemUtilTot=0    if $i==0;
 
     $nvidiaTempTot+=   $nvidiaTemp[$i];
     $nvidiaFanTot+=    $nvidiaFan[$i];

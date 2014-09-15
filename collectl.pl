@@ -15,12 +15,12 @@
 #   64 - socket processing
 #  128 - show collectl.conf processing
 #  256 - show detailed pid processing (this generates a LOT of output)
-#  512 - show more pid details, specificall hash contents
+#  512 - show more pid details, specifically hash contents
 #        NOTE - output from 256/512 are prefaced with %%% if from collectl.pl
 #               and ### if from formatit.ph
 # 1024 - show list of SLABS to be monitored
 # 2048 - playback preprocessing 
-# 4096 - 
+# 4096 - show from/thru processing
 # 8192 - show creation of RAW, PLOT and files
 
 # debug tricks
@@ -107,7 +107,7 @@ require "Sys/Syslog.pm"    if !$PcFlag;
 $rootFlag=(!$PcFlag && `whoami`=~/root/) ? 1 : 0;
 $SrcArch= $Config{"archname"};
 
-$Version=  '3.5.0-3';
+$Version=  '3.5.1-1';
 $Copyright='Copyright 2003-2011 Hewlett-Packard Development Company, L.P.';
 $License=  "collectl may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
@@ -338,7 +338,7 @@ $procOpts=$procFilt=$procState='';
 $slabOpts=$slabFilt='';
 $procAnalFlag=$procAnalCounter=$slabAnalFlag=$slabAnalCounter=$lastInt2Secs=0;
 $lastLogPrefix=$passwdFile='';
-$nfsOpts=$nfsFilt=$lustOpts=$userEnvOpts='';
+$memOpts=$nfsOpts=$nfsFilt=$lustOpts=$userEnvOpts='';
 $grepPattern=$pname='';
 $dskFilt=$netFilt='';
 $netOpts='';
@@ -434,6 +434,7 @@ GetOptions('align!'     => \$alignFlag,
            'hr=i'          => \$headerRepeat,
 	   'import=s'      => \$import,
            'lustopts=s'    => \$lustOpts,
+	   'memopts=s'     => \$memOpts,
            'netfilt=s'     => \$netFilt,
 	   'netopts=s'     => \$netOpts,
            'nfsopts=s'     => \$nfsOpts,
@@ -561,20 +562,12 @@ if ($XSwitch)
   exit;
 }
 
-if ($nfsOpts ne '')
-{
-  if ($nfsOpts=~/[23C]/)
-  {
-    logmsg('W', '-nfsopts [23C] no longer used/needed and ignored');
-    $nfsOpts=~s/[23C]//g;
-  }
-  error('invalid value for --nfsopts')    if $nfsOpts ne '' && $nfsOpts ne 'z';  # might have been reset to ''
-}
+error('invalid value for --lustopts')    if $lustOpts ne '' && $lustOpts!~/^[BDMOR]+$/;
+error('invalid value for --memopts')     if $memOpts ne '' && $memOpts ne 'R';
+error('invalid value for --nfsopts')     if $nfsOpts ne '' && $nfsOpts ne 'z';
 
 # in playback mode all we're really doing is verifying the options
 setNFSFlags($nfsFilt);
-
-error('invalid value for --lustopts')          if $lustOpts ne '' && $lustOpts!~/^[BDMOR]+$/;
 
 if ($vmstatFlag)
 {
@@ -895,6 +888,7 @@ error("--showheader in collection mode only supported on linux")
                                                            if $PcFlag && $playback eq '' && $showHeaderFlag;
 error('--showmergedheader not allowed with -f')            if $filename ne '' && $showMergedFlag;
 error('--showcolheaders not allowed with -f')              if $filename ne '' && $showColFlag;
+error('--showcolheaders -sE can only be run by root')      if $showColFlag && $subsys=~/E/ && !$rootFlag;
 
 error("--align require HiRes time module")                 if $alignFlag && !$hiResFlag;
 error('--umask can only be set by root')                   if $umask ne '' && !$rootFlag;
@@ -951,8 +945,8 @@ if (!$PcFlag)
     $Lspci=(-e '/usr/sbin/lspci') ? '/usr/sbin/lspci' : '/usr/bin/lspci';
     if (!-e "/usr/sbin/lspci" && !-e "/usr/bin/lspci")
     {
-      logmsg('W', "-sx disabled because 'lspci' not in $Lspci or '/usr/sbin' or '/usr/bin'");
-      logmsg('W', "If somewhere else, move it or define in collectl.conf");
+      pushmsg('W', "-sx disabled because 'lspci' not in $Lspci or '/usr/sbin' or '/usr/bin'");
+      pushmsg('W', "If somewhere else, move it or define in collectl.conf");
       $xFlag=$XFlag=0;
       $subsys=~s/x//ig;
     }
@@ -965,14 +959,14 @@ if (!$PcFlag)
     $Ethtool='/usr/sbin/ethtool';
     if (!-e $Ethtool)
     {
-      logmsg("W", "Can't find '$Ethtool' so interface speeds in header will be disabled");
+      pushmsg("W", "Can't find '$Ethtool' so interface speeds in header will be disabled");
       $Ethtool='';
     }
   }
 
   if (!-e $Dmidecode && $playback eq '' && $subsys=~/E/)
   {
-    logmsg('W', "cannot find '$Dmidecode' so can't determine hardware Product Name");
+    pushmsg('W', "cannot find '$Dmidecode' so can't determine hardware Product Name");
     $Dmidecode='';
     $ProductName='Unknown';
   }
@@ -1145,8 +1139,8 @@ if (!$zlibFlag && $zFlag)
 {
   $options.="z";
   $zFlag=0;
-  logmsg("W", "Zlib not installed so can't compress raw file(s).  Use --quiet to disable this warning.")    if $rawFlag;
-  logmsg("W", "Zlib not installed so can't compress plot file(s).  Use -oz to get rid of this warning.")   if $plotFlag;
+  pushmsg("W", "Zlib not installed so can't compress raw file(s).  Use --quiet to disable this warning.")    if $rawFlag;
+  pushmsg("W", "Zlib not installed so can't compress plot file(s).  Use -oz to get rid of this warning.")   if $plotFlag;
 }
 
 $precision=($options=~/(\d+)/) ? $1 : 0;
@@ -1317,7 +1311,7 @@ if ($rollLog ne '')
   }
   ($sec, $min, $hour, $day, $mon, $year)=localtime($rollSecs);
   $rollFirst=sprintf "%d%02d%02d %02d:%02d:%02d", $year+1900, $mon+1, $day, $hour, $min, $sec;
-  logmsg("I", "First log rollover will be: $rollFirst");
+  pushmsg("I", "First log rollover will be: $rollFirst");
 }
 
 # for --home we do some vt100 cursor control
@@ -1342,7 +1336,7 @@ if ($sshFlag)
   error("--ssh doesn't apply to playback mode")    if $playback ne '';
   $stat=`cat /proc/$$/stat`;
   $myPpid=(split(/\s+/, $stat))[3];
-  logmsg('I', "Started by PID: $myPpid");
+  pushmsg('I', "Started by PID: $myPpid");
 }
 
 ###############################
@@ -1366,14 +1360,30 @@ if ($playback ne '')
     $firstFileDate=$fileDate    if $firstFileDate==0;
     $numSelected++;
 
-    # Here we do a coarse filter ignoring files outside the from/thru IF either
-    # date is non-zero.
-    next    if (($fromDate ne 0) &&  ($fileDate < $fromDate)) ||
-               (($thruDate ne 0) && (($fileDate > $thruDate) ||
-                                     ($fileDate == $thruDate) && $fileTime > $thruTime));
- 
-    # one more if filter is NO dates specified
-    next    if $fromDate==0 && $thruDate==0 && ($fileTime > $thruTime);
+    #    F i l t e r    O u t    F i l e s    N e w e r    T h a n    t h r u D a t e
+
+    # If there IS a thru date, ignore any files start were beyond it.
+    next    if ($thruDate ne 0) && (($fileDate > $thruDate) || (($fileDate == $thruDate) && ($fileTime > $thruTime)));
+
+    # and finally, if no from OR thru dates, the thru time is applied against all files
+    # so skip any files created after the from time
+    next    if ($fromDate eq 0) && ($thruDate eq 0) && ($fileTime>$thruTime);
+
+    # New functionality for V3.5.1: only apply other filters if wildcards NOT in filename
+    # since files CAN contain data beyond their date stamp.
+    if ($playback!~/\*/)
+    {
+      push @playbackList, $file;
+      next;
+    }
+
+    #    A p p l y    F i l t e r s    T o    W i l d c a r d e d    F i l e n a m e s
+
+    # We only get here is a wildcard in the file list.  If it's from date is early than specified
+    # ignore it, remembering if it did have data that crossed midnight we'll never know.  Those
+    # MUST be processes w/o wild cards in their names.  If this ever becomes an issue we could always
+    # look inside the header here, but that's more work than currently deemed worth it.
+    next    if ($fromDate ne 0) && ($fileDate < $fromDate); 
 
     # This is the magic AND there are 3 cases all of which have the common test of
     # there needs to be a file with a different basename (in case we're doing a rawp
@@ -1436,16 +1446,17 @@ if ($playback ne '')
 
     print "\nPlaying back $file\n"    if $msgFlag || $debug & 1;
 
-    $file=~/(.*-\d{8})-\d{6}\.raw[p]*/;
-    $prefix=$1;
+    $file=~/(.*)-(\d{8})-\d{6}\.raw[p]*/;
+    $prefix="$1-$2";
+    $fileHost=$1;
     $fileRoot=basename($prefix);
-    $newPrefixFlag=0;
+
+    # if the prefix didn't change, we can't have a new host
+    $newPrefixFlag=$newHostFlag=0;
     if ($prefix ne $lastPrefix)
     {
-      # Remember - prefix includes the date
+      # Remember that the prefix includes the date so the host could still be the same!
       $newPrefixFlag=1;
-      $file=~/(.*)-\d{8}-\d{6}\.raw[p]*/;
-      $fileHost=$1;
       $newHostFlag=($fileHost ne $lastHost) ? 1 : 0;
       $lastHost=$fileHost;
       print "NewPrefix: $newPrefixFlag  NewHost: $newHostFlag\n"    if $debug & 1;
@@ -1497,6 +1508,7 @@ if ($playback ne '')
       $subsysAll=$playback{$prefix}->{subsys};
     }
     $lastPrefix=$prefix;
+    print "NewPrefix: $newPrefixFlag  NewHost: $newHostFlag\n"    if $debug & 1;
 
     # we need to initialize a bunch of stuff including these variables and the
     # starting time for the file as well as the corresponding UTC seconds.
@@ -1698,28 +1710,26 @@ if ($playback ne '')
     $prcFileCount++    if $subsys=~/Z/;
     #print "NEW PREFIX: $newPrefixDate  NEW FILE: $newOutputFile\n";
 
-    # We only care about intervals if --from OR --thru specified
-    $fromSecs=$thruSecs=0;
-    if (defined($from) || defined($thru))
-    {
-      # when neither date is specfied we always use date of file(s) being
-      # processed.  this is THE most common usage, at least for me!  otherwise
-      # use the actual from/thru dates as the range to look at
-      if (($fromDate eq '0') && ($thruDate eq '0'))
-      {
-        $tempDate=$recDate;
-        $tempDate=~s/-.*//;    # get rid of time
-        $tempFromDate=$tempThruDate=$tempDate;
-      }
-      else
-      {
-        $tempFromDate=($fromDate!=0) ? $fromDate : 20000101;
-        $tempThruDate=($thruDate!=0) ? $thruDate : 20380101;  # linux limit is Jan 19th
-      }
+    # set playback timeframe for the file we're about to playback, using the date of the file
+    # if not specified or that from the from if it is.  The start time has already been set
+    # earlier but when not starting at the beginning, we need to back up 1 interval since the
+    # first one is never reported.
+    my $tempDate=($fromDate eq '0') ? $recDate : $fromDate;
+    $fromSecs=getSeconds($tempDate, $fromTime);
+    $fromSecs-=$interval    if $fromTime!=0;
 
-      # Need .999 to catch fractional times
-      $fromSecs=getSeconds($tempFromDate, $fromTime)-$interval;
-      $thruSecs=getSeconds($tempThruDate, $thruTime).'.999';
+    # The ending time is either the same date as the starting one (unless overriden by the user
+    # for files that cross midnight) and we need to add a fraction to the ending time in case
+    # fractional timestamps in file.  Max time is Jan 19, 2038 but we'll use Jan 1 if needed.
+    $tempDate=$thruDate    if defined($thruDate) && $thruDate ne'0';
+    $thruSecs=(!defined($thru)) ? 2145934800 : getSeconds($tempDate, $thruTime).'.999';
+
+    # this is just to make debugging time frames easier especially if user gets odd results.
+    if ($debug & 4097)
+    {
+      my $fromstamp=getDateTime($fromSecs);
+      my $thrustamp=getDateTime($thruSecs);
+      print "PlayBack From: $fromstamp  Thru: $thrustamp\n";
     }
 
     if ($zInFlag)
@@ -1837,6 +1847,7 @@ if ($playback ne '')
   		      "Ignoring the rest of file.  Last valid marker: $newSeconds[$rawPFlag]");
 	  next;
         }
+        #printf ">>> $1 <<<  From: %s Stamp: %s\n", getDateTime($fromSecs), getDateTime($1);
 
         # At this point and if defined $newSeconds is actually pointing to the last interval
         # and be sure to convert to local time so --from/--thru checks work.
@@ -1993,6 +2004,13 @@ logmsg("I", $message);
 logsys($message);
 checkHiRes()        if $daemonFlag;      # check for possible HiRes/glibc incompatibility
 
+# now let's report any messages that occurred earlier
+foreach my $message (@messages)
+{
+  my ($severity, $text)=split(/-/, $message, 2);
+  logmsg($severity, $text);
+}
+
 # initialize. noting if the user had only selected subsystems not supported
 # on this platform, initRecord() will have deselected them!
 initRecord();
@@ -2118,12 +2136,16 @@ $flushTime=($flush ne '') ? time+$flush : 0;
 # that, interval3. Also, if there is an interval3, interval3 IS defined, so we
 # have to compare it to ''.  Also note that since newlog() can change subsys
 # we need to wait until after we call it to do interval/limit validation.
+# be sure to ignore interval error checks for --showcolheader
 $origInterval=$interval;
 ($interval, $interval2, $interval3)=split(/:/, $interval);
-error("interval2 only applies to -s y,Y or Z")
+if (!$showColFlag)
+{
+  error("interval2 only applies to -s y,Y or Z")
     if defined($interval2) && $interval2 ne '' && $subsys!~/[yYZ]/;
-error("interval2 must be >= interval1")
+  error("interval2 must be >= interval1")
       if defined($interval) && defined($interval2) && $interval2 ne '' && $interval>$interval2;
+}
 $interval2=$Interval2   if !defined($interval2);
 $interval3=$Interval3   if !defined($interval3);
 $interval=$interval2    if $origInterval=~/^:/ || ($subsys=~/^[yz]+$/i && $interval!=0);
@@ -3121,6 +3143,7 @@ sub configChange
   my ($i, $type, $names, $temp, $index);
 
   ($services, $mdss, $osts, $clts)=split(/\|/, $config);
+
   print "configChange() -- Pre: $prefix  Svcs: $services Mds: $mdss Osts: $osts Clts: $clts Int: $interval\n"
       if $debug & 8;
 
@@ -3165,15 +3188,15 @@ sub checkSubSys
   print "Check SubSys -- Last: $lastSubSys  This: $thisSubSys\n"
       if $debug & 2048;
 
-  for ($i=0; $i<length($thisSubSys); $i++)
-  {
-    $temp=substr($thisSubSys, $i, 1);
-    if ($lastSubSys!~/$temp/)
-    {
-      $lastSubSys.=$temp;
-      $configChange|=1;
-    }
-  }
+  # if any differences between 'this' and 'last', we have a config change.
+  my $temp1=$thisSubSys;
+  $temp1=~s/[$lastSubSys]//g;    # remove 'last' from 'this'
+  my $temp2=$lastSubSys;
+  $temp2=~s/[$thisSubSys]//g;    # remove 'this' from 'last'
+  $configChange|=1    if $temp1 ne '' || $temp2 ne '';
+
+  # $temp1 contains any NEW subsys in current file, so add them to 'last'
+  $lastSubSys.=$temp1;
 
   $preprocErrors{$file}="E:-P and details to terminal not allowed"
       if $lastSubSys=~/[A-Z]/ && $filename eq '' && $plotFlag;
@@ -3185,7 +3208,7 @@ sub checkSubsysOpts
 {
   error("you cannot mix --slabopts with --top")  if $slabOpts ne '' && $topSlabFlag;
   error("invalid slab option in '$slabOpts'")    if $slabOpts ne '' && $slabOpts!~/^[sS]+$/;
-  error("invalid env option in '$envOpts'")      if $envOpts ne ''  && $envOpts!~/^[fptCFM\d]+$/;
+  error("invalid env option in '$envOpts'")      if $envOpts ne ''  && $envOpts!~/^[fptCFMT\d]+$/;
 
   if ($procOpts ne '')
   {
@@ -4330,7 +4353,7 @@ sub setOutputFormat
     # Verbose mode special, because if we don't have any subsystem data and only have 1 type of
     # imported data, we still get all data on the same line and won't need to repeat headers every pass.
     # On the other hand it we have more than 1 type of data we can't have the same columns
-    $sameColsFlag=($verboseFlag && $impSummaryFlag+$impDetailFlag+length($subsys)==1) ? 1 : 0;
+    $sameColsFlag=($impSummaryFlag+$impDetailFlag+length($subsys)==1) ? 1 : 0    if $verboseFlag;
 
     # and finally if processing any standard detail data we know we have at least 2 fields, at least
     # one of which is our custom import, and so we can't have same columns in effect.
@@ -4591,6 +4614,17 @@ sub logsys
   Sys::Syslog::closelog();
 }
 
+# this is for non-fatal messages that are reported before collectl actually
+# starts.  by saving them, we can then report after the startup message to
+# make things cleaner in the log
+sub pushmsg
+{
+  my $severity=shift;
+  my $text=    shift;
+
+  push @messages, "$severity-$text";
+}
+
 sub setFlags
 {
   my $subsys=shift;
@@ -4709,6 +4743,13 @@ sub checkTime
   error("$switch specifies invalid time")    if ($hh>23 || $mm >59 || $ss>59);
 
   return(($date,"$hh$mm$ss"));
+}
+
+sub getDateTime
+{
+  my $seconds=shift;
+  my ($sec, $min, $hour, $day, $mon, $year)=localtime($seconds);
+  return(sprintf("%d%02d%02d %02d:%02d:%02d", $year+1900, $mon+1, $day, $hour, $min, $sec));
 }
 
 sub checkHiRes
@@ -5950,6 +5991,9 @@ Network
       w - sets minimal network name width in network stats output which 
           can be useful for aligning output from multiple systems
 
+MEMORY
+  --memopts
+      R - show changes in memory as rates, not instantaneous values
 NFS
   --nfsfilt  TypeVer,...
       C - client
@@ -6086,6 +6130,12 @@ sub whatsnew
   my $whatsnew=<<EOF6;
 What's new in collectl?
 
+Version 3.5.1
+- ability to correctly playback files that cross midnight
+- new switch, --memopts: show memory values as rates
+- new -s option: -all (actually added in 3.5.0) removes ALL
+  subsys during playback so you can just play back --import data
+
 Version 3.5.0
 - new switches
   - netopts
@@ -6105,37 +6155,6 @@ Version 3.5.0
 - added number of active CPUs to -sc --verbose output
 - changed --showplotheader to --showcolheaders, which now shows first
   header line (doesn't work for multiple sets of headers)
-
-Version 3.4.3
-- new switches
-  -- netfilt filters network detail data on output
-  -- netopts allows you to manually set minimal network name width
-- new functionality
-  - only set umask if 'root' AND --umask explicitly specified
-  - 2 new top process sort fields: pid & cpu number
-
-Version 3.4.2
-- new switches
-  -- dskfilt filters disk detail data on output
-- new functionality
-  - enhancement to --procfilt to select processes in uid range
-  - added systot and usertot to lexpr
-  - added memory field SUnreclaim to plot and lexpr output
-  - now detects CPUs going offline/online
-    - added number of disabled CPUs to file header when non-zero
-
-Version 3.4.1
-- new switches
-  - --whatsnew   prints this text
-  - --envopts    C/F will convert term to C or F, n selects ipmi device
-  - --envfilt    select a subset of ipmi sensors 
-  - --envremap   remap names to other ones
-  - --umask      lets you specify umask for file creation
-- new functionality
-  - support for Fusion-IO disks
-  - added 'filters' section to header and move nfs filters to it
-  - added x= to lexpr, which allows one to call custom routine
-  - new option for --envopts allows you to specify ipmi dev #
 
 EOF6
 

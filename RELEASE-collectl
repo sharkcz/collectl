@@ -40,8 +40,32 @@ KNOWN PROBLEMS/RESTRICTIONS
 
 CHANGES
 
-next
-  - in INSTALL, change cp to mv for default distro case
+3.5.1-1 May 23, 2011
+  - change expression used to find CPU count in /sys since -P isn't necessarily
+    built into all greps
+  - instead of only getting the platform name when -sE, always try to get it
+  - forgot to include 'T' as valid --envopts
+  - check for failure of 'ipmitool sdr dump' command
+  - need to ignore interval checks with --showcolhead and -sE
+  - fix bug in checkSubSys() because while it could find newer subsys it couldn't find
+    dropped ones
+  - needed to clear nethostflag outside conditional that looks at prefix changed, which
+    was incorrectly preventing consecutive files on the same day from being identified
+  - added new routine pushmsg() that allowed one to stack up messages generated BEFORE
+    'beginning execution' message and then play them afterward, making log easier to read
+    - changed several calls from logmsg() to pushmsg()
+  - added support for files that cross midnight and ability to play them back in full
+    see updated Playback.html
+  - remove duplicate message in sexpr
+  - have found an instance where the number of networks in the header didn't match the ones
+    listed (some were dropped!) and so added a check to take care of this
+  - renamed $active, $inactive and $dirty to $memAct, $memInact and $memDirty for better 
+    consistency with other memory variable names.  Didn't bother with older V2.4 mem variables
+  - new switch --memopts R: display memory info as changes/interval, similar to sar's -R switch
+  - logic to clear '$sameColsFlag' in verbose mode and --import was wrong
+  - --showcolheaders and -sE requires root
+  - added support for nvidia driver V270.41.19 which has different output format.  highly
+    probable other versions will behave different as well
 
 3.5.0-3 Feb 12, 2011
   - expanded interrupt details to include non-numeric interrupts
@@ -61,6 +85,8 @@ next
   - change error handling when playing back files with no selected subsystems to be
     non-fatal, skip the file and continue processing
   - added dl585-g7 to envrules.txt
+  - allow -s-all to remove ALL L subsystems when you only wanted --import data played
+    back.  I actually forgot to add this to release notes until V3.5.1
 
 3.5.0-2 Jan 09, 2011
   - turned utime into a mask, so we can control the granularity of micro-logging

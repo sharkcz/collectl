@@ -61,7 +61,7 @@ sub initRecord
   $cpusDisabled=0;
   if (-e '/sys')
   {
-    my $totalCpus=`ls /sys/devices/system/cpu/|grep -P ^cpu[0-9]+|wc -l`;
+    my $totalCpus=`ls /sys/devices/system/cpu/|$Grep '^cpu[0-9]'|wc -l`;
     chomp $totalCpus;
     if ($totalCpus!=$NumCpus)
     {
@@ -149,11 +149,8 @@ sub initRecord
 
   #    I n t e r c o n n e c t    C h e c k s
 
-  # Since the build of the IB code only checks is -sx and we want to know about
-  # IB speeds for plain on -sn, let's just do this non-conditionally and then
-  # only for ofed.  Furthermore I'm going to assume that even if mulitple IB 
-  # interfaces they're all the same
-  # speed, at least for now...
+  # Set IB speeds non-conditionally (even if not running IB) and then only for ofed.  
+  # Furthermore assume if mulitple IB interfaces they're all the same speed.
   $ibSpeed='??';
   if (-e '/sys/class/infiniband')
   {
@@ -392,15 +389,16 @@ sub initRecord
     }
   }
 
-  #    E n v i r o n m e n t a l    C h e c k s
-
-  if ($subsys=~/E/ && $Dmidecode ne '')
+  # Let's always get the platform name if dmidecode is there
+  if ($Dmidecode ne '')
   {
     $ProductName=($rootFlag) ? `$Dmidecode | grep -m1 'Product Name'` : '';
     $ProductName=~s/\s*Product Name: //;
     chomp $ProductName;
     $ProductName=~s/\s*$//;   # some have trailing whitespace
   }
+
+  #    E n v i r o n m e n t a l    C h e c k s
 
   if ($subsys=~/E/ && $envTestFile eq '')
   {
@@ -423,32 +421,38 @@ sub initRecord
 
       logmsg('I', "Initialized ipmitool cache file '$IpmiCache'");
       my $command="$Ipmitool sdr dump $IpmiCache";
-      `$command`;
 
-      # Create 'exec' option file in save directory as cache, but only for
-      # those options that actually return data
-      my $cacheDir=dirname($IpmiCache);
-      $ipmiExec="$cacheDir/collectl-ipmiexec";
-      if (open EXEC, ">$ipmiExec")
+      # If we can't dump the cache, something is wrong so make sure we pass along
+      # error and disable E monitoring.  Ok to create 'exec' below since we'll 
+      # never execute it
+      $message=`$command 2>&1`;
+      if ($message=~/^Dumping/)
       {
-        foreach my $type (split(/,/, $IpmiTypes))
+        # Create 'exec' option file in save directory as cache, but only for
+        # those options that actually return data
+        my $cacheDir=dirname($IpmiCache);
+        $ipmiExec="$cacheDir/collectl-ipmiexec";
+        if (open EXEC, ">$ipmiExec")
         {
-      	  my $command="$Ipmitool -S $IpmiCache sdr type $type";
-          next    if `$command` eq '';
-          print EXEC "sdr type $type\n";
+	  $message='';    # indicates no errors for test below
+          foreach my $type (split(/,/, $IpmiTypes))
+          {
+            my $command="$Ipmitool -S $IpmiCache sdr type $type";
+            next    if `$command` eq '';
+            print EXEC "sdr type $type\n";
+          }
+          close EXEC;
         }
-        close EXEC;
-      }
-      else
-      {
-        $message="couldn't create '$ipmiExec'";
+        else
+        {
+          $message="couldn't create '$ipmiExec'";
+        }
       }
     }
-
     disableSubsys('E', $message)    if $message ne '';
   }
 
-  # find all the networks and when possible include thier speeds
+  # find all the networks and when possible include their speeds
   undef @temp;
   $NumNets=0;
   @temp=`$Grep -v -E "Inter|face" /proc/net/dev`;
@@ -1060,6 +1064,15 @@ sub initFormat
     }
     $NetWidth++;
 
+    # This really shouldn't happen but data collected before V3.5.1 could have added new
+    # network devices, incremented $NumNets and not updated NetNames!
+    if ($NumNets!=$index)
+    {
+      logmsg('E', "NumNets in header is '$NumNets' but only '$index' listed and so was reset");
+      logmsg('E', "This is a BUG because this was fixed in V3.5.1")    if $version ge '3.5.1';
+      $NumNets=$index;
+    }
+
     # shouldn't hurt if no slabs defined since we only use during slab reporting
     # but if there ARE slabs and not the slub allocator, we've got the older type
     $header=~/NumSlabs:\s+(\d+)\s+Version:\s+(\S+)/;
@@ -1170,7 +1183,7 @@ sub initFormat
 
   $dentryNum=$dentryUnused=$filesAlloc=$filesMax=$inodeUsed=$inodeMax=0;
   $loadAvg1=$loadAvg5=$loadAvg15=$loadRun=$loadQue=$ctxt=$intrpt=$proc=0;
-  $dirty=$clean=$target=$laundry=$active=$inactive=0;
+  $memDirty=$clean=$target=$laundry=$memAct=$memInact=0;
   $procsRun=$procsBlock=0;
   $pagein=$pageout=$swapin=$swapout=$swapTotal=$swapUsed=$swapFree=0;
   $pagefault=$pagemajfault=0;
@@ -1372,6 +1385,9 @@ sub initLast
   $pageinLast=$pageoutLast=$swapinLast=$swapoutLast=0;
   $pagefaultLast=$pagemajfaultLast=0;
   $opsLast=$readLast=$readKBLast=$writeLast=$writeKBLast=0;
+  $memFreeLast=$memUsedLast=$memBufLast=$memCachedLast=0;
+  $memInactLast=$memSlabLast=$memMapLast=$memCommitLast=0;
+  $swapFreeLast=$swapUsedLast=0;
 
   for ($i=0; $i<18; $i++)
   {
@@ -1760,7 +1776,7 @@ sub initInterval
   $interval2Print=$interval3Print=0;
 
   # on older kernels not always set.
-  $inactive=0;
+  $memInact=0;
 
   # Lustre is a whole different thing since the state of the system we're
   # monitoring change change with each interval.  Since this applies across
@@ -1843,6 +1859,10 @@ sub intervalEnd
       }
     }
   }
+
+  # some variables are derived from others before printing and we need to call at end of
+  # each interval including the first so that the 'last' variables set correctly.
+  derived();
 
   # during interactive processing, the first interval only provides baseline data
   # and so never call print
@@ -3436,12 +3456,12 @@ sub dataAnalyze
 
   elsif ($kernel2_4 && $subsys=~/m/ && $type=~/^Active|^Inact/)
   {
-    $active=(split(/\s+/, $data))[0]    if $type=~/^Active/;
-    $dirty=(split(/\s+/, $data))[0]     if $type=~/^Inact_dirty/;
-    $laundry=(split(/\s+/, $data))[0]   if $type=~/^Inact_laundry/;
-    $clean=(split(/\s+/, $data))[0]     if $type=~/^Inact_clean/;
-    $target=(split(/\s+/, $data))[0]    if $type=~/^Inact_target/;
-    $inactive=(split(/\s+/, $data))[0]  if $type=~/^Inactive/;
+    $memAct=(split(/\s+/, $data))[0]        if $type=~/^Active/;
+    $memDirtyirty=(split(/\s+/, $data))[0]  if $type=~/^Inact_dirty/;
+    $laundry=(split(/\s+/, $data))[0]       if $type=~/^Inact_laundry/;
+    $clean=(split(/\s+/, $data))[0]         if $type=~/^Inact_clean/;
+    $target=(split(/\s+/, $data))[0]        if $type=~/^Inact_target/;
+    $memInact=(split(/\s+/, $data))[0]      if $type=~/^Inactive/;
   }
 
   #    M e m o r y    S t a t s    -    2 . 6    K e r n e l
@@ -3498,7 +3518,13 @@ sub dataAnalyze
   {
     $data=(split(/\s+/, $data))[0];
     $memTot= $data    if $type=~/^MemTotal/;
-    $memFree=$data    if $type=~/^MemFree/;
+
+    if ($type=~/^MemFree/)
+    {
+      $memFree=$data;
+      $memFreeC=$memFree-$memFreeLast;
+      $memFreeLast=$memFree;
+    }
   }
 
   elsif ($subsys=~/m/ && $kernel2_6 && $type=~/^Buffers|^Cached|^Dirty|^Active|^Inactive|^AnonPages|^Mapped|^Slab:|^Committed_AS:|^Huge|^SUnreclaim/)
@@ -3506,9 +3532,9 @@ sub dataAnalyze
     $data=(split(/\s+/, $data))[0];
     $memBuf=$data             if $type=~/^Buf/;
     $memCached=$data          if $type=~/^Cac/;
-    $dirty=$data              if $type=~/^Dir/;
-    $active=$data             if $type=~/^Act/;
-    $inactive=$data           if $type=~/^Ina/;
+    $memDirty=$data           if $type=~/^Dir/;
+    $memAct=$data             if $type=~/^Act/;
+    $memInact=$data           if $type=~/^Ina/;
     $memSlab=$data            if $type=~/^Sla/;
     $memAnon=$data            if $type=~/^Anon/;
     $memMap=$data+$memAnon    if $type=~/^Map/;
@@ -3517,14 +3543,38 @@ sub dataAnalyze
     $memHugeFree=$data        if $type=~/^HugePages_F/;
     $memHugeRsvd=$data        if $type=~/^HugePages_R/;
     $memSUnreclaim=$data      if $type=~/^SUnreclaim/;
+
+    # These are 'changes' since last interval, both positive/negative
+    # but we only want to do when last one in list seen.
+    if ($type=~/^Com/)
+    {
+      $memBufC=   $memBuf-$memBufLast;
+      $memCachedC=$memCached-$memCachedLast;
+      $memInactC= $memInact-$memInactLast;
+      $memSlabC=  $memSlab-$memSlabLast;
+      $memMapC=   $memMap-$memMapLast;
+      $memCommitC=$memCommit-$memCommitLast;
+
+      $memBufLast=   $memBuf;
+      $memCachedLast=$memCached;
+      $memInactLast= $memInact;
+      $memSlabLast=  $memSlab;
+      $memMapLast=   $memMap;
+      $memCommitLast=$memCommit;
+    }
   }
 
   elsif ($subsys=~/m/ && $kernel2_6 && $type=~/^Swap/)
   {
     $data=(split(/\s+/, $data))[0];
     $swapTotal=$data    if $type=~/^SwapT/;
-    $swapFree=$data     if $type=~/^SwapF/;
-    $swapCached=$data   if $type=~/^SwapC/;
+
+    if ($type=~/^SwapF/)
+    {
+      $swapFree=$data;
+      $swapFreeC=$swapFree-$swapFreeLast;
+      $swapFreeLast=$swapFree;
+    }
   }
 
   #    S o c k e t    S t a t s
@@ -3569,11 +3619,14 @@ sub dataAnalyze
     @fields=split(/\s+/, $data);
 
     # In rare occasions a new network device shows up so we need to make sure we init
-    # the appropriate variables
+    # the appropriate variables, including the netname.  Since I'm lazy, just set the
+    # speed to '??'.  If this becomes a problem we'll get fancier.
     if (!defined($netRxKBLast[$netIndex]))
     {
       $NumNets++;
       $netName=(split(/\s+/, $line))[1];
+      $NetNames.=" $netName:??";
+
       $netRxKBLast[$netIndex]=$netRxPktLast[$netIndex]=$netTxKBLast[$netIndex]=$netTxPktLast[$netIndex]=0;
       $netRxErrLast[$netIndex]=$netRxDrpLast[$netIndex]=$netRxFifoLast[$netIndex]=$netRxFraLast[$netIndex]=0;
       $netRxCmpLast[$netIndex]=$netRxMltLast[$netIndex]=$netTxCarLast[$netIndex]=$netTxCmpLast[$netIndex]=0;
@@ -4389,7 +4442,6 @@ sub intervalPrint
   # This is causing confusion because this ALWAYS gets incremented even if no
   # output, such as when we only interval2 data
   $totalCounter++;
-  derived();    # some variables are derived from others before printing
 
   my $tempSubsys=$subsys;
   $tempSubsys=~s/Y//    if $slabAnalOnlyFlag;
@@ -4414,12 +4466,17 @@ sub derived
   {
     # some systems (like IA64) defined inactive and not the other 3, so this will combine
     # them all...
-    $inactive+=$dirty+$clean+$laundry;
+    $memInact+=$memDirty+$clean+$laundry;
   }
   else
   {
-    $memUsed=$memTot-$memFree;
     $swapUsed=$swapTotal-$swapFree;
+    $swapUsedC=$swapUsed=$swapUsedLast;
+    $swapUsedLast=$swapUsed;
+
+    $memUsed=$memTot-$memFree;
+    $memUsedC=$memUsed-$memUsedLast;
+    $memUsedLast=$memUsed;
   }
 }
 
@@ -4496,7 +4553,7 @@ sub printPlot
       $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS", $memSlab, $memMap, $memCommit);   # Always from V1.7.5 forward
       $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
                 $swapTotal, $swapUsed, $swapFree, $swapin/$intSecs, $swapout/$intSecs,
-                $dirty, $clean, $laundry, $inactive,
+                $memDirty, $clean, $laundry, $memInact,
                 $pagein/$intSecs, $pageout/$intSecs, $pagefault/$intSecs, $pagemajfault/$intSecs);
       $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS", $memHugeTot, $memHugeFree, $memHugeRsvd, $memSUnreclaim);
     }
@@ -6064,7 +6121,8 @@ sub printTerm
       # Note that sar does page sizes in numbers of pages, not bytes
       # only 2.6 kernels AND collectl 1.5.6 have extra memory goodies
       printText("\n")    if !$homeFlag;
-      printText("# MEMORY STATISTICS\n");
+      my $type=($memOpts!~/R/) ? '' : " change$type";
+      printText("# MEMORY STATISTICS$type\n");
       if ($kernel2_4 || $recVersion lt '1.5.6')
       {
         $line=sprintf("#$miniFiller<---------------Physical Memory---------------><-----------Swap------------><-------Paging------>\n");
@@ -6073,26 +6131,65 @@ sub printTerm
       }
       else
       {
-        $line=sprintf("#$miniFiller<---------------------------Physical Memory---------------------------><-----------Swap------------><-------Paging------>\n");
-        printText($line);
-        printText("#$miniDateTime   Total    Used    Free    Buff  Cached    Slab  Mapped  Commit  Inact Total  Used  Free   In  Out Fault MajFt   In  Out\n");
-      }
+        if ($memOpts!~/R/)
+        {
+          $line=sprintf("#$miniFiller<---------------------------Physical Memory---------------------------><-----------Swap------------><-------Paging------>\n");
+          printText($line);
+          printText("#$miniDateTime   Total    Used    Free    Buff  Cached    Slab  Mapped  Commit  Inact Total  Used  Free   In  Out Fault MajFt   In  Out\n");
+        }
+        else
+        {
+          $line=sprintf("#$miniFiller<-------------------------------Physical Memory-------------------------------><------------Swap-------------><-------Paging------>\n");
+          printText($line);
+          printText("#$miniDateTime   Total     Used     Free     Buff   Cached     Slab   Mapped   Commit   Inact Total   Used   Free   In  Out Fault MajFt   In  Out\n");
+        }
       exit    if $showColFlag;
+      }
     }
 
-    $line=sprintf("$datetime  %7s %7s %7s %7s %7s ",
+    if ($memOpts!~/R/)
+    {
+      $line=sprintf("$datetime  %7s %7s %7s %7s %7s ",
             cvt($memTot,7,1,1),   cvt($memUsed,7,1,1),   cvt($memFree,7,1,1),
 	    cvt($memBuf,7,1,1),   cvt($memCached,7,1,1));
+    }
+    else
+    {
+      $line=sprintf("$datetime  %7s %8s %8s %8s %8s ",
+            cvt($memTot/$intSecs,7,1,1),   cvt($memUsedC/$intSecs,7,1,1),   cvt($memFreeC/$intSecs,7,1,1),
+            cvt($memBufC/$intSecs,7,1,1),  cvt($memCachedC/$intSecs,7,1,1));
+    }
 
-    $line.=sprintf("%7s %7s %7s ", cvt($memSlab,7,1,1), cvt($memMap,7,1,1), cvt($memCommit,7,1,1))
-	    if $kernel2_6 && ($recVersion ge '1.5.6');
+    if ($kernel2_6 && ($recVersion ge '1.5.6'))
+    {
+      if ($memOpts!~/R/)
+      {
+        $line.=sprintf("%7s %7s %7s ", cvt($memSlab,7,1,1), cvt($memMap,7,1,1), cvt($memCommit,7,1,1))
+      }
+      else
+      {
+        $line.=sprintf("%8s %8s %8s ", cvt($memSlabC/$intSecs,7,1,1), cvt($memMapC/$intSecs,7,1,1), cvt($memCommitC/$intSecs,7,1,1))
+      }
+    }
 
-    $line.=sprintf(" %5s %5s %5s %5s %4s %4s %5s %5s %4s %4s\n",
-            cvt($inactive,5,1,1), 
+    if ($memOpts!~/R/)
+    {
+      $line.=sprintf(" %5s %5s %5s %5s %4s %4s %5s %5s %4s %4s\n",
+            cvt($memInact,5,1,1), 
             cvt($swapTotal,5,1,1),       cvt($swapUsed,5,1,1), cvt($swapFree,5,1,1), 
 	    cvt($swapin/$intSecs,5,1,1), cvt($swapout/$intSecs,5,1,1),
             cvt($pagefault/$intSecs,5),  cvt($pagemajfault/$intSecs,5),
             cvt($pagein/$intSecs,4),     cvt($pageout/$intSecs,4));
+    }
+    else
+    {
+      $line.=sprintf(" %6s %5s %6s %6s %4s %4s %5s %5s %4s %4s\n",
+            cvt($memInactC/$intSecs,5,1,1),
+            cvt($swapTotal,5,1,1),       cvt($swapUsedC/$intSecs,5,1,1), cvt($swapFreeC/$intSecs,5,1,1),
+            cvt($swapin/$intSecs,5,1,1), cvt($swapout/$intSecs,5,1,1),
+            cvt($pagefault/$intSecs,5),  cvt($pagemajfault/$intSecs,5),
+            cvt($pagein/$intSecs,4),     cvt($pageout/$intSecs,4));
+    }
 
     printText($line);
   }
@@ -6938,7 +7035,9 @@ sub cvt
   $width=4                 if !defined($width);
   $unitCounter=0           if !defined($unitCounter);
   $divisorType=0           if !defined($divisorType);
+  $negative=0              if !defined($negative);
   $field=int($field+.5)    if $field>0;    # round up in case <1
+
 
   # This is tricky, because if the value fits within the width, we
   # must also be sure the unit counter is 0 otherwise both may not
@@ -7263,9 +7362,20 @@ sub printBrief
       my $pad2=$pad1;
       $line.="<${pad1}Int$pad2->";
     }
-    $line.="<--Memory-->"                              if $subsys!~/m/ && $subsys=~/b/;
-    $line.="<-----------Memory----------->"            if $subsys=~/m/ && $subsys!~/b/;
-    $line.="<-----------------Memory----------------->"  if $subsys=~/m/ && $subsys=~/b/;
+
+    # sooo ugly...
+    $line.="<--Memory-->"                                 if $subsys!~/m/ && $subsys=~/b/;
+    if ($memOpts!~/R/)
+    {
+      $line.="<-----------Memory----------->"              if $subsys=~/m/ && $subsys!~/b/;
+      $line.="<-----------------Memory----------------->"  if $subsys=~/m/ && $subsys=~/b/;
+    }
+    else
+    {
+      $line.="<--------------Memory-------------->"              if $subsys=~/m/ && $subsys!~/b/;
+      $line.="<--------------------Memory-------------------->"  if $subsys=~/m/ && $subsys=~/b/;
+    }
+
     $line.="<-----slab---->"                           if $subsys=~/y/;
     $line.="<----------Disks----------->"              if $subsys=~/d/ && !$ioSizeFlag;
     $line.="<---------------Disks---------------->"    if $subsys=~/d/ &&  $ioSizeFlag;
@@ -7338,8 +7448,16 @@ sub printBrief
       }
     }
 
-    $line.="Free Buff Cach Inac Slab  Map "          if $subsys=~/m/;
+    if ($memOpts!~/R/)
+    {
+      $line.="Free Buff Cach Inac Slab  Map "          if $subsys=~/m/;
+    }
+    else
+    {
+      $line.=" Free  Buff  Cach  Inac  Slab   Map "    if $subsys=~/m/;
+    }
     $line.="  Fragments "                            if $subsys=~/b/;
+
     $line.=" Alloc   Bytes "	 		     if $subsys=~/y/ && $slabinfoFlag;
     $line.=" InUse   Total "	 		     if $subsys=~/y/ && $slubinfoFlag;
     $line.="KBRead  Reads KBWrit Writes "            if $subsys=~/[dp]/ && !$ioSizeFlag;
@@ -7404,10 +7522,20 @@ sub printBrief
 
   if ($subsys=~/m/)
   {
-    $line.=sprintf("%4s %4s %4s %4s %4s %4s ",
-        cvt($memFree,4,1,1),   cvt($memBuf,4,1,1), 
-	cvt($memCached,4,1,1), cvt($inactive,4,1,1),
-	cvt($memSlab,4,1,1),   cvt($memMap,4,1,1));
+    if ($memOpts!~/R/)
+    {
+      $line.=sprintf("%4s %4s %4s %4s %4s %4s ",
+          cvt($memFree,4,1,1),   cvt($memBuf,4,1,1), 
+	  cvt($memCached,4,1,1), cvt($memInact,4,1,1),
+	  cvt($memSlab,4,1,1),   cvt($memMap,4,1,1));
+    }
+    else
+    {
+      $line.=sprintf("%5s %5s %5s %5s %5s %5s ",
+          cvt($memFreeC/$intSecs,4,1,1),   cvt($memBufC/$intSecs,4,1,1),
+          cvt($memCachedC/$intSecs,4,1,1), cvt($memInactC/$intSecs,4,1,1),
+          cvt($memSlabC/$intSecs,4,1,1),   cvt($memMapC/$intSecs,4,1,1));
+    }
   }
 
   if ($subsys=~/b/)
@@ -7628,7 +7756,7 @@ sub resetBriefCounters
   $miniStart=0;
   $miniInstances=0;
   $cpuTOT=$sysPTOT=$intrptTOT=$ctxtTOT=0;
-  $memFreeTOT=$memBufTOT=$memCachedTOT=$inactiveTOT=$memSlabTOT=$memMapTOT=0;
+  $memFreeTOT=$memBufTOT=$memCachedTOT=$memInactTOT=$memSlabTOT=$memMapTOT=0;
   $slabSlabAllTotalTOT=$slabSlabAllTotalBTOT=0;
   $dskReadKBTOT=$dskReadTOT=$dskWriteKBTOT=$dskWriteTOT=0;
   $netRxKBTOT=$netRxPktTOT=$netTxKBTOT=$netTxPktTOT=$netErrTOT=0;
@@ -7668,7 +7796,7 @@ sub countBriefCounters
   $memFreeTOT+=  $memFree;
   $memBufTOT+=   $memBuf;
   $memCachedTOT+=$memCached;
-  $inactiveTOT+= $inactive;
+  $memInactTOT+= $memInact;
   $memSlabTOT+=  $memSlab;
   $memMapTOT+=   $memMap;
 
@@ -7790,7 +7918,7 @@ sub printBriefCounters
 
   printf "%4s %4s %4s %4s %4s %4s ",
         cvt($memFreeTOT/$mi,4,1,1),  cvt($memBufTOT/$mi,4,1,1),  cvt($memCachedTOT/$mi,4,1,1), 
-	cvt($inactiveTOT/$mi,4,1,1), cvt($memSlabTOT/$mi,4,1,1), cvt($memMapTOT/$mi,4,1,1)
+	cvt($memInactTOT/$mi,4,1,1), cvt($memSlabTOT/$mi,4,1,1), cvt($memMapTOT/$mi,4,1,1)
 		  if $subsys=~/m/;
 
   # Need to average each field before converting

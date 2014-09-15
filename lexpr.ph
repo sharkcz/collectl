@@ -251,7 +251,7 @@ sub lexpr
     $memString.=sendData("meminfo.cached", $memCached);
     $memString.=sendData("meminfo.slab", $memSlab);
     $memString.=sendData("meminfo.map", $memMap);
-    $memString.=sendData("meminfo.inactive", $inactive);
+    $memString.=sendData("meminfo.inactive", $memInact);
     $memString.=sendData("meminfo.hugetot", $memHugeTot);
     $memString.=sendData("meminfo.hugefree", $memHugeFree);
     $memString.=sendData("meminfo.hugersvd", $memHugeRsvd);

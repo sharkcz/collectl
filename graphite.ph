@@ -7,18 +7,20 @@
 #    8 - do not open/use socket (typically used with other flags)
 #   16 - print socket open/close info
 
+our $graphiteInterval;
+
 my $graphiteTimeout=5;
 my $graphiteCounter=0;
 my $graphiteSocketFailMax=5;    # report socket open fails every 100 intervals
 my $graphiteIntTimeLast=0;      # tracks start of new interval
 my $graphiteOneTB=1024*1024*1024*1024;
 my $graphitePost='';            # insert AFTER hostname in message to carbon (don't forget '.' if you want one)
-my ($graphiteSubsys, $graphiteInterval, $graphiteBefore);
-my ($graphiteDebug, $graphiteCOFlag);
+my ($graphiteSubsys, $graphiteBefore, $graphiteEscape, $graphiteRandomize);
+my ($graphiteDebug, $graphiteColInt, $graphiteCOFlag, $graphiteSendCount);
 my ($graphiteTTL, %graphiteTTL, %graphiteDataMin, %graphiteDataMax, %graphiteDataTot, %graphiteDataLast);
 my ($graphiteMyHost, $graphiteSocket, $graphiteSockHost, $graphiteSockPort, $graphiteSocketFailCount);
-my ($graphiteFqdnFlag, $graphiteMinFlag, $graphiteMaxFlag, $graphiteAvgFlag, $graphiteTotFlag, $graphiteFlags)=(0,0,0,0,0,0);
-my $graphieOutputFlag=1;
+my ($graphiteAlign, $graphiteFqdnFlag, $graphiteMinFlag, $graphiteMaxFlag, $graphiteAvgFlag, $graphiteTotFlag, $graphiteFlags)=(0,0,0,0,0,0,0);
+my $graphiteOutputFlag=1;
 
 sub graphiteInit
 {
@@ -32,27 +34,28 @@ sub graphiteInit
   error("-f requires either --rawtoo or -P")     if $filename ne '' && !$rawtooFlag && !$plotFlag;
   error("-P or --rawtoo require -f")             if $filename eq '' && ($rawtooFlag || $plotFlag);
 
-  # If we ever run with a ':' in the inteval, we need to be sure we're
-  # only looking at the main one.
-  my $graphiteInterval1=(split(/:/, $interval))[0];
-
   # parameter defaults
   $hostport.=":2003"    if $hostport!~/:/;
   $graphiteDebug=$graphiteCOFlag=0;
-  $graphiteInterval=$graphiteInterval1;
+  $graphiteInterval='';
   $graphiteSubsys=$subsys;
   $graphiteTTL=5;
   $graphiteBefore='';
+  $graphiteEscape='';
+  $graphiteRandomize='';
 
   foreach my $option (@_)
   {
     my ($name, $value)=split(/=/, $option);
-    error("invalid graphite option '$name'")    if $name!~/^[bdfhips]?$|^co$|^ttl$|^min$|^max$|^avg$|^tot$/;
+    error("invalid graphite option '$name'")    if $name!~/^[bdefhiprs]?$|^align|^co$|^ttl$|^min$|^max$|^avg$|^tot$/;
+    $graphiteAlignFlag=1        if $name eq 'align';
     $graphiteBefore=$value      if $name eq 'b';
     $graphiteCOFlag=1           if $name eq 'co';
     $graphiteDebug=$value       if $name eq 'd';
+    $graphiteEscape=$value      if $name eq 'e';
     $graphiteInterval=$value    if $name eq 'i';
     $graphitePost=$value        if $name eq 'p';
+    $graphiteRandomize=$value   if $name eq 'r';
     $graphiteSubsys=$value      if $name eq 's';
     $graphiteTTL=$value         if $name eq 'ttl';
     $graphiteFqdnFlag=1		if $name eq 'f';
@@ -72,15 +75,38 @@ sub graphiteInit
   error("graphite subsys options '$graphiteSubsys' not a proper subset of '$subsys'")
         if $subsys ne '' && $graphiteSubsys ne '' && $graphiteSubsys!~/^[$subsys]+$/;
 
-  # convert to the number of samples we want to send
-  my $graphiteSendCount=int($graphiteInterval/$graphiteInterval1);
-  error("graphite interval option not a multiple of '$graphiteInterval1' seconds")
-	if $graphiteInterval1*$graphiteSendCount != $graphiteInterval;
-
   $graphiteFlags=$graphiteMinFlag+$graphiteMaxFlag+$graphiteAvgFlag+$graphiteTotFlag;
   error("only 1 of 'min', 'max', 'avg' or 'tot' with 'graphite'")    if $graphiteFlags>1;
+
+  # If we ever run with a ':' in the interval, we need to be sure we're only looking at the main one.
+  $graphiteColInt=(split(/:/, $interval))[0];
+  $graphiteInterval=$graphiteColInt    if $graphiteInterval eq '';
+
+  # convert to the number of samples we want to send
+  $graphiteSendCount=int($graphiteInterval/$graphiteColInt);
+  error("graphite interval '$graphiteInterval' is not a multiple of '$graphiteColInt' seconds")
+	if $graphiteColInt*$graphiteSendCount != $graphiteInterval;
   error("'min', 'max', 'avg' & 'tot' require graphite 'i' that is > collectl's -i")
         if $graphiteFlags && $graphiteSendCount==1;
+
+  if ($graphiteAlignFlag)
+  {
+    my $div1=int(60/$graphiteColInt);
+    my $div2=int($graphiteColInt/60);
+    error("'align' requires collectl interval be a factor or multiple of 60 seconds")
+      		 if ($graphiteColInt<=60 && $div1*$graphiteColInt!=60) || ($graphiteColInt>60 && $div2*60!=$graphiteColInt);
+    error("'align' only makes sense when multiple samples/interval")    if $graphiteInterval<=$graphiteColInt;
+    error("'lexpr,align' requires -D or --align")                       if !$graphiteAlignFlag && !$daemonFlag;
+  }
+
+  error('randomize options requires a value')    if !defined($graphiteRandomize);
+  if ($graphiteRandomize ne '')
+  {
+    error("randomization require hires time module")                  if !$hiResFlag;
+    error("randomization requires interval of at least 2 seconds")    if $graphiteInterval<2;
+    error("randomization value must be less than or equal to '" . ($graphiteInterval-1) . "' seconds")
+          if $graphiteRandomize > $graphiteInterval-1;
+  }
 
   # Since graphite DOES write over a socket but does not use -A, make sure the default
   # behavior for -f logs matches that of -A
@@ -88,6 +114,7 @@ sub graphiteInit
 
   $graphiteMyHost=(!$graphiteFqdnFlag) ? `hostname` : `hostname -f`;
   chomp $graphiteMyHost;
+  $graphiteMyHost =~ s/\./$graphiteEscape/g    if $graphiteEscape ne '';
 
   #    O p e n    S o c k e t
 
@@ -116,8 +143,12 @@ sub graphite
   # if not time to print and we're not doing min/max/avg/tot, there's nothing to do.
   # BUT always make sure time aligns to top of minute based on i=
   $graphiteCounter++;
-  $graphiteOutputFlag=(!(int($lastSecs[$rawPFlag]) % $graphiteInterval)) ? 1 : 0;
+  $graphiteOutputFlag=(($graphiteCounter % $graphiteSendCount) == 0) ? 1 : 0         if !$graphiteAlignFlag;
+  $graphiteOutputFlag=(!(int($lastSecs[$rawPFlag]) % $graphiteInterval)) ? 1 : 0     if  $graphiteAlignFlag;
   return    if (!$graphiteOutputFlag && $graphiteFlags==0);
+
+  # random sleep when r= option
+  Time::HiRes::usleep(rand($graphiteRandomize)*1000000)    if $graphiteRandomize ne '';
 
   if ($graphiteSubsys=~/c/)
   {
@@ -473,7 +504,7 @@ sub sendData
   {
     $valSentFlag=1;
     my $valString=(!defined($numpl)) ? sprintf('%d', $value) : sprintf("%.${numpl}f", $value);
-    my $message=sprintf("$graphiteBefore$graphiteMyHost$graphitePost.$name $valString %d\n", time);
+    my $message=sprintf("$graphiteBefore$graphiteMyHost$graphitePost.$name $valString %d\n", $graphiteIntTimeLast);
     print $message    if $graphiteDebug & 1;
     if (!($graphiteDebug & 8))
     {
@@ -533,13 +564,16 @@ sub help
 
 usage: --export=graphite,host[:port][,options]
   where each option is separated by a comma, noting some take args themselves
+    align       align output to whole minute boundary
     b=string    preface each variable name with string
     co          only reports changes since last reported value
     d=mask      debugging options, see beginning of graphite.ph for details
+    e=escape    escape character to replace '.' with in hostname
     f           use fqdn instead of simple hostname for statistics naming
     h           print this help and exit
     i=seconds   reporting interval, must be multiple of collect's -i
     p=text      insert this text right after hostname, including '.' if you want one
+    r=seconds   randomized wait of up to 'r' seconds before submitting to graphite
     s=subsys    only report subsystems, must be a subset of collectl's -s
     ttl=num     if data hasn't changed for this many intervals, report it
                 only used with 'co', def=5

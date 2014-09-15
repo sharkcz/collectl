@@ -43,7 +43,7 @@ distribution:
 <li><b><a href=Gexpr.html>gexpr</a></b> allows one to send collectl data to <a href=http://ganglia.info/>ganglia</a></li>
 <li><b><a href=Graphite.html>graphite</a></b> allows one to send collectl data to <a href=http://graphite.wikidot.com/>graphite</a></li>
 <li><b>lexpr</b> generates output in an easy to parse format</li>
-<li><b>sexpr</b> generates output as an <a href=http://en.wikipedia.org/wiki/S-expression>s-expressions</a></li>
+<li><b>sexpr</b> generates output as an <a href=http://en.wikipedia.org/wiki/S-expression>s-expressions</a>  <i><b>note: sexp is deprecated and will be removed from the kit in 2014</i></b></li>
 <li><b><a href=Process.html>proctree</a></b> provides another way to look at process data</li>
 <li><b>vmstat</b> is the standard unix <i>vmstat</i> command most people know and love,
 so why reinvent it?  It's both a useful example of how to write an export as well as
@@ -58,9 +58,9 @@ of options, though sexpr is fairly limited, as described in the following table:
 <center>
 <table border=1 width=85%>
 <tr><td align=center colspan=2><b>NOTE: sexpr is deprecated and will be remove from kit in 2014</b></td></tr>
-<tr><td width=10%><b>align</b></td><td>Only for lexpr and used in conjunction with <i>i=</i>, when specified data samples will
-                be aligned to whole minute boundaries.  On other words if used with <i>i=15</i>, data will be reported
-                at the top of the minutes, 15 seconds past, etc.  The first sample may therefore be partial.</td>
+<tr><td width=10%><b>align</b></td><td>Used in conjunction with <i>i=</i> and when specified data samples will
+                be aligned to whole minute boundaries.  In other words if used with <i>i=15</i>, data will be reported
+                at the top of the minute, 15 seconds past, etc.  The first sample may therefore be partial.</td>
 <tr><td width=10%><b>avg|max|min|tot</b></td><td>used in conjunction with <i>i=</i>, send the average, maximum,
                 minimum or total of the data over the associated set of intervals specified by <i>i=</i>. If 
                 none of these are specified, the values from the most recent monitoring interval will

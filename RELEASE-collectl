@@ -38,7 +38,44 @@ KNOWN PROBLEMS/RESTRICTIONS
 
 CHANGES
 
-3.6.5-2 Sept 27m 2012
+
+3.6.7-1 Mar 8, 2013
+  - set network speed for vnets to '??' so they'll use $DefNetSpeed for
+    bogus checks since the kernel hardcodes then to 10 which makes no sense
+    [thanks rick]
+  - code to print brief totals for -st wasn't include in a conditional
+    so you'd always get extra columns of output when -st was NOT included
+  - needed to initialize numaMem->{lock} for cases where user selects -sM
+    and no data collected  [thanks laurence]
+  - added randomize [thanks robert] and align switches to graphite module 
+    and align switch only to gexpr.ph since gexpr uses current times in messages
+  - added escape switch to graphite to allow one to change the dots in hostname
+  - change to suse startup script to look in /usr/sbin instead of /usr/bin
+  - added debug mask of 16 to lexpr to help test x= switch
+  - can now use commas OR colons with lexpr,x= though commas preferred and 
+    colons may go away
+  - added disk qlen, wait, svctime and util to lexpr
+  - it was pointed out that in getExec() I'm initializing $oneline instead of $oneLine
+    [thanks joe]
+  - for debian init script, reverse logic for running start-stop-deamon with
+    -test so it will work with buxybox too [thanks chris with help from troy]
+  - new switch: --cpuopts z (the only option) which suppresses lines of idle
+    activity from detailed stats
+
+3.6.6-2 Dec  7, 2012
+  - when purging imported detail plot data, only do so if file had changed
+  - when playing back multiple files, do NOT try to process a new file that
+    has not yet seen the end of the current interval ($timestampCound==1)
+  - fix SuSE init.d script, [thanks tom]
+
+3.6.6-1 Nov 25, 2012
+  - last version broke lexpr and it wasn't correctly handling intervals 
+    other than 1
+  - do not set $dskChangeFlag to 4 when maj/min numbers change as it does
+    not mean the stats changed
+  - removed checks for major/minor disk numbers changing
+
+3.6.5-2 Sept 27, 2012
   - was not updating new major/minor numbers for a disk when they changed so
     got stuck in a loop which kept disk maj/min changed every interval
   - new -r option to purge older .log files, def=12 months

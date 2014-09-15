@@ -915,6 +915,13 @@ to align data with the column headings in this mode.
 The following options are subsystem specific and typically filter data for collection
 and/or display as well as affect the output format:
 
+.B "--cpuopts"
+.RS
+.br
+z \- only applies to cpu details, do not report any CPUs with no load.  In other
+words all entries are zero except for IDLE.
+.RE
+
 .B "--dskfilt [^]perl-regx[,perl-regx...]"
 .RS
 NOTE \- this does NOT effect data collection,  ALL disk data will always be collected.

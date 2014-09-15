@@ -111,7 +111,7 @@ require "Sys/Syslog.pm"    if !$PcFlag;
 $rootFlag=(!$PcFlag && `whoami`=~/root/) ? 1 : 0;
 $SrcArch= $Config{"archname"};
 
-$Version=  '3.6.5-2';
+$Version=  '3.6.7-1';
 $Copyright='Copyright 2003-2012 Hewlett-Packard Development Company, L.P.';
 $License=  "collectl may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
@@ -352,7 +352,7 @@ $lastLogPrefix=$passwdFile='';
 $memOpts=$nfsOpts=$nfsFilt=$lustOpts=$userEnvOpts='';
 $grepPattern=$pname='';
 $dskFilt=$netFilt=$tcpFilt='';
-$dskOpts=$netOpts=$xOpts='';
+$cpuOpts=$dskOpts=$netOpts=$xOpts='';
 $utimeMask=0;
 $comment=$runas='';
 $rawDskFilter=$rawDskIgnore=$rawNetFilter=$rawNetIgnore='';
@@ -445,6 +445,7 @@ GetOptions('align!'     => \$alignFlag,
 
            'all!'          => \$allFlag,
            'comment=s'     => \$comment,
+           'cpuopts=s'     => \$cpuOpts,
            'dskfilt=s'     => \$dskFilt,
            'dskopts=s'     => \$dskOpts,
            'export=s'      => \$export,
@@ -835,6 +836,7 @@ if ($import ne '')
   foreach my $imp (split(/:/, $import))
   {
     $impString=$imp;
+    $impDetFlag[$impNumMods]=0;
     $impNumMods++;
 
     # The following chunks based somewhat on --export code, except OPTS is a string
@@ -1034,6 +1036,7 @@ print "NetFilt - Ignore: $netFiltIgnore  Keep: $netFiltKeep\n"    if $debug & 1;
 
 error("--dskopts f only applies to -sD")              if $dskOpts=~/f/  && $subsys!~/D/;
 error("--dskopts z only applies to -sD")              if $dskOpts=~/z/  && $subsys!~/D/;
+error("only valid value for --cpuopts is 'z'")        if $cpuOpts ne '' && $cpuOpts!~/^[z]+$/;
 error("only valid values for --dskopts are 'fiz'")    if $dskOpts ne '' && $dskOpts!~/^[fiz]+$/;
 error("only valid value for --xopts is 'i'")          if $xOpts ne '' && $xOpts!~/^[i]+$/;
 
@@ -1981,19 +1984,23 @@ if ($playback ne '')
       # which was seen one time before flush error handling was put in.  Don't
       # know if that was the problem or not so we'll keep this extra test.
       $timestampFlag=0;
+      $timestampCount=0;
       if ($line=~/^>>>/)
       {
         # we need to make sure both $lastSeconds and $newSeconds track BOTH the
         # raw and rawp files, if both exist.
 
+	# we need to know later on if we're processing a timestamp AND how many we've seen
+        # because if we hit EOF and only 1 seen, we have not processed a single, full interval.
         $timestampFlag=1;
+	$timestampCount++;
         if ($line!~/^>>> (\d+\.\d+) <<</)
         {
  	  logmsg("E", "Corrupted file do to invalid time marker in '$file'\n".
   		      "Ignoring the rest of file.  Last valid marker: $newSeconds[$rawPFlag]");
 	  next;
         }
-        #printf ">>> $1 <<<  From: %s Stamp: %s\n", getDateTime($fromSecs), getDateTime($1);
+        #printf ">>> $1 <<<  Count: $timestampCount From: %s Stamp: %s\n", getDateTime($fromSecs), getDateTime($1);
 
         # At this point and if defined $newSeconds is actually pointing to the last interval
         # and be sure to convert to local time so --from/--thru checks work.
@@ -2125,8 +2132,8 @@ if ($playback ne '')
 
     # if we reported data from this file (we may have skipped it entirely if --from
     # used with multiple files), calculate how many seconds reported on in for 
-    # stats reporting with -oA
-    if (!$skip && !$rawPFlag && !$extractMode)
+    # stats reporting with -oA, but only if at least 1 full interval processed
+    if (!$skip && !$rawPFlag && !$extractMode && $timestampCount>1)
     {
       # Note that by default we never include first interval data, but if this was a
       # consecitive file we need to include that interval to so add it back in
@@ -3895,7 +3902,7 @@ sub getExec
   }
 
   # Return complete contents of command
-  my $oneline='';
+  my $oneLine='';
   if ($type==0)
   {
     foreach my $line (<CMD>)
@@ -4794,7 +4801,9 @@ sub flushBuffers
     # handle --import
     for (my $i=0; $i<$impNumMods; $i++)
     {
-      $impGz[$i]-> gzflush(2)<0 and flushError('$impKey[$i]', $impGz)    if defined($impGz[$i]);
+      # we can only flush detail data if something in buffer or else we'll throw an error!
+      $impGz[$i]->gzflush(2)<0 and flushError($impKey[$i], $impGz[$i])    if defined($impGz[$i]) && $impDetFlag[$i];
+      $impDetFlag[$i]=0;
     }
   }
   else
@@ -6324,6 +6333,10 @@ These options are all subsystem specific and all take one or more arguments.
 Options typically effect the type of data collectl and filters effect the way
 it is displayed.  In the case of lustre there are also 'services'
 
+CPU
+  --cpuopts
+      z - do not show any detail lines which are ALL 0     
+
 Disk
   --dskfilt perl-regx[,perl-regx...]
       this ONLY applies to disk detail output and not data collection
@@ -6573,6 +6586,15 @@ sub whatsnew
 {
   my $whatsnew=<<EOF6;
 What's new in collectl in the last year or so?
+
+version 3.6.7  March 2013
+- new switch: --cpuopts z, to disable detail lines for idle CPUs
+- do NOT use vnet speeds, which are hardcoded to 10, in bogus checks
+- a couple of new switches for graphite, e and r
+- fixed a broken lexpr which wasn't handling intervals correctly which
+  was broken in 3.6.5, sorry about that
+- removed checks for disk minor/major numbers changing
+- added additional disk detail counters to lexpr
 
 version 3.6.5  October 2012
 - bugfixes, see RELEASE-collectl for details

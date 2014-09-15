@@ -7,6 +7,7 @@
 #   4 - include real times in timestamps (useful for testing) along with skipped intervals
 #   8 - do not send anything 
 #       (useful when displaying normal output on terminal)
+#  16 - show 'x' processing
 
 our $lexInterval;
 my ($lexSubsys, $lexDebug, $lexCOFlag, $lexTTL, $lexFilename, $lexSumFlag);
@@ -18,7 +19,7 @@ my $lexSamples=0;
 my $lexOutputFlag=1;
 my $lexFirstInt=1;
 my $lexAlignFlag=0;
-my $lexCounter=0;
+my $lexCounter;
 my $lexExtName='';
 
 sub lexprInit
@@ -55,6 +56,8 @@ sub lexprInit
     $lexTotFlag=1          if $name eq 'tot';
 
     help()                 if $name eq 'h';
+
+    last    if $lexExtName ne '';
   }
 
   # If importing data, and if not reporting anything else, $subsys will be ''
@@ -86,18 +89,37 @@ sub lexprInit
     $lexSendCount=int($lexInterval/$lexColInt);
     error("lexpr interval of '$lexInterval' is not a multiple of collectl interval of '$lexColInt' seconds")
     		 if $lexColInt*$lexSendCount != $lexInterval;
-    error("'align' only makes sense when mulitple samples/interval")	if $lexAlignFlag && $lexInterval<=$lexColInt;
     error("'min', 'max', 'avg' & 'tot' require lexpr 'i' that is > collectl's -i")
     		 if $lexFlags && $lexSendCount==1;
+
+    if ($lexAlignFlag)
+    {
+      my $div1=int(60/$lexColInt);
+      my $div2=int($lexColInt/60);
+      error("'align' requires collectl interval be a factor or multiple of 60 seconds")
+      		     if ($lexColInt<=60 && $div1*$lexColInt!=60) || ($lexColInt>60 && $div2*60!=$lexColInt);
+      error("'align' only makes sense when multiple samples/interval")	  if $lexInterval<=$lexColInt;
+      error("'lexpr,align' requires -D or --align")                       if !$alignFlag && !$daemonFlag;
+    }
   }
 
   if ($lexExtName ne '')
   {
-    my $switches;
-    ($lexExtName, $switches)=(split(/:/, $lexExtName, 2))[0,1];
+    # build up swiches from EVERYTHING seen after x=
+    my $xSeen=0;
+    my $switches='';
+    foreach my $option (@_)
+    {
+      $xSeen=1    if $option=~/^x/;
+      $switches.="$option,"     if $xSeen && $option!~/^x/;
+    }
+    $switches=~s/,$//;
+
+    ($lexExtName, $switches)=(split(/:/, $lexExtName, 2))[0,1]    if $lexExtName=~/:/;    # backwards compatibility with : for switches
     $lexExtBase=$lexExtName;
     $lexExtBase=~s/\..*//;    # in case extension
     $lexExtName.='.ph'    if $lexExtName!~/\./;
+    #print "NAME: $lexExtName  Switches: $switches\n";
 
     $tempName=$lexExtName;   # name for error message before prepending with directory
     $lexExtName="$ReqDir/$lexExtName"    if !-e $lexExtName;
@@ -108,14 +130,21 @@ sub lexprInit
       error($temp);
     }
     require $lexExtName;
+    print "$lexExtName loaded\n"    if $lexDebug & 16;
 
     # rather than pass an undefined switch, if not there don't pass anything
     my $initName="${lexExtBase}Init";
     if (defined($switches))
-    { &$initName($switches); }
+    { 
+      print "$initName($switches)\n"    if $debug & 16;
+      &$initName($switches);
+    }
     else
     { &$initName(); }
   }
+
+  # need to reset here in case processing multiple files
+  $lexCounter=0;
 }
 
 sub lexpr
@@ -123,24 +152,25 @@ sub lexpr
   # since our init routine gets call BEFORE playback processing we have to wait until first interval to do this
   if ($lexFirstInt && $playback ne '')
   {
+    # you might be able to align with data collected with --align or -D, but I'd rather discourage this
     $lexColInt=(split(/:/, $recInterval))[0];
     $lexInterval=$lexColInt    if $lexInterval eq '';
     $lexSendCount=int($lexInterval/$lexColInt);
     error("lexpr interval of '$lexInterval' is not a multiple of recorded interval of '$lexColInt' seconds")
     		 if $lexColInt*$lexSendCount != $lexInterval;
-    error("'align' only makse sense when mulitple samples/interval")	if $lexAlignFlag && $lexInterval<=$lexColInt;
+    error("'align' not supported with -p")                              if $lexAlignFlag;
     error("'min', 'max', 'avg' & 'tot' require lexpr 'i' that is > collectl's -i")
     		 if $lexFlags && $lexSendCount==1;
   }
   $lexFirstInt=0;
 
   # if not time to print and we're not doing min/max/avg/tot, there's nothing to do.
-  # BUT always make sure time aligns to top of minute based on i=
+  # BUT if align, always make sure time aligns to top of minute based on i= and NOT sendCount
   $lexCounter++;
   $lexSamples++;
-  $lexOutputFlag=(($lexCounter % $lexInterval) ==0) ? 1 : 0               if !$lexAlignFlag;
-  $lexOutputFlag=(!(int($lastSecs[$rawPFlag]) % $lexInterval)) ? 1 : 0    if  $lexAlignFlag;
-  #print "Align: $lexAlignFlag Counter: $lexCounter  Lexint: $lexInterval  Last: $lastSecs[$rawPFlag]  Output: $lexOutputFlag\n";
+  $lexOutputFlag=(($lexCounter % $lexSendCount) ==0) ? 1 : 0               if !$lexAlignFlag;
+  $lexOutputFlag=(!(int($lastSecs[$rawPFlag]) % $lexInterval)) ? 1 : 0     if  $lexAlignFlag;
+  #print "Align: $lexAlignFlag Counter: $lexCounter  LexSend: $lexSendCount  Last: $lastSecs[$rawPFlag]  Output: $lexOutputFlag\n";
 
   return    if (!$lexOutputFlag && $lexFlags==0);
 
@@ -223,6 +253,10 @@ sub lexpr
         $diskDetString.=sendData("diskinfo.readkbs.$dskName",  $dskReadKB[$i]/$intSecs);
         $diskDetString.=sendData("diskinfo.writes.$dskName",   $dskWrite[$i]/$intSecs);
         $diskDetString.=sendData("diskinfo.writekbs.$dskName", $dskWriteKB[$i]/$intSecs);
+        $diskDetString.=sendData("diskinfo.quelen.$dskName",   $dskQueLen[$i]/$intSecs);
+        $diskDetString.=sendData("diskinfo.wait.$dskName",     $dskWait[$i]/$intSecs);
+        $diskDetString.=sendData("diskinfo.svctime.$dskName",  $dskSvcTime[$i]/$intSecs);
+        $diskDetString.=sendData("diskinfo.util.$dskName",     $dskUtil[$i]/$intSecs);
       }
     }
   }

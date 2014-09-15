@@ -11,7 +11,9 @@
 #   -g   ONLY report well-known gangia variables
 #   -G   report ALL variables but replace those known by ganglia with their ganglia names
 
-my ($gexSubsys, $gexInterval, $gexDebug, $gexCOFlag, $gexTTL, $gexSocket, $gexPaddr);
+our $gexInterval;
+
+my ($gexSubsys, $gexDebug, $gexCOFlag, $getSendCount, $gexTTL, $gexSocket, $gexPaddr);
 my ($gexHost, $gexPort);
 my (%gexDataLast, %gexDataMin, %gexDataMax, %gexDataTot, %gexTTL);
 my ($gexMinFlag, $gexMaxFlag, $gexAvgFlag, $gexTotFlag)=(0,0,0,0);
@@ -23,6 +25,7 @@ my $gexGFlag=0;
 my $gexMcast;
 my $gexMcastFlag=0;
 my $gexOutputFlag=1;
+my $gexColInt;
 
 sub gexprInit
 {
@@ -41,14 +44,16 @@ sub gexprInit
 
   # Options processing.  must be combo of co, d, i and s (for now)
   $gexDebug=$gexCOFlag=0;
-  $gexInterval=$gexInterval1;
+  $gexInterval='';
   $gexSubsys=$subsys;
   $gexTTL=5;
+
   foreach my $option (@_)
   {
     my ($name, $value)=split(/=/, $option);
-    error("invalid gexpr option '$name'")    if $name!~/^[dgGhis]?$|^co$|^ttl$|^min$|^max$|^avg$|^tot$/;
+    error("invalid gexpr option '$name'")    if $name!~/^[dgGhis]?$|^align|^co$|^ttl$|^min$|^max$|^avg$|^tot$/;
 
+    $gexAlignFlag=1        if $name eq 'align';
     $gexCOFlag=1           if $name eq 'co';
     $gexDebug=$value       if $name eq 'd';
     $gexInterval=$value    if $name eq 'i';
@@ -74,15 +79,28 @@ sub gexprInit
   error("gexpr subsys options '$gexSubsys' not a proper subset of '$subsys'")
         if $subsys ne '' && $gexSubsys ne '' && $gexSubsys!~/^[$subsys]+$/;
 
+  $gexColInt=(split(/:/, $interval))[0];
+  $gexInterval=$gexColInt    if $gexInterval eq '';
+
   # convert to the number of samples we want to send
-  my $gexSendCount=int($gexInterval/$gexInterval1);
-  error("gexpr interval option not a multiple of '$gexInterval1' seconds")
-	if $gexInterval1*$gexSendCount != $gexInterval;
+  $gexSendCount=int($gexInterval/$gexColInt);
+  error("gexpr interval of '$gexInterval' is not a multiple of '$gexColInt' seconds")
+	if $gexColInt*$gexSendCount != $gexInterval;
 
   $gexFlags=$gexMinFlag+$gexMaxFlag+$gexAvgFlag+$gexTotFlag;
   error("only 1 of 'min', 'max', 'avg' or 'tot' with 'gexpr'")    if $gexFlags>1;
   error("'min', 'max', 'avg' & 'tot' require gexpr 'i' that is > collectl's -i")
         if $gexFlags && $gexSendCount==1;
+
+  if ($gexAlignFlag)
+  {
+    my $div1=int(60/$gexColInt);
+    my $div2=int($gexColInt/60);
+    error("'align' requires collectl interval be a factor or multiple of 60 seconds")
+      		 if ($gexColInt<=60 && $div1*$gexColInt!=60) || ($gexColInt>60 && $div2*60!=$gexColInt);
+    error("'align' only makes sense when multiple samples/interval")    if $gexInterval<=$gexColInt;
+    error("'lexpr,align' requires -D or --align")                       if !$gexAlignFlag && !$daemonFlag;
+  }
 
   # Since gexpr DOES write over a socket but does not use -A, make sure the default
   # behavior for -f logs matches that of -A
@@ -107,7 +125,8 @@ sub gexpr
   # if not time to print and we're not doing min/max/avg/tot, there's nothing to do.
   # BUT always make sure time aligns to top of minute based on i=
   $gexCounter++;
-  $gexOutputFlag=(!(int($lastSecs[$rawPFlag]) % $gexInterval)) ? 1 : 0;
+  $gexOutputFlag=(($gexCounter % $gexSendCount) == 0) ? 1 : 0              if !$gexAlignFlag;
+  $gexOutputFlag=(!(int($lastSecs[$rawPFlag]) % $gexInterval)) ? 1 : 0     if  $gexAlignFlag;
   return    if (!$gexOutputFlag && $gexFlags==0);
 
   if ($gexSubsys=~/c/i)
@@ -680,6 +699,7 @@ sub help
 
 usage: --export=gexpr,host:port[,options]
   where each option is separated by a comma, noting some take args themselves
+    align       align output to whole minute boundary
     co          only reports changes since last reported value
     d=mask      debugging options, see beginning of graphite.ph for details
     h           print this help and exit

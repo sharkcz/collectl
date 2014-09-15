@@ -236,10 +236,6 @@ sub initRecord
 
     my @fields=split(/\s+/, $line);
 
-    # These help identify changes to disk order in /proc/diskstats
-    $dskMaj[$dskIndexNext]=$fields[1];
-    $dskMin[$dskIndexNext]=$fields[2];
-
     my $diskName=$fields[3];
     $diskName=remapDiskName($diskName)    if $diskRemapFlag;
     $diskName=~s/cciss\///;
@@ -594,6 +590,7 @@ sub initRecord
 
     $line=~/.*\/(\S+)\/speed/;
     my $netName=$1;
+    $speed='??'    if $netName=~/^vnet/;                     # hardcoded in kernel to 10 which causes bogus msgs later
     $netSpeeds{$netName}=$speed    if $speed!~/Invalid/;    # this can happen on a VM where operstate IS up
     #print "set netSpeeds{$netName}=$speed\n";
   }
@@ -1333,7 +1330,7 @@ sub initFormat
 
   for (my $i=0; $i<$CpuNodes; $i++)
   {
-    foreach my $numa ('used', 'free', 'slab', 'map', 'anon', 'inact',)
+    foreach my $numa ('used', 'free', 'slab', 'map', 'anon', 'lock', 'inact',)
     { $numaMem[$i]->{$numa}=$numaMem[$i]->{$numa.'C'}=0; }
 
     foreach my $hits ('for', 'miss', 'hits')
@@ -3153,8 +3150,6 @@ sub dataAnalyze
     if (!defined($disks{$diskName}))
     {
       $dskChangeFlag|=1;    # new disk found
-      $dskMaj[$dskIndex]=$major;
-      $dskMin[$dskIndex]=$minor;
 
       # if available indexes use one of them otherwise generate a new one.
       if (@dskIndexAvail>0)
@@ -3181,19 +3176,6 @@ sub dataAnalyze
     $dskSeen[$dskIndex]=$diskName;
     $dskSeenCount++;    # faster than looping through to count
 
-    # This has been simplified to just generating an error message
-    if ($dskMaj[$dskIndex]!=$major || $dskMin[$dskIndex]!=$minor )
-    {
-      $dskChangeFlag|=4;
-
-      my $oldMaj=$dskMaj[$dskIndex];
-      my $oldMin=$dskMin[$dskIndex];
-      logmsg('E', "/proc/diskstats ordering changed for '$diskName' Old: [$oldMaj,$oldMin] New: [$major,$minor]");
-
-      $dskMaj[$dskIndex]=$major;
-      $dskMin[$dskIndex]=$minor;
-    }
-
     # Clarification of field definitions:
     # Excellent reference: http://cvs.sourceforge.net/viewcvs.py/linux-vax
     #                               /kernel-2.5/Documentation/iostats.txt?rev=1.1.1.2
@@ -3218,14 +3200,12 @@ sub dataAnalyze
 	         fix($dskFields[10]-$dskFieldsLast[$dskIndex][10]) :
 		 fix($dskFieldsLast[$dskIndex][10]-$dskFields[10]);
 
-    # Disk configuration changed or read/write had bogus value, reset ALL current
-    # values for this disk to 0, noting that 1st pass is initialization and numbers
-    # NOT valid so don't generate message
-    if (($dskChangeFlag & 4) || ($DiskMaxValue>0 && ($dskReadKB[$dskIndex]>$DiskMaxValue || $dskWriteKB[$dskIndex]>$DiskMaxValue)))
+    # If read/write had bogus value, reset ALL current values for this disk to 0, noting that 1st pass
+    # is initialization and numbers NOT valid so don't generate message
+    if ($DiskMaxValue>0 && ($dskReadKB[$dskIndex]>$DiskMaxValue || $dskWriteKB[$dskIndex]>$DiskMaxValue))
       {
-        # NOTE - the first message only for bogus data and it's a real 'error'
         logmsg('E', "One of ReadKB/WriteKB of '$dskRead[$dskIndex]/$dskWriteKB[$dskIndex]' > '$DiskMaxValue' for '$diskName'")
-		    if !($dskChangeFlag & 4) && !$firstPass;
+		    if !$firstPass;
         logmsg('W', "Resetting all current performance values for this disk to 0");
 
         $dskOps[$dskIndex]=$dskRead[$dskIndex]=$dskReadKB[$dskIndex]=$dskWrite[$dskIndex]=$dskWriteKB[$dskIndex]=0;
@@ -5565,7 +5545,11 @@ sub printPlot
     {
       $impPlot='';
       &{$impPrintPlot[$i]}(4, \$impPlot); 
-      writeData(0, $datetime, \$impPlot, , $impText[$i], $impGz[$i], $impKey[$i], \$oneline)    if $impPlot ne '';
+      if ($impPlot ne '')
+      {
+        $impDetFlag[$i]++;
+        writeData(0, $datetime, \$impPlot, , $impText[$i], $impGz[$i], $impKey[$i], \$oneline);
+      }
     }
   }
 
@@ -5794,6 +5778,9 @@ sub printTerm
     {
       for ($i=0; $i<$NumCpus; $i++)
       {
+        # skip idle CPUs if --cpuopts z specified.  I'm rather check for idle==100% but some kernels don't
+	# always increment counts and there are actually idle cpus with values of 0 here.
+        next    if $cpuOpts=~/z/ && $userP[$i]+$niceP[$i]+$sysP[$i]+$waitP[$i]+$irqP[$i]+$softP[$i]+$stealP[$i]==0;
         $line=sprintf("$datetime   %4d   %3d  %3d  %3d  %3d  %3d  %3d   %3d  %3d",
            $i, 
            $userP[$i], $niceP[$i], $sysP[$i],   $waitP[$i], 
@@ -8633,12 +8620,15 @@ sub printBriefCounters
     printf "%5s ", cvt($netErrTOT/$totSecs,5)    if $netOpts=~/e/;
   }
 
-  printf "%4s ", cvt($tcpIpErrTOT/$totSecs,4)       if $tcpFilt=~/i/;
-  printf "%4s ", cvt($tcpTcpErrTOT/$totSecs,4)      if $tcpFilt=~/t/;
-  printf "%4s ", cvt($tcpUdpErrTOT/$totSecs,4)      if $tcpFilt=~/u/;
-  printf "%4s ", cvt($tcpIcmpErrTOT/$totSecs,4)     if $tcpFilt=~/c/;
-  printf "%4s ", cvt($tcpTcpExErrTOT/$totSecs,4)    if $tcpFilt=~/T/;
- 
+  if ($subsys=~/t/)
+  {
+    printf "%4s ", cvt($tcpIpErrTOT/$totSecs,4)       if $tcpFilt=~/i/;
+    printf "%4s ", cvt($tcpTcpErrTOT/$totSecs,4)      if $tcpFilt=~/t/;
+    printf "%4s ", cvt($tcpUdpErrTOT/$totSecs,4)      if $tcpFilt=~/u/;
+    printf "%4s ", cvt($tcpIcmpErrTOT/$totSecs,4)     if $tcpFilt=~/c/;
+    printf "%4s ", cvt($tcpTcpExErrTOT/$totSecs,4)    if $tcpFilt=~/T/;
+  }
+
   printf "%4d %4d %4d %4d ",
 	cvt(int($sockUsedTOT/$mi),6), cvt(int($sockUdpTOT/$mi),6), 
 	cvt(int($sockRawTOT/$mi),6),  cvt(int($sockFragTOT/$mi),6)
@@ -8724,6 +8714,7 @@ sub printBriefCounters
 	cvt($lustreCltRAHitsTOT/$totSecs,6),cvt($lustreCltRAMissesTOT/$totSecs,6)
 	    if $lustOpts=~/R/;
   }
+
   for (my $i=0; $i<$impNumMods; $i++) { &{$impPrintBrief[$i]}(6); }
   print "\n";
 }

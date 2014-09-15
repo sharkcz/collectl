@@ -32,7 +32,9 @@
 #  run a second instance with instance name of 'int5', with interval of 5 seconds
 #    /etc/init.d/collectl start int5 "-i5"
 
-COLLECTL=/usr/bin/collectl
+[ -r /etc/rc.status ] && . /etc/rc.status
+rc_reset
+COLLECTL=/usr/sbin/collectl
 if [ ! -f $COLLECTL ]; then
     echo -n "Cannot find $COLLECTL"
     rc_status -s
@@ -66,9 +68,6 @@ if [ "$2" != "" ]; then
 fi
 PROCNAME=$PNAME
 PIDFILE="/var/run/$PNAME.pid"
-
-[ -r /etc/rc.status ] && . /etc/rc.status
-rc_reset
 
 # If a pidfile, make sure it's not stale and if it is, collectl not running
 if [ -f $PIDFILE ]; then

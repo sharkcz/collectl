@@ -1,10 +1,13 @@
-# copyright, 2003-2009 Hewlett-Packard Development Company, LP
+# copyright, 2003-20012 Hewlett-Packard Development Company, LP
 #
 # collectl may be copied only under the terms of either the Artistic License
 # or the GNU General Public License, which may be found in the source kit
 
 # local flags not needed/used by mainline.  probably others in this category
 my $printTermFirst=0;
+
+# shared with main collectl
+our %netSpeeds;
 
 # these are only init'd when in 'record' mode, one of the reasons being that
 # many of these variables may be different on the system on which the data
@@ -27,6 +30,10 @@ sub initRecord
   chomp $Host;
   $Host=(split(/\./, $Host))[0];
   $HostLC=lc($Host);
+
+  # when was system booted?
+  $uptime=(split(/\s+/, `cat /proc/uptime`))[0];
+  $boottime=time-$uptime;
 
   $Distro=cat('/etc/redhat-release')    if -e '/etc/redhat-release';
   chomp $Distro;
@@ -220,7 +227,27 @@ sub initRecord
 
   #    D i s k    C h e c k s
 
-  initDisk();
+  undef @dskOrder;
+  $dskIndexNext=0;
+  my @temp=`$Cat /proc/diskstats`;
+  foreach my $line (@temp)
+  {
+    next    if $line!~/$DiskFilter/;
+
+    my @fields=split(/\s+/, $line);
+
+    # These help identify changes to disk order in /proc/diskstats
+    $dskMaj[$dskIndexNext]=$fields[1];
+    $dskMin[$dskIndexNext]=$fields[2];
+
+    my $diskName=$fields[3];
+    $diskName=remapDiskName($diskName)    if $diskRemapFlag;
+    $diskName=~s/cciss\///;
+    push @dskOrder, $diskName;
+    $disks{$diskName}=$dskIndexNext++;
+  }
+  $dskSeenLast=$dskIndexNext;
+  logmsg("I", "initDisk initialized $dskIndexNext disks")    if $debug & 1;
 
   #    I n o d e s
 
@@ -545,35 +572,57 @@ sub initRecord
 
   # find all the networks and when possible include their speeds
   undef @temp;
-  $NumNets=0;
-  @temp=`$Grep -v -E "Inter|face" /proc/net/dev`;
-  $NetNames='';
+  $netIndexNext=0;
   $NetWidth=$netOptsW;     # Minimum size
   $null=($debug & 1) ? '' : '2>/dev/null';
   my $interval1=(split(/:/, $interval))[0];
-  foreach $temp (@temp)
+
+  # but first look up all the network speed in /sys/devices and load them into a hash 
+  # for easier access in the loop below
+  my $command="find /sys/devices/ 2>&1 | grep net | grep speed";
+  open FIND, "$command|" or logmsg('E', "couldn't execute '$command'");
+  while (my $line=<FIND>)
   {
-    $temp=~/^\s*(.*):/;    # most names have leading whitespace
+    chomp $line;
+    my $mode=$line;
+    $mode=~s/speed/operstate/;
+    $mode=`cat $mode`;
+    next    if $mode!~/up|unknown/;
+
+    my $speed=`cat $line 2>&1`;
+    chomp $speed;
+
+    $line=~/.*\/(\S+)\/speed/;
+    my $netName=$1;
+    $netSpeeds{$netName}=$speed    if $speed!~/Invalid/;    # this can happen on a VM where operstate IS up
+    #print "set netSpeeds{$netName}=$speed\n";
+  }
+
+  # Since this routine can get called multiple times during
+  # initialization, we need to make sure @netOrder gets clean start.
+  undef @netOrder;
+  @temp=`$Grep -v -E "Inter|face" /proc/net/dev`;
+  foreach my $temp (@temp)
+  {
+    next    if $rawNetFilter ne '' && $temp!~/$rawNetFilter/;
+
+    $temp=~/^\s*(\S+)/;    # most names have leading whitespace
     $netName=$1;
+    $netName=~s/://;
     $NetWidth=length($netName)    if length($netName)>$NetWidth;
-    $speed=($netName=~/^ib/) ? $ibSpeed : '';
-    if ($rootFlag && $netName=~/eth/ && $Ethtool ne '')
-    {
-      $command="$Ethtool $netName $null | $Grep Speed";
-      print "Command: $command\n"    if $debug & 1;
-      $speed=`$command`;
-      $speed=($speed=~/Speed:\s+(\d+)(\S)/) ? "$1" : '??';
-      $speed*=1000    if $speed ne '??' && $2 eq 'G';
-    }
-    $NetNames.="$netName:$speed ";
+    $speed=($netName=~/^ib/) ? $ibSpeed : $netSpeeds{$netName};
+    $speed='??'   if !defined($speed);
+
+    push @netOrder, $netName;
+    $netIndex=$netIndexNext;
+    $networks{$netName}=$netIndexNext++;
 
     # Since speeds are in Mb we really need to multiple by 125 to conver to KB
-    $NetMaxTraffic[$NumNets]=($speed ne '' && $speed ne '??') ?
+    $NetMaxTraffic[$netIndex]=($speed ne '' && $speed ne '??') ?
 		2*$interval1*$speed*125 : 2*$interval1*$DefNetSpeed*125;
-    $NumNets++;
   }
-  $NetNames=~s/ $//;
-  $NetWidth++;             # make room for trailing colon
+  $netSeenLast=$netIndexNext;
+  $NetWidth++;    # make room for trailing colon
 
   #    S C S I    C h e c k s
 
@@ -810,6 +859,8 @@ sub initFormat
     $version=$1;
     $hiResFlag=$1    if $header=~/HiRes:\s+(\d+)/;   # only after V1.5.3
 
+    $boottime=($header=~/Booted:\s+(\S+)/) ? $1 : 0;
+
     $Distro='';
     if ($header=~/Distro:\s+(.+)/)    # was optional before 'Platform' added
     {
@@ -836,6 +887,13 @@ sub initFormat
         # very limited release
         $recNfsFilt=($nfsOpts=~/C/) ? 'c3,c4' : 's3,s4';
       }
+    }
+
+    if ($header=~/TcpFilt:\s+(\S+)/)
+    {
+      # remember, even if an option is not recorded we still report on it
+      my $recOpts=(defined($1)) ? $1 : $tcpFiltDefault;
+      $tcpFilt=$recOpts    if $tcpFilt eq '';
     }
 
     # Users CAN overrider LustOpts so we need to do it this way, again accounting for
@@ -1120,8 +1178,7 @@ sub initFormat
     $NumBud=$1;
 
     $flags=($header=~/Flags:\s+(\S+)/) ? $1 : '';
-    $diskChangeFlag= ($flags=~/d/) ? 1 : 0;
-    $groupFlag=      ($flags=~/g/) ? 1 : 0;
+    $tworawFlag=     ($flags=~/[g2]/) ? 1 : 0;
     $processIOFlag=  ($flags=~/i/) ? 1 : 0;
     $slubinfoFlag=   ($flags=~/s/) ? 1 : 0;
     $processCtxFlag= ($flags=~/x/) ? 1 : 0;
@@ -1134,35 +1191,36 @@ sub initFormat
     $header=~/Memory:\s+(\d+)/;
     $Memory=$1;
 
-    $header=~/NumDisks:\s+(\d+)\s+DiskNames:\s+(.*)/;
-    $NumDisks=$1;
-    $DiskNames=$2;
-    @dskName=split(/\s+/, $DiskNames);
+    # Since disks are discovered dynamically all we need to init a few pointers.
+    $dskIndex=$dskSeenLast=0;
 
+    # networks are dynamic too but also messier because while we can't get speeds in playback mode
+    # we do need those that have been recorded so our 'bogus' checks.
     $header=~/NumNets:\s+(\d+)\s+NetNames:\s+(.*)/;
-    $NumNets=$1;
-    $NetNames=$2;
+    $numNets=$1;
+    $netNames=$2;
     $NetWidth=$netOptsW;
-    my $index=0;
+    my $netIndex=0;
     my $interval1=(split(/:/, $interval))[0];
-    foreach my $netName (split(/ /, $NetNames))
+    foreach my $netName (split(/ /, $netNames))
     {
       my $speed=($netName=~/:(\d+)/) ? $1 : $DefNetSpeed;
-      $speed*=1000    if $speed==10 && $version le '2.4.2';    # had missed the 'G'
-      $NetMaxTraffic[$index]=2*$interval1*$speed*125;
-      $netName=~s/:.*//;
+      $netName=~s/(\S+):.*/$1/;
+      $NetMaxTraffic[$netIndex]=2*$interval1*$speed*125;
       $NetWidth=length($netName)    if $NetWidth<length($netName);
-      $index++;
+      $networks{$netName}=$netIndex++;
+      push @netOrder, $netName;
+      $netSpeeds{$netName}=$speed;
     }
+    $netIndexNext=$netSeenLast=$netIndex;
     $NetWidth++;
 
     # This really shouldn't happen but data collected before V3.5.1 could have added new
-    # network devices, incremented $NumNets and not updated NetNames!
-    if ($NumNets!=$index)
+    # network devices, incremented $numNets and not updated NetNames!
+    if ($numNets!=$netIndexNext)
     {
-      logmsg('E', "NumNets in header is '$NumNets' but only '$index' listed and so was reset");
+      logmsg('E', "NumNets in header is '$numNets' but only '$netIndexNext' listed and so was reset");
       logmsg('E', "This is a BUG because this was fixed in V3.5.1")    if $version ge '3.5.1';
-      $NumNets=$index;
     }
 
     # shouldn't hurt if no slabs defined since we only use during slab reporting
@@ -1338,12 +1396,27 @@ sub initFormat
   $nfs4SRead=$nfs4SReaddir=$nfs4SReadlink=$nfs4SRemove=$nfs4SRename=$nfs4SSetattr=0;
   $nfs4SWrite=$nfs4SMeta=0;
 
-  # tcp - just do them all!
+  # tcp - this is sooo ugly.  not all variable are part of all kernels and these are at least
+  # some of the ones I've found to be missing in some.  This list may need to be augmented over
+  # time.  The alternative it to have conditional tests on all the printing and there is just
+  # too much of that.
+  $tcpData{TcpExt}->{PAWSEstab}=      $tcpData{TcpExt}->{DelayedACKs}=   $tcpData{TcpExt}->{TW}=0;
+  $tcpData{TcpExt}->{DelayedACKLost}= $tcpData{TcpExt}->{TCPPrequeued}=  $tcpData{TcpExt}->{TCPDirectCopyFromPrequeue}=0;
+  $tcpData{TcpExt}->{TCPHPHits}=      $tcpData{TcpExt}->{TCPPureAcks}=   $tcpData{TcpExt}->{TCPHPAcks}=0;
+  $tcpData{TcpExt}->{TCPDSACKOldSent}=$tcpData{TcpExt}->{TCPAbortOnData}=$tcpData{TcpExt}->{TCPAbortOnClose}=0;
+  $tcpData{TcpExt}->{TCPSackShiftFallback}=0;
+
+  $tcpData{IpExt}->{InMcastPkts}=  $tcpData{IpExt}->{InBcastPkts}=  $tcpData{IpExt}->{InOctets}=0;
+  $tcpData{IpExt}->{InMcastOctets}=$tcpData{IpExt}->{InBcastOctets}=$tcpData{IpExt}->{OutMcastPkts}=0;
+  $tcp{IpExt}->{OutOctets}=        $tcpData{IpExt}->{OutMcastOctets}=0;
+
+  $tcpData{TcpExt}->{TCPLoss}=$tcpData{TcpExt}->{TCPFastRetrans}=0;
+  $ipErrors=$icmpErrors=$tcpErrors=$udpErrors=$ipExErrors=$tcpExErrors=0;
+
+  # this is here strictly for compatibility with older raw files
   $NumTcpFields=65;
   for ($i=0; $i<$NumTcpFields; $i++)
-  {
-    $tcpValue[$i]=0;
-  }
+  { $tcpValue[$i]=$tcpLast[$i]=0; }
 
   # get ready to process first interval noting '$lastSecs' gets initialized 
   # when the data file is read in playback mode
@@ -1367,7 +1440,7 @@ sub initFormat
   # these all need to be initialized in case we use /proc/stats since not all variables
   # supplied by that
 
-  for ($i=0; $i<$NumDisks; $i++)
+  for ($i=0; $i<<$dskIndexNext; $i++)
   {
     $dskOps[$i]=$dskTicks[$i]=0;
     $dskRead[$i]=$dskReadKB[$i]=$dskReadMrg[$i]=0;
@@ -1375,7 +1448,7 @@ sub initFormat
     $dskRqst[$i]=$dskQueLen[$i]=$dskWait[$i]=$dskSvcTime[$i]=$dskUtil[$i]=0;
   }
 
-  for ($i=0; $i<$NumNets; $i++)
+  for ($i=0; $i<$netIndexNext; $i++)
   {
     $netName[$i]="";
     $netRxPkt[$i]=$netTxPkt[$i]= $netRxKB[$i]=  $netTxKB[$i]=  $netRxErr[$i]=
@@ -1434,7 +1507,7 @@ sub initFormat
 
   #    I n t e r v a l 2    S t u f f
 
-  $interval2Counter=0;
+  $interval2Counter=
 
   #    I n t e r v a l 3    S t u f f
 
@@ -1462,7 +1535,7 @@ sub initFormat
   $word32=2**32;
   $maxword= ($SrcArch=~/ia64|x86_64/) ? 2**64 : $word32;
 
-  return(($version, $datestamp, $timestamp, $timesecs, $timezone, $interval, $recSubsys, $recNfsFilt))
+  return(($version, $datestamp, $timestamp, $timesecs, $timezone, $interval, $recSubsys, $recNfsFilt, $recHeader))
     if defined($playfile);
 }
 
@@ -1531,7 +1604,7 @@ sub initLast
   }
 
   # ...and disks
-  for ($i=0; $i<$NumDisks; $i++)
+  for ($i=0; $i<$dskIndexNext; $i++)
   {
     $dskOpsLast[$i]=0;
     $dskReadLast[$i]=$dskReadKBLast[$i]=$dskReadMrgLast[$i]=$dskReadTicksLast[$i]=0;
@@ -1544,17 +1617,12 @@ sub initLast
     }
   }
 
-  for ($i=0; $i<$NumNets; $i++)
+  for ($i=0; $i<$netIndexNext; $i++)
   {
     $netRxKBLast[$i]=$netRxPktLast[$i]=$netTxKBLast[$i]=$netTxPktLast[$i]=0;
     $netRxErrLast[$i]=$netRxDrpLast[$i]=$netRxFifoLast[$i]=$netRxFraLast[$i]=0;
     $netRxCmpLast[$i]=$netRxMltLast[$i]=$netTxErrLast[$i]=$netTxDrpLast[$i]=0;
     $netTxFifoLast[$i]=$netTxCollLast[$i]=$netTxCarLast[$i]=$netTxCmpLast[$i]=0;
-  }
-
-  for ($i=0; $i<$NumTcpFields; $i++)
-  {
-    $tcpLast[$i]=0;
   }
 
   # and interconnect
@@ -1651,34 +1719,6 @@ sub remapLustreNames
   }
   print "\n"    if $debug & 8;
   return(@maps);
-}
-
-# Called from seveal places because numbering of disks in /proc can change
-# after a lun rescan or a new disk may have showed up
-sub initDisk
-{
-  # Note we're also including device mapper info when available
-  $NumDisks=0;
-  $DiskNames='';
-  my @temp=`$Cat /proc/diskstats`;
-  foreach my $line (@temp)
-  {
-    next    if $line!~/$DiskFilter/;
-
-    my @fields=split(/\s+/, $line);
-
-    # These help identify changes to disk order in /proc/diskstats
-    $dskMaj[$NumDisks]=$fields[1];
-    $dskMin[$NumDisks]=$fields[2];
-
-    my $diskName=$fields[3];
-    $diskName=remapDiskName($diskName)    if $diskRemapFlag;
-    $dskName[$NumDisks++]=$diskName;
-    $DiskNames.="$diskName ";
-  }
-  $DiskNames=~s/ $//;
-  $DiskNames=~s/cciss\///g;
-  logmsg("I", "initDisk found $NumDisks disks")    if $Kernel=~/exds/ || $debug & 1;
 }
 
 # Technically this could get called from within the lustreCheck() routines
@@ -1801,9 +1841,6 @@ sub initDay
 # they occur for multiple devices and/or on multiple lines in the raw file.
 sub initInterval
 {
-  # When a new interval starts we need to assume the list of disks are correct
-  $diskChangeFlag=0;
-
   $budIndex=0;
   for (my $i=0; $i<11; $i++)
   {
@@ -1836,7 +1873,9 @@ sub initInterval
     $intrptTot[$i]=0;    # But these HAVE to be reset every interval
   }
 
-  $netIndex=0;
+  undef @netSeen;
+  $netSeenCount=0;
+  $netChangeFlag=0;
   $netRxKBTot=$netRxPktTot=$netTxKBTot=$netTxPktTot=0;
   $netEthRxKBTot=$netEthRxPktTot=$netEthTxKBTot=$netEthTxPktTot=0;
   $netRxErrTot=$netRxDrpTot=$netRxFifoTot=$netRxFraTot=0;
@@ -1844,7 +1883,9 @@ sub initInterval
   $netTxFifoTot=$netTxCollTot=$netTxCarTot=$netTxCmpTot=0;
   $netRxErrsTot=$netTxErrsTot=0;
 
-  $dskIndex=0;
+  undef @dskSeen;
+  $dskSeenCount=0;
+  $dskChangeFlag=0;
   $dskOpsTot=$dskReadTot=$dskWriteTot=$dskReadKBTot=$dskWriteKBTot=0;
   $dskReadMrgTot=$dskReadTicksTot=$dskWriteMrgTot=$dskWriteTicksTot=0;  
 
@@ -1896,8 +1937,9 @@ sub initInterval
   $slabNumObjTot=$slabObjAvailTot=$slabUsedTot=$slabTotalTot=0;    # These are for slub
 
   # processes and environmentals don't get reported every interval so we need
-  # to set a flag when they do.
-  $interval2Print=$interval3Print=0;
+  # to set a flag when they do.  Further, just in case some plugin wants to do its
+  # during intervals 2 or 3, set those to 'print' when --showcolver
+  $interval2Print=$interval3Print=(!$showColFlag) ? 0 : 1;
 
   # on older kernels not always set.
   $memInact=0;
@@ -1930,7 +1972,7 @@ sub initInterval
   for (my $i=0; $i<$impNumMods; $i++) { &{$impInitInterval[$i]}($intSecs); }
 }
 
-# End of interval processing/printing
+# End of interval processing/printing, called BEFORE printing anything
 sub intervalEnd
 {
   my $seconds=shift;
@@ -1938,6 +1980,69 @@ sub intervalEnd
   # Only for debugging and typically used with -d4, we want to see the /proc
   # fields as they're read but NOT process them
   return()    if $debug & 32;
+
+  #    C h e c k    f o r    d e l e t e d    d i s k s
+
+  # remove any disks that might have disappeared AND return their index to avail stack
+  # NOTE - this and network checks that follow are IDENTICAL!!!
+  if ($subsys=~/d/i && ($dskSeenCount<$dskSeenLast || $dskChangeFlag & 1))
+  {
+    # examine each disk in the set of current disks for who is missing this interval
+    foreach my $disk (keys %disks)
+    {
+      my $seen=0;
+      for (my $i=0; !$seen && $i<@dskSeen; $i++)
+      {
+        next    if !defined($dskSeen[$i]);    # index not in use
+        if (defined($dskSeen[$disks{$disk}]))
+        {
+	  $seen=1;
+	  last;
+	}
+      }
+
+      if (!$seen)
+      {
+        $dskChangeFlag|=2;
+	my $index=$disks{$disk};
+	delete $disks{$disk};
+	push @dskIndexAvail, $index;
+	print "deleted disk $disk with index $index\n"    if $debug & 1;
+      }
+    }
+  }
+  $dskSeenLast=$dskSeenCount;
+
+  #    C h e c k    f o r    d e l e t e d    n e t w o r k s
+
+  # remove any networks that might have disappeared AND return their index to avail stack
+  if ($subsys=~/n/i && ($netSeenCount<$netSeenLast || $netChangeFlag & 1))
+  {
+    # examine each network in the set of current network for who is missing this interval
+    foreach my $network (keys %networks)
+    {
+      my $seen=0;
+      for (my $i=0; !$seen && $i<@netSeen; $i++)
+      {
+        next    if !defined($netSeen[$i]);    # index not in use
+        if (defined($netSeen[$networks{$network}]))
+        {
+          $seen=1;
+          last;
+        }
+      }
+
+      if (!$seen)
+      {
+        $netChangeFlag|=2;
+        my $index=$networks{$network};
+        delete $networks{$network};
+        push @netIndexAvail, $index;
+        print "deleted network $network with index $index\n"    if $debug & 1;
+      }
+    }
+  }
+  $netSeenLast=$netSeenCount;
 
   # we need to know how long the interval was, noting that when testing with -i0 we
   # can't divide by 0 and so set the interval to 1 to make it work even though the
@@ -1990,8 +2095,6 @@ sub intervalEnd
   derived()    if $rawPFlag==0;
 
   # Call import intervalEnd() BUT only if they have a callback defined
-  # Note we're doing this BEFORE the print as it gives us a last change to do post-interval
-  # processing.
   for (my $i=0; $i<$impNumMods; $i++)
   { &{$impIntervalEnd[$i]}(\$header)    if defined(&{$impIntervalEnd[$i]});}
 
@@ -2074,8 +2177,8 @@ sub dataAnalyze
       ($procName[$i], $procState[$i], $procPpid[$i], 
        $procMinFltTot[$i], $procMajFltTot[$i], 
        $procUTimeTot[$i], $procSTimeTot[$i], 
-       $procCUTimeTot[$i], $procCSTimeTot[$i], $procPri[$i], $procNice[$i], $procTCount[$i], $procCPU[$i])=
-		(split(/ /, $data))[2,3,4,10,12,14,15,16,17,18,19,20,39];
+       $procCUTimeTot[$i], $procCSTimeTot[$i], $procPri[$i], $procNice[$i], $procTCount[$i], $procSTTime[$i], $procCPU[$i])=
+		(split(/ /, $data))[2,3,4,10,12,14,15,16,17,18,19,20,22,39];
       return    if !defined($procSTimeTot[$i]);  # check for incomplete
 
       # don't incude main process in thread count
@@ -3030,8 +3133,8 @@ sub dataAnalyze
       $ipmiData->{$type}->[$index]->{value}= ($fields[1]!~/h$/) ? $fields[1] : $fields[3];
       $ipmiData->{$type}->[$index]->{status}=$fields[3];
 
-      # we may need to convert temperatures
-      if ($name=~/Temp/ && $envOpts=~/[CF]/)
+      # we may need to convert temperatures, but be sure it ignore negative values
+      if ($name=~/Temp/ && $envOpts=~/[CF]/ && ($ipmiData->{$type}->[$index]->{value} != -1))
       {
         $ipmiData->{$type}->[$index]->{value}= $ipmiData->{$type}->[$index]->{value}*1.8+32      if $envOpts=~/F/ && $fields[2]=~/C$/;
         $ipmiData->{$type}->[$index]->{value}= ($ipmiData->{$type}->[$index]->{value}-32)*5/9    if $envOpts=~/C/ && $fields[2]=~/F$/;
@@ -3044,57 +3147,51 @@ sub dataAnalyze
 
   elsif ($subsys=~/d/i && $type=~/^disk/)
   {
-    ($major, $minor, $diskName,@dskFields)=split(/\s+/, $data);
+    ($major, $minor, $diskName, @dskFields)=split(/\s+/, $data);
 
-    # in playback on the first pass, we need to initialize these values from the raw file itself.
-    if ($firstPass && $playback)
+    $diskName=~s/cciss\///;
+    if (!defined($disks{$diskName}))
     {
+      $dskChangeFlag|=1;    # new disk found
       $dskMaj[$dskIndex]=$major;
       $dskMin[$dskIndex]=$minor;
-    }
 
-    # If new disk shows up or disk ordering in /proc/diskstats in changes, for 
-    # example after a lun rescan, we need to reinitialize disk name structures.
-    # Furthermore if writing to plot file we need to set a flag so new ones will
-    # get created.
-    if ($dskIndex==$NumDisks || $dskMaj[$dskIndex]!=$major || $dskMin[$dskIndex]!=$minor )
-    {
-      my $oldMaj=$dskMaj[$dskIndex];
-      my $oldMin=$dskMin[$dskIndex];  
-
-      # When running in 'collection' mode, re-init disk name structure in case things changed
-      # but in playback mode just stuff the new disk onto the end.
-      if ($playback eq '')
-      {
-        initDisk();
-      }
+      # if available indexes use one of them otherwise generate a new one.
+      if (@dskIndexAvail>0)
+      { $dskIndex=pop @dskIndexAvail;}
       else
-      {
-        $dskName[$dskIndex]=$diskName;
-      }
+      { $dskIndex=$dskIndexNext++; }
+      $disks{$diskName}=$dskIndex;
+      print "new disk $diskName [$major,$minor] with index $dskIndex\n"    if !$firstPass && $debug & 1;
 
-      $diskName=$dskName[$dskIndex];    # in case new disk
-      $diskChangeFlag=1;                # this also tells 'bogus' check later on to 0 current values
-
-      if ($filename ne '' || $playback ne '')
+      # add to ordered list of disks if seen for first time
+      my $newDisk=1;
+      foreach my $dsk (@dskOrder)
       {
-        # If we're seeing this disk for the first time, be sure to init
-        # its 'last' variables to 0 so the next interval's numbers come out right.
-        if ($dskIndex==$NumDisks)
-        {
-          logmsg("W", "New disk '$diskName' discovered after logging started");
-          for (my $i=0; $i<11; $i++)
-          {
-            $dskFieldsLast[$dskIndex][$i]=0;
-          }
-          $NumDisks++;
-        }
-        else
-        {
-          logmsg('W', "/proc/diskstats ordering changed for '$diskName' ".
-		      "Old: [$oldMaj,$oldMin] New: [$major,$minor]");
-        }
+        $newDisk=0    if $diskName eq $dsk;
       }
+      push @dskOrder, $diskName    if $newDisk;
+
+      # by initializing the 'last' variable to the current value, we're assured to report 0s for the first
+      # interval while teeing up the correct last value for the next interval.
+      for (my $i=0; $i<11; $i++)
+      { $dskFieldsLast[$dskIndex][$i]=$dskFields[$i]; }
+    }
+    $dskIndex=$disks{$diskName};
+    $dskSeen[$dskIndex]=$diskName;
+    $dskSeenCount++;    # faster than looping through to count
+
+    # This has been simplified to just generating an error message
+    if ($dskMaj[$dskIndex]!=$major || $dskMin[$dskIndex]!=$minor )
+    {
+      $dskChangeFlag|=4;
+
+      my $oldMaj=$dskMaj[$dskIndex];
+      my $oldMin=$dskMin[$dskIndex];
+      logmsg('E', "/proc/diskstats ordering changed for '$diskName' Old: [$oldMaj,$oldMin] New: [$major,$minor]");
+
+      $dskMaj[$dskIndex]=$major;
+      $dskMin[$dskIndex]=$minor;
     }
 
     # Clarification of field definitions:
@@ -3124,12 +3221,11 @@ sub dataAnalyze
     # Disk configuration changed or read/write had bogus value, reset ALL current
     # values for this disk to 0, noting that 1st pass is initialization and numbers
     # NOT valid so don't generate message
-    if ($diskChangeFlag ||
-        ($DiskMaxValue>0 && ($dskReadKB[$dskIndex]>$DiskMaxValue || $dskWriteKB[$dskIndex]>$DiskMaxValue)))
+    if (($dskChangeFlag & 4) || ($DiskMaxValue>0 && ($dskReadKB[$dskIndex]>$DiskMaxValue || $dskWriteKB[$dskIndex]>$DiskMaxValue)))
       {
         # NOTE - the first message only for bogus data and it's a real 'error'
         logmsg('E', "One of ReadKB/WriteKB of '$dskRead[$dskIndex]/$dskWriteKB[$dskIndex]' > '$DiskMaxValue' for '$diskName'")
-		    if !$diskChangeFlag && !$firstPass;
+		    if !($dskChangeFlag & 4) && !$firstPass;
         logmsg('W', "Resetting all current performance values for this disk to 0");
 
         $dskOps[$dskIndex]=$dskRead[$dskIndex]=$dskReadKB[$dskIndex]=$dskWrite[$dskIndex]=$dskWriteKB[$dskIndex]=0;
@@ -3157,20 +3253,17 @@ sub dataAnalyze
     # needed for compatibility with 2.4 in -P output
     $dskOpsTot=$dskReadTot+$dskWriteTot;
 
-    # we only need these if doing individual disk calculations
-    if ($subsys=~/D/)
-    {
-      # if doing hires time, we need the interval duration and unfortunately at
-      # this point in time $intSecs has not been set so we can't use it
-      $microInterval=($fullTime-$lastSecs[$rawPFlag])*100    if $hiResFlag;
+    # though we almost never need these when not doing detail reporting, a plugin might
+    # if doing hires time, we need the interval duration and unfortunately at
+    # this point in time $intSecs has not been set so we can't use it
+    $microInterval=($fullTime-$lastSecs[$rawPFlag])*100    if $hiResFlag;
 
-      $numIOs=$dskRead[$dskIndex]+$dskWrite[$dskIndex];
-      $dskRqst[$dskIndex]=   $numIOs ? ($dskReadKB[$dskIndex]+$dskWriteKB[$dskIndex])/$numIOs : 0;
-      $dskQueLen[$dskIndex]= $dskWeighted[$dskIndex]/$microInterval*$HZ/1000;
-      $dskWait[$dskIndex]=   $numIOs ? ($dskReadTicks[$dskIndex]+$dskWriteTicks[$dskIndex])/$numIOs : 0;
-      $dskSvcTime[$dskIndex]=$numIOs ? $dskTicks[$dskIndex]/$numIOs : 0;
-      $dskUtil[$dskIndex]=   $dskTicks[$dskIndex]*10/$microInterval;
-    }
+    $numIOs=$dskRead[$dskIndex]+$dskWrite[$dskIndex];
+    $dskRqst[$dskIndex]=   $numIOs ? ($dskReadKB[$dskIndex]+$dskWriteKB[$dskIndex])/$numIOs : 0;
+    $dskQueLen[$dskIndex]= $dskTicks[$dskIndex] ? $dskWeighted[$dskIndex]/$dskTicks[$dskIndex] : 0;
+    $dskWait[$dskIndex]=   $numIOs ? ($dskReadTicks[$dskIndex]+$dskWriteTicks[$dskIndex])/$numIOs : 0;
+    $dskSvcTime[$dskIndex]=$numIOs ? $dskTicks[$dskIndex]/$numIOs : 0;
+    $dskUtil[$dskIndex]=   $dskTicks[$dskIndex]*10/$microInterval;
 
     # note fieldsLast[8] ignored
     for ($i=0; $i<11; $i++)
@@ -3770,36 +3863,92 @@ sub dataAnalyze
 
   #    N e t w o r k    S t a t s
 
+  # a few design notes...
+  # - %networks is the name of all the networks
+  # - @netOrder is the discovery order
+  # - @netIndexAvail is a stack of available, previously used indexes
+  # - $netIndex is the index assigned the current network being processed
+  # - $netIndexNext is next available index NOT on @netIndexAvail
+  # - @netSeen is list of networks seen this interval
+  # - $netSeenCount is the number of entries in @netSeen
+  # - $netSeenLast save number seen in last interval
   elsif ($subsys=~/n/i && $type=~/^Net/)
   {
     # insert space after interface if none already there
     $data=~s/:(\d)/: $1/;
     undef @fields;
     @fields=split(/\s+/, $data);
-
-    # In rare occasions a new network device shows up so we need to make sure we init
-    # the appropriate variables, including the netname.  Since I'm lazy, just set the
-    # speed to '??'.  If this becomes a problem we'll get fancier.
-    if (!defined($netRxKBLast[$netIndex]))
-    {
-      $NumNets++;
-      $netName=(split(/\s+/, $line))[1];
-      $NetNames.=" $netName:??";
-
-      $netRxKBLast[$netIndex]=$netRxPktLast[$netIndex]=$netTxKBLast[$netIndex]=$netTxPktLast[$netIndex]=0;
-      $netRxErrLast[$netIndex]=$netRxDrpLast[$netIndex]=$netRxFifoLast[$netIndex]=$netRxFraLast[$netIndex]=0;
-      $netRxCmpLast[$netIndex]=$netRxMltLast[$netIndex]=$netTxCarLast[$netIndex]=$netTxCmpLast[$netIndex]=0;
-      $netTxErrLast[$netIndex]=$netTxDrpLast[$netIndex]=$netTxFifoLast[$netIndex]=$netTxCollLast[$netIndex]=0;
-      $NetMaxTraffic[$netIndex]=2*$interval*$DefNetSpeed*125;
-      logmsg("W", "New network device found: $netName");
-    }
-
-    if (scalar(@fields)<17)
+    if (@fields<17)
     {
       incomplete("NET:".$fields[0], $lastSecs[$rawPFlag]);
-      $netIndex++;
       return;
     }
+
+    #    N e w    N e t    S e e n
+
+    my $netName=$fields[0];
+    $netName=~s/://;
+    if (!defined($networks{$netName}))
+    {
+      $netChangeFlag|=1;    # could be useful to external modules
+      print "new network found: $netName\n"    if !$firstPass && $debug & 1;
+
+      # if available indexes use one of them otherwise generate a new one
+      if (@netIndexAvail>0)
+      { $netIndex=pop @netIndexAvail;}
+      else
+      { $netIndex=$netIndexNext++; }
+      $networks{$netName}=$netIndex;
+      print "new network $netName with index $netIndex\n"    if $debug & 1;
+
+      # add to ordered list of networks if seen for first time
+      my $newNet=1;
+      foreach my $net (@netOrder)
+      {
+        $net=~s/:.*//;
+        $newNet=0    if $netName eq $net;
+      }
+      push @netOrder, $netName    if $newNet;
+
+      # by initializing the 'last' variable to the current value, we're assured to report 0s for the first
+      # interval while teeing up the correct last value for the next interval.
+      $netRxKBLast[$netIndex]=  $fields[1];
+      $netRxPktLast[$netIndex]= $fields[2];
+      $netRxErrLast[$netIndex]= $fields[3];
+      $netRxDrpLast[$netIndex]= $fields[4];
+      $netRxFifoLast[$netIndex]=$fields[5];
+      $netRxFraLast[$netIndex]= $fields[6];
+      $netRxCmpLast[$netIndex]= $fields[7];
+      $netRxMltLast[$netIndex]= $fields[8];
+
+      $netTxKBLast[$netIndex]=  $fields[9];
+      $netTxPktLast[$netIndex]= $fields[10];
+      $netTxErrLast[$netIndex]= $fields[11];
+      $netTxDrpLast[$netIndex]= $fields[12];
+      $netTxFifoLast[$netIndex]=$fields[13];
+      $netTxCollLast[$netIndex]=$fields[14];
+      $netTxCarLast[$netIndex]= $fields[15];
+      $netTxCmpLast[$netIndex]= $fields[16];
+
+      # won't do anything with speed until we create a new file, but then we'll get a new header
+      my $line=`find /sys/devices/ 2>&1 | grep net | grep $netName | grep speed`;
+      $netSpeeds{$netName}='??';
+      if ($line ne '')
+      {
+        $speed=`cat $line 2>&1`;
+        chomp $speed;
+        $line=~/.*\/(\S+)\/speed/;
+        my $netName=$1;
+        $netSpeeds{$netName}=$speed    if $speed=~/Invalid/;
+      }
+
+      # user for bogus speed checks
+      my $netspeed=($netSpeeds{$netName} ne '??') ? $netSpeeds{$netName} : $DefNetSpeed;
+      $NetMaxTraffic[$netIndex]=2*$interval*$netspeed*125;
+    }
+    $netIndex=$networks{$netName};
+    $netSeen[$netIndex]=$netName;
+    $netSeenCount++;
 
     $netNameNow=  $fields[0];
     $netRxKBNow=  $fields[1];
@@ -3927,21 +4076,86 @@ sub dataAnalyze
     $netTxCollLast[$netIndex]=$netTxCollNow;
     $netTxCarLast[$netIndex]=$netTxCarNow;
     $netTxCmpLast[$netIndex]=$netTxCmpNow;
-
-    $netIndex++;
   }
 
-  #    N e t w o r k    S t a t s
+  #    N e t w o r k    S t a c k    S t a t s
 
-  elsif ($subsys=~/t/i && $type=~/^TcpExt/)
+  # note that even though each line type IS already unique, by including our own type
+  # we get to skip a bunch of compares when not doing -st
+  # also note the older versions ignored the IpExt data even though collected so I am too.
+  elsif ($subsys=~/t/i && $type=~/^tcp-|^Tcp/)
   {
-    chomp $data;
-    @tcpFields=split(/ /, $data);
-    for ($i=0; $i<$NumTcpFields; $i++)
+    # Data comes in pairs, the first line being the headers and the second the data.
+    # if 'tcp-' present, this is V3.6.4 or more and by removing, we assure old/new data looks the same
+    # but also, the earlier versions didn't write headers which can change from kernel to kernel!!!
+    $type=~s/^tcp-//;
+    $type=~s/:$//;
+
+    # NEW TCP STATS
+    if ($playback eq '' || $recVersion ge '3.6.4')
     {
-      $tcpValue[$i]=fix($tcpFields[$i]-$tcpLast[$i]);
-      $tcpLast[$i]=$tcpFields[$i];
-      #print "$i: $tcpValue[$i] ";
+      #  type always precedes data
+      if ($data=~/^\d/)
+      {
+        my @vals=split(/\s+/, $data);
+
+        # init 'last' variables here because we don't know how may there are in the normal init section of code
+	# and since $intFirstSeen does't get cleared until second pass we also need to see if already defined
+        for (my $i=0; !$intFirstSeen && $i<@vals; $i++)
+        { $tcpData{$type}->{last}->[$i]=0    if !defined($tcpData{$type}->{last}->[$i]); }
+
+        for (my $i=0; $i<@vals; $i++)
+        {
+          my $name=$tcpData{$type}->{hdr}->[$i];
+          my $value=$vals[$i]-$tcpData{$type}->{last}->[$i];
+          #print "Seen: $intFirstSeen Type: $type  Name: $name  I: $i  Val: $vals[$i] Last: $tcpData{$type}->{last}->[$i]\n"  if $i==0 && $type=~/Icmp/;
+
+          $tcpData{$type}->{$name}=$value;
+          $tcpData{$type}->{last}->[$i]=$vals[$i];
+        }
+
+    	# Error summaries for brief/plot data, nothing nothing for IpExt.
+        if ($briefFlag || $plotFlag ne '')
+        {
+          $ipErrors=   $tcpData{Ip}->{InHdrErrors}+$tcpData{Ip}->{InAddrErrors}+
+		       $tcpData{Ip}->{InUnknownProtos}+$tcpData{Ip}->{InDiscards}+
+	   	       $tcpData{Ip}->{OutDiscards}+ $tcpData{Ip}->{ReasmFails}+
+		       $tcpData{Ip}->{FragFails}					if $type eq 'Ip';
+          $tcpErrors=  $tcpData{Tcp}->{AttemptFails}+$tcpData{Tcp}->{InErrs}	        if $type eq 'Tcp';
+          $udpErrors=  $tcpData{Udp}->{NoPorts}+$tcpData{Udp}->{InErrors}		if $type eq 'Udp';
+          $icmpErrors= $tcpData{Icmp}->{InErrors}+$tcpData{Icmp}->{InDestUnreachs}+
+		       $tcpData{Icmp}->{OutErrors}				        if $type eq 'Icmp';
+          $tcpExErrors=$tcpData{TcpExt}->{TCPLoss}+$tcpData{TcpExt}->{TCPFastRetrans}   if $type eq 'TcpExt';
+        }
+      }
+
+      # header: only need to grab on the first interval we see
+      elsif (!$intFirstSeen)
+      {
+        my @headers=split(/\s+/, $data);
+        for (my $i=0; $i<@headers; $i++)
+        { $tcpData{$type}->{hdr}->[$i]=$headers[$i]; }
+      }
+    }
+
+    # OLD TCP STATS
+    elsif ($type=~/^TcpExt/)    # this is the old way, IP header, but no TCP one
+    {
+      chomp $data;
+      @tcpFields=split(/ /, $data);
+      for ($i=0; $i<$NumTcpFields; $i++)
+      {
+        $tcpValue[$i]=fix($tcpFields[$i]-$tcpLast[$i]);
+        $tcpLast[$i]=$tcpFields[$i];
+        #print "$i: $tcpValue[$i] ";
+      }
+
+      # store old version data in new version structures even though the positions
+      # may be wrong for some kernels.
+      $tcpData{TcpExt}->{TCPPureAcks}=   $tcpValue[27];
+      $tcpData{TcpExt}->{TCPHPAcks}=     $tcpValue[28];
+      $tcpData{TcpExt}->{TCPLoss}=       $tcpValue[40];
+      $tcpData{TcpExt}->{TCPFastRetrans}=$tcpValue[45];
     }
   }
 
@@ -4238,7 +4452,8 @@ sub printPlotHeaders
 
   if ($subsys=~/t/)
   {
-    $headers.="[TCP]PureAcks${SEP}[TCP]HPAcks${SEP}[TCP]Loss${SEP}[TCP]FTrans${SEP}";
+    # fixed size easier for plotting, keeping Loss & FTrans for historical reasons...
+    $headers.="[TCP]IpErr${SEP}[TCP]TcpErr${SEP}[TCP]UdpErr${SEP}[TCP]IcmpErr${SEP}[TCP]Loss${SEP}[TCP]FTrans${SEP}";
   }
 
   if ($subsys=~/y/)
@@ -4297,14 +4512,15 @@ sub printPlotHeaders
 
   if ($subsys=~/D/ && $options!~/x/)
   {
-    for ($i=0; $i<$NumDisks; $i++)
+    for (my $i=0; $i<@dskOrder; $i++)
     {
-      next    if ($dskFiltKeep eq '' && $dskName[$i]=~/$dskFiltIgnore/) || ($dskFiltKeep ne '' && $dskName[$i]!~/$dskFiltKeep/);
+      $dskName=$dskOrder[$i];
+      next    if ($dskFiltKeep eq '' && $dskName=~/$dskFiltIgnore/) || ($dskFiltKeep ne '' && $dskName!~/$dskFiltKeep/);
 
       $temp= "[DSK]Name${SEP}[DSK]Reads${SEP}[DSK]RMerge${SEP}[DSK]RKBytes${SEP}";
       $temp.="[DSK]Writes${SEP}[DSK]WMerge${SEP}[DSK]WKBytes${SEP}[DSK]Request${SEP}";
       $temp.="[DSK]QueLen${SEP}[DSK]Wait${SEP}[DSK]SvcTim${SEP}[DSK]Util${SEP}";
-      $temp=~s/DSK/DSK:$dskName[$i]/g;
+      $temp=~s/DSK/DSK:$dskName/g;
       $temp=~s/cciss\///g;
       $dskHeaders.=$temp;
     }
@@ -4398,15 +4614,18 @@ sub printPlotHeaders
 
   if ($subsys=~/N/)
   {
-    for ($i=0; $i<$NumNets; $i++)
+    for (my $i=0; $i<@netOrder; $i++)
     {
-      next    if ($netFiltKeep eq '' && $netName[$i]=~/$netFiltIgnore/) || ($netFiltKeep ne '' && $netName[$i]!~/$netFiltKeep/);
+      # remember, order include net speed
+      $netName=$netOrder[$i];
+      $netName=~s/:.*//;
+      next    if ($netFiltKeep eq '' && $netName=~/$netFiltIgnore/) || ($netFiltKeep ne '' && $netName!~/$netFiltKeep/);
 
       $temp= "[NET]Name${SEP}[NET]RxPkt${SEP}[NET]TxPkt${SEP}[NET]RxKB${SEP}[NET]TxKB${SEP}";
       $temp.="[NET]RxErr${SEP}[NET]RxDrp${SEP}[NET]RxFifo${SEP}[NET]RxFra${SEP}[NET]RxCmp${SEP}[NET]RxMlt${SEP}";
       $temp.="[NET]TxErr${SEP}[NET]TxDrp${SEP}[NET]TxFifo${SEP}[NET]TxColl${SEP}[NET]TxCar${SEP}";
       $temp.="[NET]TxCmp${SEP}[NET]RxErrs${SEP}[NET]TxErrs${SEP}";
-      $temp=~s/NET/NET:$netName[$i]/g;
+      $temp=~s/NET/NET:$netName/g;
       $temp=~s/:]/]/g;
       $netHeaders.=$temp;
     }
@@ -4507,23 +4726,20 @@ sub printPlotHeaders
   }
 
   if ($subsys=~/T/)
-  { 
-    $tcpHeaders.="[TCPD]SyncookiesSent${SEP}[TCPD]SyncookiesRecv${SEP}[TCPD]SyncookiesFailed${SEP}[TCPD]EmbryonicRsts${SEP}";
-    $tcpHeaders.="[TCPD]PruneCalled${SEP}[TCPD]RcvPruned${SEP}[TCPD]OfoPruned${SEP}[TCPD]OutOfWindowIcmps${SEP}[TCPD]LockDroppedIcmps${SEP}";
-    $tcpHeaders.="[TCPD]ArpFilter${SEP}[TCPD]TW${SEP}[TCPD]TWRecycled${SEP}[TCPD]TWKilled${SEP}[TCPD]PAWSPassive${SEP}[TCPD]PAWSActive${SEP}";
-    $tcpHeaders.="[TCPD]PAWSEstab${SEP}[TCPD]DelayedACKs${SEP}[TCPD]DelayedACKLocked${SEP}[TCPD]DelayedACKLost${SEP}";
-    $tcpHeaders.="[TCPD]ListenOverflows${SEP}[TCPD]ListenDrops${SEP}[TCPD]Prequeued${SEP}[TCPD]DirectCopyFromBacklog${SEP}";
-    $tcpHeaders.="[TCPD]DirectCopyFromPrequeue${SEP}[TCPD]PrequeueDropped${SEP}[TCPD]HPHits${SEP}[TCPD]HPHitsToUser${SEP}";
-    $tcpHeaders.="[TCPD]PureAcks${SEP}[TCPD]HPAcks${SEP}[TCPD]RenoRecovery${SEP}[TCPD]SackRecovery${SEP}[TCPD]TACKReneging${SEP}";
-    $tcpHeaders.="[TCPD]FACKReorder${SEP}[TCPD]SACKReorder${SEP}[TCPD]RenoReorder${SEP}[TCPD]TSReorder${SEP}[TCPD]FullUndo${SEP}";
-    $tcpHeaders.="[TCPD]PartialUndo${SEP}[TCPD]DSACKUndo${SEP}[TCPD]LossUndo${SEP}[TCPD]Loss${SEP}[TCPD]LostRetransmit${SEP}";
-    $tcpHeaders.="[TCPD]RenoFailures${SEP}[TCPD]SackFailures${SEP}[TCPD]LossFailures${SEP}[TCPD]FastRetrans${SEP}[TCPD]ForwardRetrans${SEP}";
-    $tcpHeaders.="[TCPD]SlowStartRetrans${SEP}[TCPD]Timeouts${SEP}[TCPD]RenoRecoveryFail${SEP}[TCPD]SackRecoveryFail${SEP}";
-    $tcpHeaders.="[TCPD]SchedulerFailed${SEP}[TCPD]RcvCollapsed${SEP}[TCPD]DSACKOldSent${SEP}[TCPD]DSACKOfoSent${SEP}";
-    $tcpHeaders.="[TCPD]DSACKRecv${SEP}[TCPD]DSACKOfoRecv${SEP}[TCPD]AbortOnSyn${SEP}[TCPD]AbortOnData${SEP}[TCPD]AbortOnClose${SEP}";
-    $tcpHeaders.="[TCPD]AbortOnMemory${SEP}[TCPD]AbortOnTimeout${SEP}[TCPD]AbortOnLinger${SEP}[TCPD]AbortFailed${SEP}";
-    $tcpHeaders.="[TCPD]MemoryPressures${SEP}";
+  {
+    # This is going to be big!!! 
+    for my $type ('Ip', 'Tcp', 'Udp', 'Icmp', 'IpExt', 'TcpExt')
+    {
+      next    if $type eq 'Ip'     && $tcpFilt!~/i/;
+      next    if $type eq 'Tcp'    && $tcpFilt!~/t/;
+      next    if $type eq 'Udp'    && $tcpFilt!~/u/;
+      next    if $type eq 'Icmp'   && $tcpFilt!~/c/;
+      next    if $type eq 'IpExt'  && $tcpFilt!~/I/;
+      next    if $type eq 'TcpExt' && $tcpFilt!~/T/;
 
+      foreach my $header (@{$tcpData{$type}->{hdr}})
+      { $tcpHeaders.="[TCPD]$header$SEP"; }
+    }
     writeData(0, $ch, \$tcpHeaders, TCP, $ZTCP, 'tcp', \$headersAll);
   }
 
@@ -4886,10 +5102,14 @@ sub printPlot
     # TCP
     if ($subsys=~/t/)
     {
-      foreach $i (27, 28, 40, 45)
-      {
-	$plot.=sprintf("$SEP%$FS", $tcpValue[$i]/$intSecs);
-      }
+      # while tempted to control printing via $tcpFilt, by doing them all, we have a more
+      # consistent file that is easier to plot and not much more expensive in size
+      $plot.=sprintf("$SEP%$FS ", $ipErrors/$intSecs);
+      $plot.=sprintf("$SEP%$FS ", $tcpErrors/$intSecs);
+      $plot.=sprintf("$SEP%$FS ", $udpErrors/$intSecs);
+      $plot.=sprintf("$SEP%$FS ", $icmpErrors/$intSecs);
+      $plot.=sprintf("$SEP%$FS ", $tcpData{TcpExt}->{TCPLoss}/$intSecs);
+      $plot.=sprintf("$SEP%$FS ", $tcpData{TcpExt}->{TCPFastRetrans}/$intSecs);
     }
 
     # SLAB
@@ -4942,17 +5162,25 @@ sub printPlot
   if ($subsys=~/D/)
   {
     $dskPlot='';
-    for ($i=0; $i<$NumDisks; $i++)
+    for (my $i=0; $i<@dskOrder; $i++)
     {
-      next    if ($dskFiltKeep eq '' && $dskName[$i]=~/$dskFiltIgnore/) || ($dskFiltKeep ne '' && $dskName[$i]!~/$dskFiltKeep/);
+      $dskName=$dskOrder[$i];
+      next    if ($dskFiltKeep eq '' && $dskName=~/$dskFiltIgnore/) || ($dskFiltKeep ne '' && $dskName!~/$dskFiltKeep/);
 
-      # We don't always need this but it sure makes it simpler this way
-      # also note that the name isn't really plottable...
-      $dskRecord=sprintf("%s$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
-                $dskName[$i],
+      if (defined($disks{$dskName}))
+      {
+        my $i=$disks{$dskName};
+        $dskRecord=sprintf("%s$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
+                $dskName,
                 $dskRead[$i]/$intSecs,    $dskReadMrg[$i]/$intSecs,  $dskReadKB[$i]/$intSecs,
                 $dskWrite[$i]/$intSecs,   $dskWriteMrg[$i]/$intSecs, $dskWriteKB[$i]/$intSecs,
                 $dskRqst[$i], $dskQueLen[$i], $dskWait[$i], $dskSvcTime[$i], $dskUtil[$i]);
+      }
+      else
+      {
+        $dskRecord=sprintf("%s$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
+		$dskName, 0,0,0,0,0,0,0,0,0,0,0);
+      }
 
       # If exception processing in effect and writing to a file, make sure this entry
       # qualities
@@ -5215,13 +5443,20 @@ sub printPlot
   if ($subsys=~/N/)
   {
     $netPlot='';
-    for ($i=0; $i<$NumNets; $i++)
+    for (my $i=0; $i<@netOrder; $i++)
     {
-      next    if ($netFiltKeep eq '' && $netName[$i]=~/$netFiltIgnore/) || ($netFiltKeep ne '' && $netName[$i]!~/$netFiltKeep/);
+      # remember the order includes the speed
+      $netName=$netOrder[$i];
+      $netName=~s/:.*//;
+      next    if ($netFiltKeep eq '' && $netName=~/$netFiltIgnore/) || ($netFiltKeep ne '' && $netName!~/$netFiltKeep/);
 
       # remember 'err' is a single error counter and 'errs' is the total of those counters
-      $netPlot.=sprintf("$SEP%s$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
-                  $netName[$i],
+      # we also have to be sure to preseve network order
+      if (defined($networks{$netName}))
+      {
+        my $i=$networks{$netName};
+        $netPlot.=sprintf("$SEP%s$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
+                  $netName,
                   $netRxPkt[$i]/$intSecs, $netTxPkt[$i]/$intSecs,
                   $netRxKB[$i]/$intSecs,  $netTxKB[$i]/$intSecs,
                   $netRxErr[$i]/$intSecs, $netRxDrp[$i]/$intSecs,
@@ -5231,7 +5466,12 @@ sub printPlot
                   $netTxFifo[$i]/$intSecs,$netTxColl[$i]/$intSecs,
                   $netTxCar[$i]/$intSecs, $netTxCmp[$i]/$intSecs,
                   $netRxErrs[$i]/$intSecs,$netTxErrs[$i]/$intSecs);
-      $netErrors+=$netRxErrs[$i]+$netTxErrs[$i];
+        $netErrors+=$netRxErrs[$i]+$netTxErrs[$i];
+      }
+      else
+      {
+        $netPlot.=sprintf("$SEP%s$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS", $netName, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
+      }
     }
 
     # since we can't have holes in a line, with --netopts E we print ALL interfaces in the offending interval
@@ -5278,10 +5518,20 @@ sub printPlot
 
   if ($subsys=~/T/)
   {
+    # This is going to be big!!! 
     $tcpPlot='';
-    for ($i=0; $i<$NumTcpFields; $i++)
+    for my $type ('Ip', 'Tcp', 'Udp', 'Icmp', 'IpExt', 'TcpExt')
     {
-      $tcpPlot.=sprintf("$SEP%$FS", $tcpValue[$i]/$intSecs);
+      next    if $type eq 'Ip'     && $tcpFilt!~/i/;
+      next    if $type eq 'Tcp'    && $tcpFilt!~/t/;
+      next    if $type eq 'Udp'    && $tcpFilt!~/u/;
+      next    if $type eq 'Icmp'   && $tcpFilt!~/c/;
+      next    if $type eq 'IpExt'  && $tcpFilt!~/I/;
+      next    if $type eq 'TcpExt' && $tcpFilt!~/T/;
+
+      # unfortunately the data is indexed by header name so we need an extra hop to get to it
+      foreach my $header (@{$tcpData{$type}->{hdr}})
+      { $tcpPlot.=sprintf("$SEP%d", $tcpData{$type}->{$header}/$intSecs); }
     }
     writeData(0, $datetime, \$tcpPlot, TCP, $ZTCP, 'tcp', \$oneline);
   }
@@ -5315,7 +5565,7 @@ sub printPlot
     {
       $impPlot='';
       &{$impPrintPlot[$i]}(4, \$impPlot); 
-      writeData(0, $datetime, \$impPlot, , $impText[$i], $impGz[$i], $impKey[$i], \$oneline);
+      writeData(0, $datetime, \$impPlot, , $impText[$i], $impGz[$i], $impKey[$i], \$oneline)    if $impPlot ne '';
     }
   }
 
@@ -5635,19 +5885,38 @@ sub printTerm
 
   if ($subsys=~/D/)
   {
+    # deal with --dskopts f format here
+    if (!defined($dskhdr1Format))
+    {
+      if ($dskOpts!~/f/)
+      {
+        $dskhdr1Format="<---------reads---------><---------writes---------><--------averages--------> Pct\n";
+	$dskhdr2Format="     KBytes Merged  IOs Size  KBytes Merged  IOs Size  RWSize  QLen  Wait SvcTim Util\n";
+        $dskdetFormat="%s%-11s %6d %6d %4s %4s  %6d %6d %4s %4s   %5d %5d  %4d   %4d  %3d\n";
+      }
+      else
+      {
+        $dskhdr1Format="<---------reads----------><---------writes---------><---------averages----------> Pct\n";
+        $dskhdr2Format="      KBytes Merged  IOs Size   KBytes Merged  IOs Size  RWSize   QLen   Wait SvcTim Util\n";
+	$dskdetFormat="%s%-11s %7.1f %6.0f %4s %4s  %7.1f %6.0f %4s %4s  %6.1f %6.1f %6.1f %6.1f  %3.0f\n";
+      }
+    }
+
     if (printHeader())
     {
       printText("\n")    if !$homeFlag;
       printText("# DISK STATISTICS ($rate)\n");
-      printText("#$miniFiller          <---------reads---------><---------writes---------><--------averages--------> Pct\n");
-      printText("#${miniDateTime}Name       KBytes Merged  IOs Size  KBytes Merged  IOs Size  RWSize  QLen  Wait SvcTim Util\n");
+      printText("#$miniFiller          $dskhdr1Format");
+      printText("#${miniDateTime}Name  $dskhdr2Format");
       exit(0)    if $showColFlag;
     }
 
-    for ($i=0; $i<$NumDisks; $i++)
+    for (my $i=0; $i<@dskOrder; $i++)
     {
-      # ignore disk that don't pass filters
-      next    if ($dskFiltKeep eq '' && $dskName[$i]=~/$dskFiltIgnore/) || ($dskFiltKeep ne '' && $dskName[$i]!~/$dskFiltKeep/);
+      # preserve display order but skip any disks not seen this interval
+      $dskName=$dskOrder[$i];
+      next    if !defined($dskSeen[$i]);
+      next    if ($dskFiltKeep eq '' && $dskName=~/$dskFiltIgnore/) || ($dskFiltKeep ne '' && $dskName!~/$dskFiltKeep/);
 
       # Filter out lines of all zeros when requested
       next    if $dskOpts=~/z/ && ($dskReadKB[$i]+$dskReadMrg[$i]+$dskRead[$i]+
@@ -5657,8 +5926,8 @@ sub printTerm
       # If exception processing in effect, make sure this entry qualities
       next    if $options=~/x/ && $dskRead[$i]/$intSecs<$limIOS && $dskWrite[$i]/$intSecs<$limIOS;
 
-      $line=sprintf("$datetime%-11s %6d %6d %4s %4s  %6d %6d %4s %4s   %5d %5d  %4d   %4d  %3d\n",
-		$dskName[$i],
+      $line=sprintf($dskdetFormat,
+ 	        $datetime, $dskName,
 		$dskReadKB[$i]/$intSecs,  $dskReadMrg[$i]/$intSecs,  cvt($dskRead[$i]/$intSecs),
 	        $dskRead[$i] ? cvt($dskReadKB[$i]/$dskRead[$i],4,0,1) : 0,
 		$dskWriteKB[$i]/$intSecs, $dskWriteMrg[$i]/$intSecs, cvt($dskWrite[$i]/$intSecs),
@@ -6543,22 +6812,24 @@ sub printTerm
       my $tempName=' 'x($NetWidth-5).'Name';
       printText("\n")    if !$homeFlag;
       printText("# NETWORK ${errors}STATISTICS ($rate)\n");
-      printText("#${miniDateTime}Num   $tempName   KBIn  PktIn SizeIn  MultI   CmpI  ErrsI  KBOut PktOut  SizeO   CmpO ErrsO\n")
+      printText("#${miniDateTime}Num   $tempName   KBIn  PktIn SizeIn  MultI   CmpI  ErrsI  KBOut PktOut  SizeO   CmpO  ErrsO\n")
 	    if $netOpts!~/e/;
       printText("#${miniDateTime}Num   $tempName   ErrIn  DropIn  FifoIn FrameIn    ErrOut DropOut FifoOut CollOut CarrOut\n")
 	         if $netOpts=~/e/;
       exit(0)    if $showColFlag;
     }
 
-    for ($i=0; $i<$netIndex; $i++)
+    for ($i=0; $i<@netOrder; $i++)
     {
-      next    if ($netFiltKeep eq '' && $netName[$i]=~/$netFiltIgnore/) || ($netFiltKeep ne '' && $netName[$i]!~/$netFiltKeep/);
+      $netName=$netOrder[$i];
+      next    if !defined($netSeen[$i]);
+      next    if ($netFiltKeep eq '' && $netName=~/$netFiltIgnore/) || ($netFiltKeep ne '' && $netName!~/$netFiltKeep/);
 
       my $netErrors=$netRxErrs[$i]+$netTxErrs[$i];
       if ($netOpts!~/e/)
       {
         $line=sprintf("$datetime %3d  %${NetWidth}s %6d %6d %6d %6d %6d %6d %6d %6d %6d %6d %6d\n",
-	      $i, $netName[$i], 
+	      $i, $netName, 
 	      $netRxKB[$i]/$intSecs,  $netRxPkt[$i]/$intSecs, $netRxPkt[$i] ? $netRxKB[$i]*1024/$netRxPkt[$i] : 0,
               $netRxMlt[$i]/$intSecs, $netRxCmp[$i]/$intSecs, $netRxErrs[$i]/$intSecs,
               $netTxKB[$i]/$intSecs,  $netTxPkt[$i]/$intSecs, $netTxPkt[$i] ? $netTxKB[$i]*1024/$netTxPkt[$i] : 0,
@@ -6598,14 +6869,79 @@ sub printTerm
     if (printHeader())
     {
       printText("\n")    if !$homeFlag;
-      printText("# TCP SUMMARY ($rate)\n");
-      printText("#${miniDateTime} PureAcks HPAcks   Loss FTrans\n");
+      printText("# TCP STACK SUMMARY ($rate)\n");
+      $line= "#${miniFiller}";
+      $line.="<----------------------------------IpPkts----------------------------------->"                 if $tcpFilt=~/i/;
+      $line.="<---------------------------------Tcp--------------------------------->"                       if $tcpFilt=~/t/;
+      $line.="<------------Udp----------->"                                                                  if $tcpFilt=~/u/;
+      $line.="<----------------------------Icmp--------------------------->"                                 if $tcpFilt=~/c/;
+      $line.="<-------------------------IpExt------------------------>"                                      if $tcpFilt=~/I/;
+      $line.="<------------------------------------------TcpExt----------------------------------------->"   if $tcpFilt=~/T/;
+      $line.="\n";
+
+      $line.="#$miniFiller";
+      $line.=" Receiv Delivr Forwrd DiscdI InvAdd   Sent DiscrO ReasRq ReasOK FragOK FragCr"		     if $tcpFilt=~/i/;
+      $line.=" ActOpn PasOpn Failed ResetR  Estab   SegIn SegOut SegRtn SegBad SegRes"			     if $tcpFilt=~/t/;
+      $line.="  InDgm OutDgm NoPort Errors"								     if $tcpFilt=~/u/;
+      $line.=" Recvd FailI UnreI EchoI ReplI  Trans FailO UnreO EchoO ReplO"				     if $tcpFilt=~/c/;
+      $line.=" MPktsI BPktsI OctetI MOctsI BOctsI MPktsI OctetI MOctsI"                                      if $tcpFilt=~/I/;
+      $line.=" FasTim Reject DelAck QikAck PktQue PreQuB HdPdct AkNoPy PreAck DsAcks RUData REClos  SackS"   if $tcpFilt=~/T/;
+      $line.="\n";
+      printText($line);
+    
       exit(0)    if $showColFlag;
     }
 
-    $line=sprintf("$datetime    %6d %6d %6d %6d\n",
-	$tcpValue[27]/$intSecs,  $tcpValue[28]/$intSecs,
-	$tcpValue[40]/$intSecs,  $tcpValue[45]/$intSecs);
+    $line="$datetime ";
+
+    $line.=sprintf(" %6d %6d %6d %6d %6d %6d %6d %6d %6d %6d %6d",
+			$tcpData{Ip}->{InReceives}/$intSecs,	$tcpData{Ip}->{InDelivers}/$intSecs, 
+			$tcpData{Ip}->{ForwDatagrams}, 		$tcpData{Ip}->{InDiscards}, 
+			$tcpData{Ip}->{InAddrErrors},  		$tcpData{Ip}->{OutRequests}/$intSecs,
+			$tcpData{Ip}->{OutDiscards},   		$tcpData{Ip}->{ReasmReqds},
+			$tcpData{Ip}->{ReasmOKs},      		$tcpData{Ip}->{FragOKs},
+			$tcpData{Ip}->{FragCreates})
+				if $tcpFilt=~/i/; 
+
+    $line.=sprintf(" %6d %6d %6d %6d %6d  %6d %6d %6d %6d %6d",
+			$tcpData{Tcp}->{ActiveOpens}/$intSecs,	$tcpData{Tcp}->{PassiveOpens}/$intSecs,
+			$tcpData{Tcp}->{AttemptFails},		$tcpData{Tcp}->{EstabResets},
+			$tcpData{Tcp}->{CurrEstab},		$tcpData{Tcp}->{InSegs}/$intSecs, 
+			$tcpData{Tcp}->{OutSegs}/$intSecs,	$tcpData{Tcp}->{RetransSegs},
+			$tcpData{Tcp}->{InErrs},       		$tcpData{Tcp}->{OutRsts})
+				if $tcpFilt=~/t/;
+
+    $line.=sprintf(" %6d %6d %6d %6d",
+			$tcpData{Udp}->{InDatagrams}/$intSecs,	$tcpData{Udp}->{OutDatagrams}/$intSecs,
+			$tcpData{Udp}->{NoPorts},      		$tcpData{Udp}->{InErrors})
+				if $tcpFilt=~/u/;
+
+    $line.=sprintf(" %5d %5d %5d %5d %5d  %5d %5d %5d %5d %5d",
+			$tcpData{Icmp}->{InMsgs},		$tcpData{Icmp}->{InErrors},
+			$tcpData{Icmp}->{InDestUnreachs},	$tcpData{Icmp}->{InEchos},
+			$tcpData{Icmp}->{InEchoReps},		$tcpData{Icmp}->{OutMsgs},
+			$tcpData{Icmp}->{OutErrors},		$tcpData{Icmp}->{OutDestUnreachs},
+			$tcpData{Icmp}->{OutEchos},		$tcpData{Icmp}->{OutEchoReps})
+				if $tcpFilt=~/c/;
+
+    $line.=sprintf(" %6d %6d %6d %6d %6d %6d %6d %6d",
+			$tcpData{IpExt}->{InMcastPkts}, 	$tcpData{IpExt}->{InBcastPkts},
+			$tcpData{IpExt}->{InOctets}, 		$tcpData{IpExt}->{InMcastOctets},
+			$tcpData{IpExt}->{InBcastOctets}, 	$tcpData{IpExt}->{OutMcastPkts},
+			$tcpData{IpExt}->{OutOctets}, 		$tcpData{IpExt}->{OutMcastOctets})
+				if $tcpFilt=~/I/;
+
+    $line.=sprintf(" %6d %6d %6d %6d %6d %6d %6d %6d %6d %6d %6d %6d %6d",
+			$tcpData{TcpExt}->{TW},		     	$tcpData{TcpExt}->{PAWSEstab},
+			$tcpData{TcpExt}->{DelayedACKs},	$tcpData{TcpExt}->{DelayedACKLost},
+			$tcpData{TcpExt}->{TCPPrequeued},	$tcpData{TcpExt}->{TCPDirectCopyFromPrequeue},
+			$tcpData{TcpExt}->{TCPHPHits},	 	$tcpData{TcpExt}->{TCPPureAcks},
+			$tcpData{TcpExt}->{TCPHPAcks}, 	 	$tcpData{TcpExt}->{TCPDSACKOldSent},
+			$tcpData{TcpExt}->{TCPAbortOnData}, 	$tcpData{TcpExt}->{TCPAbortOnClose},
+			$tcpData{TcpExt}->{TCPSackShiftFallback})
+				if $tcpFilt=~/T/;
+
+    $line.="\n";
     printText($line);
   }
 
@@ -6797,7 +7133,7 @@ sub printTerm
   for (my $i=0; $i<$impNumMods; $i++)
   {
     &{$impPrintVerbose[$i]}(printHeader(), $homeFlag, \$line);
-    printText($line);
+    printText($line)    if $line ne '';    # rare, but it can happen when no instances of a component (screws up colmux!)
     exit(0)    if $showColFlag;
   }
 
@@ -7042,6 +7378,7 @@ sub printTermProc
         }
 
         $tempHdr.="#${tempFiller} PID  User     $prHeader  PPID THRD S   VSZ   RSS CP  SysT  UsrT Pct  AccuTime ";
+	$tempHdr.=sprintf("%s ", $procOpts=~/s/ ? 'StrtTime' : 'StartTime     ')    if $procOpts=~/s/i;
         $tempHdr.=" RKB  WKB "    if $processIOFlag;
 	$tempHdr.="VCtx NCtx "    if $procOpts=~/x/;
         $tempHdr.="MajF MinF Command\n";
@@ -7188,7 +7525,7 @@ sub printTermProc
       if ($procOpts!~/[im]/)
       {
         # Note we only started fetching Tgid in V3.0.0
-        $line=sprintf("$tempTStamp%5d%s %-8s $prFormat %5d %4d %1s %5s %5s %2d %s %s %s %s ", 
+        $line=sprintf("$tempTStamp%5d%s %-8s $prFormat %5d %4d %1s %5s %5s %2d %s %s %s %s ",
 		$procPid[$i],  $procThread[$i] ? '+' : ' ',
 		substr($procUser[$i],0,8), $procPri[$i],
                 defined($procTgid[$i]) && $procTgid[$i]!=$procPid[$i] ? $procTgid[$i] : $procPpid[$i],
@@ -7199,6 +7536,7 @@ sub printTermProc
 		cvtT1($procSTime[$i]), cvtT1($procUTime[$i]), 
 		cvtP($procSTime[$i]+$procUTime[$i]),
 		cvtT2($procSTimeTot[$i]+$procUTimeTot[$i]));
+        $line.=sprintf("%s ", cvtT5($procSTTime[$i]))    if $procOpts=~/s/i;
         $line.=sprintf("%4s %4s ", 
 		cvt($procRKB[$i]/$interval2Secs,4,0,1),
 		cvt($procWKB[$i]/$interval2Secs,4,0,1))     if $processIOFlag;
@@ -7412,6 +7750,27 @@ sub cvtT4
   return($date, $time);
 }
 
+sub cvtT5
+{
+  my $time=shift;
+
+  my $realTime=$boottime+$time/100;    # time in jiffies
+  my ($ss, $mm, $hh, $day, $mon)=localtime($realTime);
+
+  my $timestr;
+  if ($procOpts=~/s/)
+  {
+    $timestr=sprintf("%02d:%02d:%02d", $hh, $mm, $ss);
+  }
+  else
+  {
+    my $month=substr("JanFebMarAprMayJunJulAugSepOctNovDec", $mon*3, 3);
+    $timestr=sprintf("%s%02d-%02d:%02d:%02d", $month, $day, $hh, $mm, $ss);
+  }
+
+  return($timestr);
+}
+
 sub cvtP
 {
   my $jiffies=shift;
@@ -7611,6 +7970,24 @@ sub printBrief
     }
 
     # sooo ugly...
+    my ($tcp1,$tcp2);
+    if ($subsys=~/t/)
+    {
+      $tcp2='';
+      $tcp2.='  IP '     if $tcpFilt=~/i/;
+      $tcp2.=' Tcp '     if $tcpFilt=~/t/;
+      $tcp2.=' Udp '     if $tcpFilt=~/u/;
+      $tcp2.='Icmp '     if $tcpFilt=~/c/;
+      $tcp2.='TcpX '     if $tcpFilt=~/T/;
+
+      my $num=int((length($tcp2)-5)/2);
+      my $num2=((length($tcp2) % 2)==0) ? $num+1 : $num;
+      my $pre= '-' x $num;
+      my $post='-' x $num2;
+      $tcp1="<${pre}TCP$post>";
+      $tcp1="<ERR>"    if length($tcp2)==5;
+    }
+
     $line.="<--Memory-->"                                 if $subsys!~/m/ && $subsys=~/b/;
     if ($memOpts!~/R/)
     {
@@ -7628,7 +8005,7 @@ sub printBrief
     $line.="<---------------Disks---------------->"    if $subsys=~/d/ && ($ioSizeFlag || $dskOpts=~/i/);
     $line.="<----------Network---------->"             if $subsys=~/n/ && !$ioSizeFlag && $netOpts!~/i/;
     $line.="<---------------Network--------------->"   if $subsys=~/n/ && ($ioSizeFlag || $netOpts=~/i/);
-    $line.="<------------TCP------------->"            if $subsys=~/t/;
+    $line.=$tcp1                                       if $subsys=~/t/;
     $line.="<------Sockets----->"                      if $subsys=~/s/;
     $line.="<----Files--->"                            if $subsys=~/i/;
     $line.="<---------------Elan------------->"        if $subsys=~/x/ && $NumXRails;
@@ -7712,7 +8089,7 @@ sub printBrief
     $line.="  KBIn  PktIn  KBOut  PktOut "           if $subsys=~/n/ && !$ioSizeFlag && $netOpts!~/i/;
     $line.="  KBIn  PktIn Size  KBOut  PktOut Size " if $subsys=~/n/ && ($ioSizeFlag || $netOpts=~/i/);
     $line.="Error "                                  if $netOpts=~/e/;
-    $line.="PureAcks HPAcks   Loss FTrans "          if $subsys=~/t/;
+    $line.=$tcp2                                     if $subsys=~/t/;
     $line.=" Tcp  Udp  Raw Frag "                    if $subsys=~/s/;
     $line.="Handle Inodes "                          if $subsys=~/i/;
     $line.="   KBIn  PktIn   KBOut PktOut Errs "     if $subsys=~/x/ && $NumXRails;
@@ -7848,12 +8225,14 @@ sub printBrief
     $line.=sprintf("%5s ", cvt($netErrors/$intSecs,5))    if $netOpts=~/e/;
   }
 
-  # Network always the same
+  # TCP Stack
   if ($subsys=~/t/)
   {
-    $line.=sprintf("  %6s %6s %6s %6s ",
-        cvt($tcpValue[27]/$intSecs,6),  cvt($tcpValue[28]/$intSecs,6),
-        cvt($tcpValue[40]/$intSecs,6),  cvt($tcpValue[45]/$intSecs,6));
+    $line.=sprintf("%4s ", cvt($ipErrors, 4))       if $tcpFilt=~/i/; 
+    $line.=sprintf("%4s ", cvt($tcpErrors, 4))      if $tcpFilt=~/t/;
+    $line.=sprintf("%4s ", cvt($udpErrors, 4))      if $tcpFilt=~/u/;
+    $line.=sprintf("%4s ", cvt($icmpErrors, 4))     if $tcpFilt=~/c/;
+    $line.=sprintf("%4s ", cvt($tcpExErrors,4))     if $tcpFilt=~/T/;
   }
 
   if ($subsys=~/s/)
@@ -8017,7 +8396,7 @@ sub resetBriefCounters
   $slabSlabAllTotalTOT=$slabSlabAllTotalBTOT=0;
   $dskReadKBTOT=$dskReadTOT=$dskWriteKBTOT=$dskWriteTOT=0;
   $netRxKBTOT=$netRxPktTOT=$netTxKBTOT=$netTxPktTOT=$netErrTOT=0;
-  $tcpPAckTOT=$tcpHPAckTOT=$tcpLossTOT=$tcpFTransTOT=0;
+  $tcpIpErrTOT=$tcpIcmpErrTOT=$tcpTcpErrTOT=$tcpUdpErrTOT=$tcpTcpExErrTOT=0;
   $sockUsedTOT=$sockUdpTOT=$sockRawTOT=$sockFragTOT=0;
   $filesAllocTOT=$inodeUsedTOT=0;
   $elanRxKBTOT=$elanRxTOT=$elanTxKBTOT=$elanTxTOT=$elanErrorsTOT=0;
@@ -8085,10 +8464,11 @@ sub countBriefCounters
   $netTxPktTOT+=    $netTxPktTot;
   $netErrTOT+=      $netRxErrsTot+$netTxErrsTot;
 
-  $tcpPAckTOT+=    $tcpValue[27];
-  $tcpHPAckTOT+=   $tcpValue[28];
-  $tcpLossTOT+=    $tcpValue[40];
-  $tcpFTransTOT+=  $tcpValue[45];
+  $tcpIpErrTOT+=   $ipErrors;
+  $tcpIcmpErrTOT+= $icmpErrors;
+  $tcpTcpErrTOT+=  $tcpErrors;
+  $tcpUdpErrTOT+=  $udpErrors;
+  $tcpTcpExErrTOT+=$tcpExErrors;
 
   $sockUsedTOT+=   $sockUsed;
   $sockUdpTOT+=	   $sockUdp;
@@ -8253,11 +8633,12 @@ sub printBriefCounters
     printf "%5s ", cvt($netErrTOT/$totSecs,5)    if $netOpts=~/e/;
   }
 
-  printf "  %6s %6s %6s %6s ",
-        cvt($tcpPAckTOT/$totSecs,6), cvt($tcpHPAckTOT/$totSecs,6),
-        cvt($tcpLossTOT/$totSecs,6), cvt($tcpFTransTOT/$totSecs,6)
-		  if $subsys=~/t/;
-
+  printf "%4s ", cvt($tcpIpErrTOT/$totSecs,4)       if $tcpFilt=~/i/;
+  printf "%4s ", cvt($tcpTcpErrTOT/$totSecs,4)      if $tcpFilt=~/t/;
+  printf "%4s ", cvt($tcpUdpErrTOT/$totSecs,4)      if $tcpFilt=~/u/;
+  printf "%4s ", cvt($tcpIcmpErrTOT/$totSecs,4)     if $tcpFilt=~/c/;
+  printf "%4s ", cvt($tcpTcpExErrTOT/$totSecs,4)    if $tcpFilt=~/T/;
+ 
   printf "%4d %4d %4d %4d ",
 	cvt(int($sockUsedTOT/$mi),6), cvt(int($sockUdpTOT/$mi),6), 
 	cvt(int($sockRawTOT/$mi),6),  cvt(int($sockFragTOT/$mi),6)

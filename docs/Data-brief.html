@@ -340,18 +340,30 @@ not all types of nfs version report all as V3 clients/servers do.</td></tr>
 </table>
 
 <p><h3>TCP, <i>collectl -st</i></h3>
+
+The TCP data collected and actually depends on the value of <i>--tcpfilt</i>, which by default is
+set to itcu, which stands for <i>IP, Tcp, Udp</i> and <i>ICMP</i>.  A 5th filter <i>T</i>
+will result in <i>Tcp Extended</i> values being reported.
+
 <div class=terminal>
 <pre>
-#<------------TCP------------>
-#PureAcks HPAcks   Loss FTrans
+#<----------TCP---------->
+#  IP  Tcp  Udp Icmp TcpX 
+    0    0    0    0    0 
 </pre>
 </div>
 
 <table>
-<tr><td><b>PureAcks</b></td><td>ACKs/sec that only contain acks (ie no data).</td></tr>
-<tr><td><b>HPAcks</b></td><td>Fast-path acks/sec.</td></tr>
-<tr><td><b>Loss</b></td><td>Packets/sec TCP thinks have been lost coming in.</td></tr>
-<tr><td><b>FTrans</b></td><td>Fast retransmissions/sec.</td></tr>
+<tr><td><b>IP</b>Summary of a number of IP errors from /prod/net/snmp:
+    <i>InHdrErrors+InAddrErrors+InUnknownProtos+InDiscards+OutDiscards+ReasmFails+FragFails</i></td></tr>
+<tr><td><b>Tcp</b>Summary of a number of Tcp errors from /prod/net/snmp:
+    <i>AttemptFails+InErrs</i></td></tr>
+<tr><td><b>Udp</b>Summary of a number of Udp errors, from /prod/net/snmp:
+    <i>NoPorts+InErrors</i></td></tr>
+<tr><td><b>Icmp</b>Summary of a number of Icmp errors, from /prod/net/snmp:
+    <i>InErrors+InDestUnreachs+OutErrors</i></td></tr>
+<tr><td><b>TcpX</b>Summary of a number of Txp Extended errors, from /prod/net/snmp:
+    <i>TcpLoss+TCPFastRetrans</i></td></tr>
 </table>
 
 <table width=100%><tr><td align=right><i>updated September 29, 2011</i></td></tr></colgroup></table>

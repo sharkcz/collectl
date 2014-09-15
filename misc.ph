@@ -167,11 +167,11 @@ sub miscPrintPlot
   my $type=   shift;
   my $ref1=   shift;
 
-  # Headers
+  # Headers - note we end with $SEP but that's ok because writeData() removes it
   $$ref1.="[MISC]Uptime${SEP}[MISC]MHz${SEP}[MISC]Mounts${SEP}[MISC]Logins${SEP}"
 			if $type==1;
 
-  # Summary Data Only
+  # Summary Data Only - and here we start with $SEP
   $$ref1.=sprintf("$SEP%d$SEP%d$SEP%d$SEP%d",
 		$miscUptime/86400, $miscMHz, $miscMounts, $miscLogins)
 			if $type==3;

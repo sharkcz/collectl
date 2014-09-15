@@ -33,9 +33,8 @@ cp lexpr.ph sexpr.ph     $SHRDIR
 cp gexpr.ph misc.ph      $SHRDIR
 cp hello.ph graphite.ph  $SHRDIR
 cp envrules.std          $SHRDIR
-cp snmp.ph               $SHRDIR
 cp vmstat.ph             $SHRDIR
-cp client.pl readS       $SHRDIR/util
+cp client.pl             $SHRDIR/util
 cp col2tlviz.pl          $SHRDIR/util
 
 # Force in case redoing the install and files already zipped

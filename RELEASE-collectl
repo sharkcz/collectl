@@ -31,15 +31,81 @@ KNOWN PROBLEMS/RESTRICTIONS
     every time it starts as a daemon.  If you choose, you can easily turn 
     off the checking by editing the entry at the bottom of /etc/collectl.conf 
     named TimeHiResCheck and setting it to 0.
-  - if run as a non-privileged users, network speeds will NOT be recorded in
-    in file headers and the default speed specified by DefNetSpeed in the conf
-    file will be used to determine if any network stats are bogus
   - if system time is changed by more then the log rolling frequency after
     collectl starts, multiple log files will be created during the next polling
     cycle(s)
   - never include aliased networks in the network summary calculations
 
 CHANGES
+
+3.6.5-2 Sept 27m 2012
+  - was not updating new major/minor numbers for a disk when they changed so
+    got stuck in a loop which kept disk maj/min changed every interval
+  - new -r option to purge older .log files, def=12 months
+  - fixed DaemonCommands to preserver order so you can override anything by
+    adding on the right side of it
+  - new 'align' switch added to lexpr so default is NOT to align to whole min
+  - for -sE do not convert negative temperatures [thanks kevin]
+  - add error handling to 'print' in logmsg
+  - vmstat needs to set $sameColsFlag to make header pagination work with -p
+  - new graphite switch f, use fqdn for host [thanks Bryant]
+
+3.6.5-1 Sept 10, 2012
+  - when lexpr called with x= it needs to set summary data flag in case
+    nothing else is being reported, otherwise timestamps print after the
+    data instead of before
+  - lexpr typos: $tcpError, $udpError and $icmpError should not be singular
+  - timestamp wasn't being updated for -sD because it was specified in $dskdetFormat
+  - explicitly close logs before opening new ones in the hope that the occasionally
+    corrputed file problems with gunzip will go away
+  - tcp 'last' variables weren't correctly initialized and so was printing bad data
+    on first line of output
+
+3.6.4-2 August 28, 2012
+  - modified lexpr, gexpr and graphite such that when i= is used, to align
+    sending on whole minute boundaries which is particularly useful with rrd
+
+3.6.4-1	June 25, 2012
+  - merged snmp and tcp stats under -st and changed export routines to 
+    show summary error counts for -st.  removed snmp.ph from kit.
+    summaries (based on --tcpfilt) as does brief format
+  - correctly deal with dynamic disks/networks
+    - instead of pulling names from header, get them from raw file when discovered
+  - simplify code that deals with changed disks, now that more cleanly handled
+  - replace runtime calls to 'die' with calls to syslog
+  - readS was still left in INSTALL!  [thanks gavin]
+  - added system boot time to header
+  - new values for procopts s/S to show process start times
+  - graphite.ph now prints loadavgs to 2 decimal places [thanks brandon]
+  - extended lexpr,x= functionality to also call an init routine
+  - initFormat now returns entire header!
+  - if nothing returned from an import module on a printVerbose or printPlot call
+    for detail data do not call printText() since it will screw up colmux and
+    plot detail file with empty lines
+  - new --rawdskignore AND --rawnetignore because sometimes easier to specify
+    a pattern of things to ignore
+  - removed restriction for running as root to get network speeds via ethtool
+    by looking in /sys/devices now
+  - slight change to way the disk queue depth is being calculated to provide 
+    better accuracy [thanks ken]    
+  - new --dskopts f reports disk details with some fractional values
+  - always calculate disk details even when only doing -sd since a plugin
+    might want to get at them
+  - new graphite switch b, will cause output to be prefaced by a specified string
+    [thanks justin]
+  - slight change to s= functionality for lexpr, gexpr and graphite:  no arguments will
+    disable all but imported data, allowing you do log -s data to files sending over socket
+  - need to give other routines (specifically --import) access to the lexpr
+    interval by declaring it with 'our'
+  - had to change the way lexpr/gexpr/graphite do min/max/avg since they were
+    using a positional index to track intermediate values when clearly a hash
+    is required for cases where not all intervals contain same elements
+  - -P and --plotflag had different effects on $headerRepeat because prior to calling getopts
+    I was peeking ahead for an ARG of -P and not including --plo  [thanks devilized]
+  - gexpr module has wrong units for network packets and with 'g' modes had to multiply
+    kb counts by 1024 to convert to bytes, which is the units for these that ganglia uses
+    [thanks, trevor]
+  - clean up handling of missing ipmitool and root access [thanks trevor]
 
 3.6.3-2      May 01, 2012
   - finally remembered to remove readS from the kit [thanks joseba]
@@ -57,8 +123,7 @@ CHANGES
       trying to close the detail log which clearly hasn't been created
     - when using interval other than the defaul AND -s-all, blank lines are printed for standard intervals
       which don't have imported data.  this applied to brief, verbose AND detail data
-  - added some more systems to envrules: Proliant SL230
-/SL250 Gen 8 and SE1170s
+  - added some more systems to envrules: Proliant SL230/SL250 Gen 8 and SE1170s
 
 3.6.3-1      Mar 03, 2012
   - fixed serious bug introduced a number of versions ago, which during playback of multiple files

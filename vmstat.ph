@@ -9,6 +9,7 @@ sub vmstatInit
 sub vmstat
 {
   my $line;
+  $sameColsFlag=1;
   if (printHeader())
   {
     $line= "${clscr}#${miniBlanks}procs ---------------memory (KB)--------------- --swaps-- -----io---- --system-- ----cpu-----\n";

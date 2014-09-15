@@ -112,8 +112,8 @@ Instead it executes a perl "require" on the named file, using an extension of
 ph if not specified.  It first looks in the current directory and if not
 there the directory the executable is in.  It then calls the
 function "file"Init(options) towards the beginning of collectl and again as 
-simply  "file"(@options) to generate the exported formatted output.  See the document
-sections on Exporting Custom Output and Logging for more details.
+simply  "file"(@options) to generate the exported formatted output.  See the
+online documentation on Exporting Custom Output and Logging for more details.
 .RE
 
 .B "\-f, --filename Filename"
@@ -210,15 +210,18 @@ warnings can be annoying and one can suppress these with --quiet though they wil
 written to the message log in \-f.  You cannot suppress Error or Fatal errors.
 .RE
 
-.B "\-r, --rolllogs time[[,days][,minutes]]"
+.B "\-r, --rolllogs time[[,days[:months]][,minutes]]"
 .RS
-When selected, 
-.BR collectl
+When selected, collectl
 runs indefinately (or at least until the system reboots).
 The maximum number of raw and/or plot files that will be retained 
 (older ones are automatically deleted) is controlled by the
 .BR days
-field, the default is 7 days.  The
+field, the default is 7.  When -m is also specified to direct collectl to
+write messages to a log file in the logging directory, the number of months
+to retain those logs is controlled by the
+.BR months
+field and its default is 12.  The
 .BR increment
 field which is also optional (but is position dependent) specifies the duration of
 an individual collection file in minutes the default of which is 1440 or 1 day.
@@ -242,6 +245,13 @@ and you may end up collecting the WRONG data!  To verify you are collecting what
 you are, make a test run using -d4 to see the raw data being recorded in real-time.
 .RE
 
+.B "--rawdskignore"
+.RS
+This is the opposite of the rawdskfilt switch.  When specified any disks listed are completely
+ignored and will not appear in the raw file.  Typically this switch is useful when you're only
+interested in recording a subset of disk statistics.
+.RE
+
 .B "--rawnetfilt"
 .RS
 This works just like --rawdskfilt except it applies to networks.  Unlike disk filtering
@@ -250,6 +260,14 @@ record all network data from /proc/net/dev.
 
 The -d4 switch also works here, as well as everywhere, to see the raw data as it is being
 collected.
+.RE
+
+.B "--rawnetignore"
+.RS
+This is the opposite of the rawnetfilt switch and works just like the rawdskignore switch.  
+When specified any networks listed are ignored and will not appear in the raw file.  
+Typically this switch is useful when you're only interested in recording a subset of network
+statistics.
 .RE
 
 .B "--rawtoo"
@@ -910,6 +928,8 @@ usually work too.
 .B "--dskopts"
 .RS
 .br
+f \- report some columns as fractions for more precision on detail output
+.br
 i \- display the i/o sizes in brief mode just like with --iosize
 .br
 z \- only applies to disk details, do not report any lines with values of all zeros.
@@ -1063,6 +1083,10 @@ p \- never look for new pids or threads during data collection
 r \- show root command name only (no directory) for narrower display
 .br
 R \- show ALL process priorities ('RT' currently displayed if realtime)
+.br
+s \- show process start time in hh:mm:ss format
+.br
+S \- show process start time in mmmdd-hh:mm:ss format
 .br
 t \- include ALL process threads (increases collection overhead)
 .br

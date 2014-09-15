@@ -388,8 +388,8 @@ here.</a>
 <p>
 The way collectl determines a record is bogus is to look at the transmit and receive 
 rates for each interface and compare them to the speed of that interface
-(from ethtool <i>and</i> if running as <i>root</i> OR it uses
-the value of <i>DefNetSpeed</i> which can be overridden in collectl.conf).
+from /sys/devices OR if no entry found uses the value of <i>DefNetSpeed</i>
+which can be overridden in collectl.conf).
 It either exceeds twice the interface rate, the record is considered bogus
 and ignored.  This will cause collectl to report the previous rate
 for this interval.  While not foolproof, it is hoped this will reduce the

@@ -43,10 +43,13 @@ collectl --export graphite,h
 
 usage: --export=graphite,host[:port][,options]
   where each option is separated by a comma, noting some take args themselves
+    b=string    preface each variable name with string
     co          only reports changes since last reported value
     d=mask      debugging options, see beginning of graphite.ph for details
+    f           use fqdn instead of simple hostname for statistics naming
     h           print this help and exit
     i=seconds   reporting interval, must be multiple of collect's -i
+    p=text      insert this text right after hostname, including '.' if you want one
     s=subsys    only report subsystems, must be a subset of collectl's -s
     ttl=num     if data hasn't changed for this many intervals, report it
                 only used with 'co', def=5
@@ -110,7 +113,7 @@ interval.  Further, to avoid generating too many errors, it will silently contin
 the connection failure every 100 times, a constant you can modify in the graphite.ph header if you really
 care.  Once graphite comes back online collectl will again start sending data to it.
 <p>
-<table width=100%><tr><td align=right><i>updated Jan 03, 2012</i></td></tr></colgroup></table>
+<table width=100%><tr><td align=right><i>updated November 9, 2012</i></td></tr></colgroup></table>
 
 </body>
 </html>

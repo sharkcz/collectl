@@ -205,6 +205,8 @@ sub helloPrintExport
   my $ref2=shift;
   my $ref3=shift;
   my $ref4=shift;
+  my $ref5=shift;
+  my $ref6=shift;
 
   if ($hwOpts=~/s/)
   {
@@ -212,6 +214,7 @@ sub helloPrintExport
     {
       push @$ref1, "hwtotals.val";
       push @$ref2, int($hwTot/$intSecs);
+      push @$ref5, 1;    # makes it a gauge and so an avg for 'tot'
     }
     elsif ($type eq 's')
     {

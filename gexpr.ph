@@ -12,8 +12,9 @@
 #   -G   report ALL variables but replace those known by ganglia with their ganglia names
 
 my ($gexSubsys, $gexInterval, $gexDebug, $gexCOFlag, $gexTTL, $gexSocket, $gexPaddr);
-my ($gexHost, $gexPort, $gexDataIndex, @gexDataLast, @gexTTL);
-my ($gexMinFlag, $gexMaxFlag, $gexAvgFlag)=(0,0,0);
+my ($gexHost, $gexPort);
+my (%gexDataLast, %gexDataMin, %gexDataMax, %gexDataTot, %gexTTL);
+my ($gexMinFlag, $gexMaxFlag, $gexAvgFlag, $gexTotFlag)=(0,0,0,0);
 my $gexPktSize=1024;
 my $gexOneTB=1024*1024*1024*1024;
 my $gexCounter=0;
@@ -21,6 +22,8 @@ my $gexFlags;
 my $gexGFlag=0;
 my $gexMcast;
 my $gexMcastFlag=0;
+my $gexOutputFlag=1;
+
 sub gexprInit
 {
   my $hostport=shift;
@@ -44,7 +47,7 @@ sub gexprInit
   foreach my $option (@_)
   {
     my ($name, $value)=split(/=/, $option);
-    error("invalid gexpr option '$name'")    if $name!~/^[dgGhis]?$|^co$|^ttl$|^min$|^max$|^avg$/;
+    error("invalid gexpr option '$name'")    if $name!~/^[dgGhis]?$|^co$|^ttl$|^min$|^max$|^avg$|^tot$/;
 
     $gexCOFlag=1           if $name eq 'co';
     $gexDebug=$value       if $name eq 'd';
@@ -56,6 +59,7 @@ sub gexprInit
     $gexMinFlag=1          if $name eq 'min';
     $gexMaxFlag=1          if $name eq 'max';
     $gexAvgFlag=1          if $name eq 'avg';
+    $gexTotFlag=1          if $name eq 'tot';
 
     help()                 if $name eq 'h';
   }
@@ -68,16 +72,16 @@ sub gexprInit
   $gexMcastFlag=1    if $gexHost=~/^(\d+)/ && $1>=225 && $1<=239;
 
   error("gexpr subsys options '$gexSubsys' not a proper subset of '$subsys'")
-        if $subsys ne '' && $gexSubsys!~/^[$subsys]+$/;
+        if $subsys ne '' && $gexSubsys ne '' && $gexSubsys!~/^[$subsys]+$/;
 
   # convert to the number of samples we want to send
-  $gexSendCount=int($gexInterval/$gexInterval1);
+  my $gexSendCount=int($gexInterval/$gexInterval1);
   error("gexpr interval option not a multiple of '$gexInterval1' seconds")
 	if $gexInterval1*$gexSendCount != $gexInterval;
 
-  $gexFlags=$gexMinFlag+$gexMaxFlag+$gexAvgFlag;
-  error("only 1 of 'min', 'max' or 'avg' with 'gexpr'")    if $gexFlags>1;
-  error("'min', 'max' and 'avg' require gexpr 'i' that is > collectl's -i")
+  $gexFlags=$gexMinFlag+$gexMaxFlag+$gexAvgFlag+$gexTotFlag;
+  error("only 1 of 'min', 'max', 'avg' or 'tot' with 'gexpr'")    if $gexFlags>1;
+  error("'min', 'max', 'avg' & 'tot' require gexpr 'i' that is > collectl's -i")
         if $gexFlags && $gexSendCount==1;
 
   # Since gexpr DOES write over a socket but does not use -A, make sure the default
@@ -100,14 +104,11 @@ sub gexprInit
 
 sub gexpr
 {
-  # if not time to print and we're not doing min/max/tot, there's nothing to do.
+  # if not time to print and we're not doing min/max/avg/tot, there's nothing to do.
+  # BUT always make sure time aligns to top of minute based on i=
   $gexCounter++;
-  return    if ($gexCounter!=$gexSendCount && $gexFlags==0);
-
-  # We ALWAYS process the same number of data elements for any collectl instance
-  # so we can use a global index to point to the one we're currently using.
-  $gexDataIndex=0;
-
+  $gexOutputFlag=(!(int($lastSecs[$rawPFlag]) % $gexInterval)) ? 1 : 0;
+  return    if (!$gexOutputFlag && $gexFlags==0);
 
   if ($gexSubsys=~/c/i)
   {
@@ -190,12 +191,17 @@ sub gexpr
 
     if ($gexSubsys=~/D/)
     {
-      for (my $i=0; $i<$NumDisks; $i++)
+      for (my $i=0; $i<@dskOrder; $i++)
       {
-        sendData("diskinfo.reads.$dskName[$i]",    'reads/sec',    $dskRead[$i]/$intSecs);
-        sendData("diskinfo.readkbs.$dskName[$i]",  'readkbs/sec',  $dskReadKB[$i]/$intSecs);
-        sendData("diskinfo.writes.$dskName[$i]",   'writes/sec',   $dskWrite[$i]/$intSecs);
-        sendData("diskinfo.writekbs.$dskName[$i]", 'writekbs/sec', $dskWriteKB[$i]/$intSecs);
+        # preserve display order but skip any disks not seen this interval
+        $dskName=$dskOrder[$i];
+        next    if !defined($dskSeen[$i]);
+        next    if ($dskFiltKeep eq '' && $dskName=~/$dskFiltIgnore/) || ($dskFiltKeep ne '' && $dskName!~/$dskFiltKeep/);
+
+        sendData("diskinfo.reads.$dskName",    'reads/sec',    $dskRead[$i]/$intSecs);
+        sendData("diskinfo.readkbs.$dskName",  'readkbs/sec',  $dskReadKB[$i]/$intSecs);
+        sendData("diskinfo.writes.$dskName",   'writes/sec',   $dskWrite[$i]/$intSecs);
+        sendData("diskinfo.writekbs.$dskName", 'writekbs/sec', $dskWriteKB[$i]/$intSecs);
       }
     }
   }
@@ -359,30 +365,33 @@ sub gexpr
     {
       if ($gexGFlag)       # 'g' or 'G'
       {
-        sendData('bytes_in',   'Bytes/sec', $netRxKBTot/$intSecs);
-        sendData('bytes_out',  'Bytes/sec', $netTxKBTot/$intSecs);
-        sendData('pkts_in',  'Bytes/sec', $netRxPktTot/$intSecs);
-        sendData('pkts_out', 'Bytes/sec', $netTxPktTot/$intSecs);
+        sendData('bytes_in',  'Bytes/sec', $netRxKBTot*1024/$intSecs);
+        sendData('bytes_out', 'Bytes/sec', $netTxKBTot*1024/$intSecs);
+        sendData('pkts_in',   'pkts/sec', $netRxPktTot/$intSecs);
+        sendData('pkts_out',  'pkts/sec', $netTxPktTot/$intSecs);
       }
       else                 # neither
       {
         sendData('nettotals.kbin',   'kb/sec', $netRxKBTot/$intSecs);
-        sendData('nettotals.pktin',  'kb/sec', $netRxPktTot/$intSecs);
+        sendData('nettotals.pktin',  'pkts/sec', $netRxPktTot/$intSecs);
         sendData('nettotals.kbout',  'kb/sec', $netTxKBTot/$intSecs);
-        sendData('nettotals.pktout', 'kb/sec', $netTxPktTot/$intSecs);
+        sendData('nettotals.pktout', 'pkts/sec', $netTxPktTot/$intSecs);
       }
     }
 
     if ($gexSubsys=~/N/)
     {
-      for ($i=0; $i<$netIndex; $i++)
+      for ($i=0; $i<@netOrder; $i++)
       {
-        next    if $netName[$i]=~/lo|sit/;
+        $netName=$netOrder[$i];
+        next    if !defined($netSeen[$i]);
+        next    if ($netFiltKeep eq '' && $netName=~/$netFiltIgnore/) || ($netFiltKeep ne '' && $netName!~/$netFiltKeep/);
+        next    if $netName=~/lo|sit/;
 
-        sendData("nettotals.kbin.$netName[$i]",   'kb/sec', $netRxKB[$i]/$intSecs);
-        sendData("nettotals.pktin.$netName[$i]",  'kb/sec', $netRxPkt[$i]/$intSecs);
-        sendData("nettotals.kbout.$netName[$i]",  'kb/sec', $netTxKB[$i]/$intSecs);
-        sendData("nettotals.pktout.$netName[$i]", 'kb/sec', $netTxPkt[$i]/$intSecs);
+        sendData("nettotals.kbin.$netName",   'kb/sec', $netRxKB[$i]/$intSecs);
+        sendData("nettotals.pktin.$netName",  'pkts/sec', $netRxPkt[$i]/$intSecs);
+        sendData("nettotals.kbout.$netName",  'kb/sec', $netTxKB[$i]/$intSecs);
+        sendData("nettotals.pktout.$netName", 'pkts/sec', $netTxPkt[$i]/$intSecs);
       }
     }
   }
@@ -403,10 +412,12 @@ sub gexpr
 
   if ($gexSubsys=~/t/ && $gexGFlag!=1)
   {
-    sendData("tcpinfo.pureack", 'num/sec', $tcpValue[27]/$intSecs);
-    sendData("tcpinfo.hpack",   'num/sec', $tcpValue[28]/$intSecs);
-    sendData("tcpinfo.loss",    'num/sec', $tcpValue[40]/$intSecs);
-    sendData("tcpinfo.ftrans",  'num/sec', $tcpValue[45]/$intSecs);
+    sendData("tcpinfo.iperrs",   'num/sec', $ipErrors/$intSecs)       if $tcpFilt=~/i/;
+    sendData("tcpinfo.tcperrs",  'num/sec', $tcpErrors/$intSecs)      if $tcpFilt=~/t/;
+    sendData("tcpinfo.udperrs",  'num/sec', $udpErrors/$intSecs)      if $tcpFilt=~/u/;
+    sendData("tcpinfo.icmperrs", 'num/sec', $icmpErrors/$intSecs)     if $tcpFilt=~/c/;
+    sendData("tcpinfo.tcpxerrs", 'num/sec', $tcpExErrors/$intSecs)    if $tcpFilt=~/T/;
+
   }
 
   if ($gexSubsys=~/x/i && $gexGFlag!=1)
@@ -460,7 +471,7 @@ sub gexpr
       sendData($names[$i], $units[$i], $vals[$i]);
     }
   }
-  $gexCounter=0    if $gexCounter==$gexSendCount;
+  $gexCounter=0    if $gexOutputFlag;
 }
 
 sub openSocket
@@ -477,63 +488,61 @@ sub openSocket
   print "Opened\n"    if $gexDebug & 16;
 }
 
-# this code tightly synchronized with lexpr
+# this code tightly synchronized with lexpr and graphite
 sub sendData
 {
   my $name=shift;
   my $units=shift;
   my $value=shift;
 
-  # We have to increment at the top since multiple exit points (shame on me) so the
-  # very first entry starts at 1 rather than 0;
-  $gexDataIndex++;
   $value=int($value);
 
   # These are only undefined the very first time
-  if (!defined($gexTTL[$gexDataIndex]))
+  if (!defined($gexTTL{$name}))
   {
-    $gexTTL[$gexDataIndex]=$gexTTL;
-    $gexDataLast[$gexDataIndex]=-1;
+    $gexTTL{$name}=$gexTTL;
+    $gexDataLast{$name}=-1;
   }
 
-  # As a minor optimization, only do this when dealing with min/max/avg values
+  # As a minor optimization, only do this when dealing with min/max/avg/tot values
   if ($gexFlags)
   {
     # And while this should be done in init(), we really don't know how may indexes
     # there are until our first pass through...
     if ($gexCounter==1)
     {
-      $gexDataMin[$gexDataIndex]=$gexOneTB;
-      $gexDataMax[$gexDataIndex]=0;
-      $gexDataTot[$gexDataIndex]=0;
+      $gexDataMin{$name}=$gexOneTB;
+      $gexDataMax{$name}=0;
+      $gexDataTot{$name}=0;
     }
 
-    $gexDataMin[$gexDataIndex]=$value    if $gexMinFlag && $value<$gexDataMin[$gexDataIndex];
-    $gexDataMax[$gexDataIndex]=$value    if $gexMaxFlag && $value>$gexDataMax[$gexDataIndex];
-    $gexDataTot[$gexDataIndex]+=$value   if $gexAvgFlag;
+    $gexDataMin{$name}=$value    if $gexMinFlag && $value<$gexDataMin{$name};
+    $gexDataMax{$name}=$value    if $gexMaxFlag && $value>$gexDataMax{$name};
+    $gexDataTot{$name}+=$value   if $gexAvgFlag || $gexTotFlag;
   }
 
-  return('')    if $gexCounter!=$gexSendCount;
+  return('')    if !$gexOutputFlag;
 
   #    A c t u a l    S e n d    H a p p e n s    H e r e
 
   # If doing min/max/avg, reset $value
   if ($gexFlags)
   {
-    $value=$gexDataMin[$gexDataIndex]    if $gexMinFlag;
-    $value=$gexDataMax[$gexDataIndex]    if $gexMaxFlag;
-    $value=($gexDataTot[$gexDataIndex]/$gexSendCount)    if $gexAvgFlag;
+    $value=$gexDataMin{$name}                    if $gexMinFlag;
+    $value=$gexDataMax{$name}                    if $gexMaxFlag;
+    $value=$gexDataTot{$name}                    if $gexTotFlag;
+    $value=($gexDataTot{$name}/$gexCounter)      if $gexAvgFlag;
   }
 
   # Always send send data if not CO mode,but if so only send when it has
   # indeed changed OR TTL about to expire
   my $valSentFlag=0;
-  if (!$gexCOFlag || $value!=$gexDataLast[$gexDataIndex] || $gexTTL[$gexDataIndex]==1)
+  if (!$gexCOFlag || $value!=$gexDataLast{$name} || $gexTTL{$name}==1)
   {
     $valSentFlag=1;
     sendMetaPacket($name, $units);
     sendDataPacket($name, $value);    
-    $gexDataLast[$gexDataIndex]=$value;
+    $gexDataLast{$name}=$value;
   }
 
   # A fair chunk of work, but worth it
@@ -555,7 +564,7 @@ sub sendData
     my ($sec, $min, $hour)=localtime($intSeconds);
     my $timestamp=sprintf("%02d:%02d:%02d.%s", $hour, $min, $sec, substr($intUsecs, 0, 3));
     printf "$timestamp Name: %-25s Units: %-12s Val: %8d TTL: %d %s\n",
-                $name, $units, $value, $gexTTL[$gexDataIndex], ($valSentFlag) ? 'sent' : ''
+                $name, $units, $value, $gexTTL{$name}, ($valSentFlag) ? 'sent' : ''
                         if $gexDebug & 1 || $valSentFlag;
   }
 
@@ -563,8 +572,8 @@ sub sendData
   # decision above when we saw counter of 1
   if ($gexCOFlag)
   {
-    $gexTTL[$gexDataIndex]--          if !$valSentFlag;
-    $gexTTL[$gexDataIndex]=$gexTTL    if $valSentFlag || $gexTTL[$gexDataIndex]==0;
+    $gexTTL{$name}--          if !$valSentFlag;
+    $gexTTL{$name}=$gexTTL    if $valSentFlag || $gexTTL{$name}==0;
   }
 }
 
@@ -680,9 +689,10 @@ usage: --export=gexpr,host:port[,options]
     s=subsys    only report subsystems, must be a subset of collectl's -s
     ttl=num     if data hasn't changed for this many intervals, report it
                 only used with 'co', def=5
-    min         report minimal value since last report
-    max         report maximum value since last report
     avg         report average of values since last report
+    max         report maximum value since last report
+    min         report minimal value since last report
+    tot		report total values (as makes sense) since last report
 EOF
 
   print $text;

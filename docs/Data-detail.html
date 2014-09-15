@@ -69,7 +69,9 @@ will be included which is the aggregate number of interrupts for each CPU.
 <p>
 If you specify filtering with <i>--dskfilt</i>, the disk names that match the pattern(s)
 will either be included or excluded from the the summary data.  However, the data will
-<i>still</i> be collected so if recorded to a file can later be viewed.
+<i>still</i> be collected so if recorded to a file can later be viewed.  Note: if you
+specify <i>--dskopts f</i>, fractional values will be reported for some of the fields
+for more precision.
 <p>
 <div class=terminal-wide14><pre>
 # DISK STATISTICS (/sec)
@@ -332,7 +334,7 @@ data and provides detail information about memory utilization in each numa node.
 <p>
 <div class=terminal-wide14><pre>
 # MEMORY STATISTICS
-# Node    Total     Used     Free     Slab   Mapped     Anon    Inact Hit%
+# Node    Total     Used     Free     Slab   Mapped     Anon    Locked  Inact Hit%
 </pre></div>
 <table>
 <tr><td><b>Node</b></td>
@@ -355,6 +357,9 @@ data and provides detail information about memory utilization in each numa node.
 
 <tr valign=top><td><b>Anon</b></td>
 <td>Anonymous memory</i></td></tr>
+
+<tr valign=top><td><b>Locked</b></td>
+<td>Locked memory</i></td></tr>
 
 <tr valign=top><td><b>Inactive</b></td>
 <td>Inactive pages, which is the sum of Inactive(anon) and Inactive(file).
@@ -830,7 +835,7 @@ with playback mode.
 <tr><td><b>Name</b></td><td>Slab Name</td></tr>
 </table>
 
-<table width=100%><tr><td align=right><i>updated January 05, 2012</i></td></tr></colgroup></table>
+<table width=100%><tr><td align=right><i>updated November 9, 2012</i></td></tr></colgroup></table>
 
 </body>
 </html>

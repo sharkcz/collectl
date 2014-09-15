@@ -41,7 +41,7 @@ There are currently 6 different custom exports that are part of a standard colle
 distribution:
 <ul>
 <li><b><a href=Gexpr.html>gexpr</a></b> allows one to send collectl data to <a href=http://ganglia.info/>ganglia</a></li>
-<li><b><a href=Graphite.html>gexpr</a></b> allows one to send collectl data to <a href=http://graphite.wikidot.com/>graphite</a></li>
+<li><b><a href=Graphite.html>graphite</a></b> allows one to send collectl data to <a href=http://graphite.wikidot.com/>graphite</a></li>
 <li><b>lexpr</b> generates output in an easy to parse format</li>
 <li><b>sexpr</b> generates output as an <a href=http://en.wikipedia.org/wiki/S-expression>s-expressions</a></li>
 <li><b><a href=Process.html>proctree</a></b> provides another way to look at process data</li>
@@ -57,12 +57,15 @@ of options, though sexpr is fairly limited, as described in the following table:
 <p>
 <center>
 <table border=1 width=85%>
-<tr><td align=center colspan=2><b>NOTE: sexpr only supports d, f, h and s</b></td></tr>
-<tr><td width=10%><b>avg|max|min</b></d><td>used in conjunction with <i>i=</i>, send the average, maximum
-                or minimum of the data over the associated set of intervals specified by <i>i=</i>. If neither
-                <i>avg, min</i> or <i>max</i> is used, the values from the most recent monitoring interval will
+<tr><td align=center colspan=2><b>NOTE: sexpr is deprecated and will be remove from kit in 2014</b></td></tr>
+<tr><td width=10%><b>align</b></td><td>Only for lexpr and used in conjunction with <i>i=</i>, when specified data samples will
+                be aligned to whole minute boundaries.  On other words if used with <i>i=15</i>, data will be reported
+                at the top of the minutes, 15 seconds past, etc.  The first sample may therefore be partial.</td>
+<tr><td width=10%><b>avg|max|min|tot</b></td><td>used in conjunction with <i>i=</i>, send the average, maximum,
+                minimum or total of the data over the associated set of intervals specified by <i>i=</i>. If 
+                none of these are specified, the values from the most recent monitoring interval will
                 be reported.</td></tr>
-<tr><td width=10%><b>co</b></d><td>this does not take a value and indicates <i>changes only</i> such
+<tr><td width=10%><b>co</b></td><td>this does not take a value and indicates <i>changes only</i> such
                 that only data elements that have changed since they were last sampled are reported in
                 an attempt to minimize processing and network bandwidth.  If not specified, samples for
                 all reporting intervals will be sent.</td></tr>
@@ -79,9 +82,12 @@ of options, though sexpr is fairly limited, as described in the following table:
 <tr><td><b>i=secs</b></td><td>specifies the reporting interval in seconds.  In other words, if you specify
                 i=60, a sample will be reported every 60 seconds independent of collectl's monitoring
                 interval.  The default is to report every sample.  This interval must be a multiple of 
-                the base collectl interval.</td></tr>
+                the base collectl interval.  <i>note that while collectl always rounds rates to the next whole
+                value, when multiple intervals are added together only the totals are rounded.</i></td></tr>
 <tr><td><b>s</b></td><td>specifies a subset of those subsystems specified with -s in the collectl command line
-                and only data collected for that subset will be reported.  The default to report everything.</td></tr>
+                and only data collected for that subset will be reported.  The default to report everything.
+                In the case where you only want report data collected via <i>--import</i>, use s= with
+                no args.</td></tr>
 <tr><td><b>ttl</b></td><td> is the <i>time to live</i> in intervals for each piece of performance data.  If
                 more than this number of intervals passes data will be sent regardless of whether it changed
                 or not and the ttl countdown timer reset.  The default is 5.  This actually has a second use
@@ -212,7 +218,7 @@ return <i>true</i> and therefore the final line is the digit 1.
 Try running it and you'll see all the pagination and time formats work just as they
 do with standard output formats.
 
-<table width=100%><tr><td align=right><i>updated Jan 03, 2012</i></td></tr></colgroup></table>
+<table width=100%><tr><td align=right><i>updated November 9, 2012</i></td></tr></colgroup></table>
 
 </body>
 </html>

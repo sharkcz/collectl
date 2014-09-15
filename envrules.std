@@ -70,7 +70,7 @@
 [ignore]
 /^Fan Redundant/
 
->ProLiant SL230 Gen8,ProLiant SL250 Gen8<
+>ProLiant SL230s Gen8,ProLiant SL250s Gen8<
 [pre]
 /^\d*-//
 /Inlet Ambient/ATemp/

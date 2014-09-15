@@ -13,10 +13,12 @@ my $graphiteSocketFailMax=5;    # report socket open fails every 100 intervals
 my $graphiteIntTimeLast=0;      # tracks start of new interval
 my $graphiteOneTB=1024*1024*1024*1024;
 my $graphitePost='';            # insert AFTER hostname in message to carbon (don't forget '.' if you want one)
-my ($graphiteSubsys, $graphiteInterval);
-my ($graphiteDebug, $graphiteCOFlag, $graphiteTTL, @graphiteTTL, $graphiteDataIndex, @graphiteDataLast);
+my ($graphiteSubsys, $graphiteInterval, $graphiteBefore);
+my ($graphiteDebug, $graphiteCOFlag);
+my ($graphiteTTL, %graphiteTTL, %graphiteDataMin, %graphiteDataMax, %graphiteDataTot, %graphiteDataLast);
 my ($graphiteMyHost, $graphiteSocket, $graphiteSockHost, $graphiteSockPort, $graphiteSocketFailCount);
-my ($graphiteMinFlag, $graphiteMaxFlag, $graphiteAvgFlag, $graphiteMmaFlags)=(0,0,0,0);
+my ($graphiteFqdnFlag, $graphiteMinFlag, $graphiteMaxFlag, $graphiteAvgFlag, $graphiteTotFlag, $graphiteFlags)=(0,0,0,0,0,0);
+my $graphieOutputFlag=1;
 
 sub graphiteInit
 {
@@ -40,20 +42,24 @@ sub graphiteInit
   $graphiteInterval=$graphiteInterval1;
   $graphiteSubsys=$subsys;
   $graphiteTTL=5;
+  $graphiteBefore='';
 
   foreach my $option (@_)
   {
     my ($name, $value)=split(/=/, $option);
-    error("invalid graphite option '$name'")    if $name!~/^[dhips]?$|^co$|^ttl$|^min$|^max$|^avg$/;
+    error("invalid graphite option '$name'")    if $name!~/^[bdfhips]?$|^co$|^ttl$|^min$|^max$|^avg$|^tot$/;
+    $graphiteBefore=$value      if $name eq 'b';
     $graphiteCOFlag=1           if $name eq 'co';
     $graphiteDebug=$value       if $name eq 'd';
     $graphiteInterval=$value    if $name eq 'i';
     $graphitePost=$value        if $name eq 'p';
     $graphiteSubsys=$value      if $name eq 's';
     $graphiteTTL=$value         if $name eq 'ttl';
+    $graphiteFqdnFlag=1		if $name eq 'f';
     $graphiteMinFlag=1          if $name eq 'min';
     $graphiteMaxFlag=1          if $name eq 'max';
     $graphiteAvgFlag=1          if $name eq 'avg';
+    $graphiteTotFlag=1          if $name eq 'tot';
 
     help()                      if $name eq 'h';
   }
@@ -62,26 +68,26 @@ sub graphiteInit
   ($graphiteSockHost, $graphiteSockPort)=split(/:/, $hostport);
   error("the port number must be specified")    if !defined($graphiteSockPort) || $graphiteSockPort eq '';
 
+  # s= disables ALL subsys, only makes sense with imports
   error("graphite subsys options '$graphiteSubsys' not a proper subset of '$subsys'")
-        if $subsys ne '' && $graphiteSubsys!~/^[$subsys]+$/;
+        if $subsys ne '' && $graphiteSubsys ne '' && $graphiteSubsys!~/^[$subsys]+$/;
 
   # convert to the number of samples we want to send
-  $graphiteSendCount=int($graphiteInterval/$graphiteInterval1);
+  my $graphiteSendCount=int($graphiteInterval/$graphiteInterval1);
   error("graphite interval option not a multiple of '$graphiteInterval1' seconds")
 	if $graphiteInterval1*$graphiteSendCount != $graphiteInterval;
 
-  $graphiteMmaFlags=$graphiteMinFlag+$graphiteMaxFlag+$graphiteAvgFlag;
-  error("only 1 of 'min', 'max' or 'avg' with 'graphite'")    if $graphiteMmaFlags>1;
-  error("'min', 'max' and 'avg' require graphite 'i' that is > collectl's -i")
-        if $graphiteMmaFlags && $graphiteSendCount==1;
+  $graphiteFlags=$graphiteMinFlag+$graphiteMaxFlag+$graphiteAvgFlag+$graphiteTotFlag;
+  error("only 1 of 'min', 'max', 'avg' or 'tot' with 'graphite'")    if $graphiteFlags>1;
+  error("'min', 'max', 'avg' & 'tot' require graphite 'i' that is > collectl's -i")
+        if $graphiteFlags && $graphiteSendCount==1;
 
   # Since graphite DOES write over a socket but does not use -A, make sure the default
   # behavior for -f logs matches that of -A
   $rawtooFlag=1    if $filename ne '' && !$plotFlag;
 
-  $graphiteMyHost=`hostname`;
+  $graphiteMyHost=(!$graphiteFqdnFlag) ? `hostname` : `hostname -f`;
   chomp $graphiteMyHost;
-  $graphiteMyHost=(split(/\./, $graphiteMyHost))[0];
 
   #    O p e n    S o c k e t
 
@@ -107,13 +113,11 @@ sub graphite
   $graphiteIntTimeLast=time;
   return             if !defined($graphiteSocket) && !($graphiteDebug & 8);    # still not open?  get out!
 
-  # if not time to print and we're not doing min/max/tot, there's nothing to do.
+  # if not time to print and we're not doing min/max/avg/tot, there's nothing to do.
+  # BUT always make sure time aligns to top of minute based on i=
   $graphiteCounter++;
-  return    if ($graphiteCounter!=$graphiteSendCount && $graphiteMmaFlags==0);
-
-  # We ALWAYS process the same number of data elements for any collectl instance
-  # so we can use a global index to point to the one we're currently using.
-  $graphiteDataIndex=0;
+  $graphiteOutputFlag=(!(int($lastSecs[$rawPFlag]) % $graphiteInterval)) ? 1 : 0;
+  return    if (!$graphiteOutputFlag && $graphiteFlags==0);
 
   if ($graphiteSubsys=~/c/)
   {
@@ -134,9 +138,10 @@ sub graphite
     sendData('ctxint.proc', 'pcreates/sec', $proc/$intSecs);
     sendData('ctxint.runq', 'runqSize',     $loadQue);
 
-    sendData('cpuload.avg1',   'loadAvg1',  $loadAvg1);
-    sendData('cpuload.avg5',   'loadAvg5',  $loadAvg5);
-    sendData('cpuload.avg15',  'loadAvg15', $loadAvg15);
+    # these are the ONLY fraction, noting they will print to 2 decimal places
+    sendData('cpuload.avg1',   'loadAvg1',  $loadAvg1,  2);
+    sendData('cpuload.avg5',   'loadAvg5',  $loadAvg5,  2);
+    sendData('cpuload.avg15',  'loadAvg15', $loadAvg15, 2);
   }
 
   if ($graphiteSubsys=~/C/)
@@ -165,12 +170,17 @@ sub graphite
 
   if ($graphiteSubsys=~/D/)
   {
-    for (my $i=0; $i<$NumDisks; $i++)
+    for (my $i=0; $i<@dskOrder; $i++)
     {
-      sendData("diskinfo.reads.$dskName[$i]",    'reads/sec',    $dskRead[$i]/$intSecs);
-      sendData("diskinfo.readkbs.$dskName[$i]",  'readkbs/sec',  $dskReadKB[$i]/$intSecs);
-      sendData("diskinfo.writes.$dskName[$i]",   'writes/sec',   $dskWrite[$i]/$intSecs);
-      sendData("diskinfo.writekbs.$dskName[$i]", 'writekbs/sec', $dskWriteKB[$i]/$intSecs);
+      # preserve display order but skip any disks not seen this interval
+      $dskName=$dskOrder[$i];
+      next    if !defined($dskSeen[$i]);
+      next    if ($dskFiltKeep eq '' && $dskName=~/$dskFiltIgnore/) || ($dskFiltKeep ne '' && $dskName!~/$dskFiltKeep/);
+
+      sendData("diskinfo.reads.$dskName",    'reads/sec',    $dskRead[$i]/$intSecs);
+      sendData("diskinfo.readkbs.$dskName",  'readkbs/sec',  $dskReadKB[$i]/$intSecs);
+      sendData("diskinfo.writes.$dskName",   'writes/sec',   $dskWrite[$i]/$intSecs);
+      sendData("diskinfo.writekbs.$dskName", 'writekbs/sec', $dskWriteKB[$i]/$intSecs);
     }
   }
 
@@ -320,14 +330,17 @@ sub graphite
 
   if ($graphiteSubsys=~/N/)
   {
-    for ($i=0; $i<$netIndex; $i++)
+    for ($i=0; $i<@netOrder; $i++)
     {
-      next    if $netName[$i]=~/lo|sit/;
+      $netName=$netOrder[$i];
+      next    if !defined($netSeen[$i]);
+      next    if ($netFiltKeep eq '' && $netName=~/$netFiltIgnore/) || ($netFiltKeep ne '' && $netName!~/$netFiltKeep/);
+      next    if $netName=~/lo|sit/;
 
-      sendData("nettotals.kbin.$netName[$i]",   'kb/sec', $netRxKB[$i]/$intSecs);
-      sendData("nettotals.pktin.$netName[$i]",  'kb/sec', $netRxPkt[$i]/$intSecs);
-      sendData("nettotals.kbout.$netName[$i]",  'kb/sec', $netTxKB[$i]/$intSecs);
-      sendData("nettotals.pktout.$netName[$i]", 'kb/sec', $netTxPkt[$i]/$intSecs);
+      sendData("nettotals.kbin.$netName",   'kb/sec', $netRxKB[$i]/$intSecs);
+      sendData("nettotals.pktin.$netName",  'kb/sec', $netRxPkt[$i]/$intSecs);
+      sendData("nettotals.kbout.$netName",  'kb/sec', $netTxKB[$i]/$intSecs);
+      sendData("nettotals.pktout.$netName", 'kb/sec', $netTxPkt[$i]/$intSecs);
     }
   }
 
@@ -347,10 +360,12 @@ sub graphite
 
   if ($graphiteSubsys=~/t/)
   {
-    sendData("tcpinfo.pureack", 'num/sec', $tcpValue[27]/$intSecs);
-    sendData("tcpinfo.hpack",   'num/sec', $tcpValue[28]/$intSecs);
-    sendData("tcpinfo.loss",    'num/sec', $tcpValue[40]/$intSecs);
-    sendData("tcpinfo.ftrans",  'num/sec', $tcpValue[45]/$intSecs);
+
+    sendData("tcpinfo.iperrs",   'num/sec', $ipErrors/$intSecs)       if $tcpFilt=~/i/;
+    sendData("tcpinfo.tcperrs",  'num/sec', $tcpErrors/$intSecs)      if $tcpFilt=~/t/;
+    sendData("tcpinfo.udperrs",  'num/sec', $udpErrors/$intSecs)      if $tcpFilt=~/u/;
+    sendData("tcpinfo.icmperrs", 'num/sec', $icmpErrors/$intSecs)     if $tcpFilt=~/c/;
+    sendData("tcpinfo.tcpxerrs", 'num/sec', $tcpExErrors/$intSecs)    if $tcpFilt=~/T/;
   }
 
   if ($graphiteSubsys=~/x/i)
@@ -397,81 +412,81 @@ sub graphite
   {
     sendData($names[$i], $units[$i], $vals[$i]);
   }
-  $graphiteCounter=0    if $graphiteCounter==$graphiteSendCount;
+  $graphiteCounter=0    if $graphiteOutputFlag;
 }
 
 # this code tightly synchronized with gexpr and lexpr
 sub sendData
 {
-  my $name=shift;
+  my $name= shift;
   my $units=shift;
   my $value=shift;
+  my $numpl=shift;    # number of decimal places 
+
+  # These are only undefined the very first time
+  if (!defined($graphiteTTL{$name}))
+  {
+    $graphiteTTL{$name}=$lexTTL;
+    $graphiteDataLast{$name}=-1;
+  }
 
   # if graphite went away in the middle of an interval there's no point continuing.
   # we're try to reopen it next pass through here
   return    if !defined($graphiteSocket) && !($graphiteDebug & 8);
 
-  # We have to increment at the top since multiple exit points (shame on me) so the
-  # very first entry starts at 1 rather than 0;
-  $graphiteDataIndex++;
-  $value=int($value);
+  $value=int($value)    if !defined($numpl);
 
-  # These are only undefined the very first time
-  if (!defined($graphiteTTL[$graphiteDataIndex]))
-  {
-    $graphiteTTL[$graphiteDataIndex]=$graphiteTTL;
-    $graphiteDataLast[$graphiteDataIndex]=-1;
-  }
-
-  # As a minor optimization, only do this when dealing with min/max/avg values
-  if ($mmsFlags)
+  # As a minor optimization, only do this when dealing with min/max/avg/tot values
+  if ($graphiteFlags)
   {
     # And while this should be done in init(), we really don't know how may indexes
     # there are until our first pass through...
     if ($graphiteCounter==1)
     {
-      $graphiteDataMin[$graphiteDataIndex]=$graphiteOneTB;
-      $graphiteDataMax[$graphiteDataIndex]=0;
-      $graphiteDataTot[$graphiteDataIndex]=0;
+      $graphiteDataMin{$name}=$graphiteOneTB;
+      $graphiteDataMax{$name}=0;
+      $graphiteDataTot{$name}=0;
     }
 
-    $graphiteDataMin[$graphiteDataIndex]=$value    if $graphiteMinFlag && $value<$graphiteDataMin[$graphiteDataIndex];
-    $graphiteDataMax[$graphiteDataIndex]=$value    if $graphiteMaxFlag && $value>$graphiteDataMax[$graphiteDataIndex];
-    $graphiteDataTot[$graphiteDataIndex]+=$value   if $graphiteAvgFlag;
+    $graphiteDataMin{$name}=$value    if $graphiteMinFlag && $value<$graphiteDataMin{$name};
+    $graphiteDataMax{$name}=$value    if $graphiteMaxFlag && $value>$graphiteDataMax{$name};
+    $graphiteDataTot{$name}+=$value   if $graphiteAvgFlag || $graphiteTotFlag;
   }
 
-  return('')    if $graphiteCounter!=$graphiteSendCount;
+  return('')    if !$graphiteOutputFlag;
 
   #    A c t u a l    S e n d    H a p p e n s    H e r e
 
   # If doing min/max/avg, reset $value
-  if ($graphiteMmaFlags)
+  if ($graphiteFlags)
   {
-    $value=$graphiteDataMin[$graphiteDataIndex]    if $graphiteMinFlag;
-    $value=$graphiteDataMax[$graphiteDataIndex]    if $graphiteMaxFlag;
-    $value=($grphiteDataTot[$graphiteDataIndex]/$graphiteSendCount)    if $gaphiteAvgFlag;
+    $value=$graphiteDataMin{$name}                        if $graphiteMinFlag;
+    $value=$graphiteDataMax{$name}                        if $graphiteMaxFlag;
+    $value=$graphiteDataTot{$name}                        if $graphiteTotFlag;
+    $value=($graphiteDataTot{$name}/$graphiteCounter)      if $graphiteAvgFlag;
   }
 
   # Always send send data if not CO mode, but if so only send when it has
   # indeed changed OR TTL about to expire
   my $valSentFlag=0;
-  if (!$graphiteCOFlag || $value!=$graphiteDataLast[$graphiteDataIndex] || $graphiteTTL[$graphiteDataIndex]==1)
+  if (!$graphiteCOFlag || $value!=$graphiteDataLast{$name} || $graphiteTTL{$name}==1)
   {
     $valSentFlag=1;
-    my $message=sprintf("$graphiteMyHost$graphitePost.$name $value %d\n", time);
+    my $valString=(!defined($numpl)) ? sprintf('%d', $value) : sprintf("%.${numpl}f", $value);
+    my $message=sprintf("$graphiteBefore$graphiteMyHost$graphitePost.$name $valString %d\n", time);
     print $message    if $graphiteDebug & 1;
     if (!($graphiteDebug & 8))
     {
       my $bytes=syswrite($graphiteSocket, $message, length($message), 0);
     }
-    $graphiteDataLast[$graphiteDataIndex]=$value;
+    $graphiteDataLast{$name}=$value;
   }
 
   # TTL only applies when in 'CO' mode
   if ($graphiteCOFlag)
   {
-    $graphiteTTL[$graphiteDataIndex]--               if !$valSentFlag;
-    $graphiteTTL[$graphiteDataIndex]=$graphiteTTL    if $valSentFlag || $graphiteTTL[$graphiteDataIndex]==0;
+    $graphiteTTL{$name}--               if !$valSentFlag;
+    $graphiteTTL{$name}=$graphiteTTL    if $valSentFlag || $graphiteTTL{$name}==0;
   }
 }
 
@@ -518,17 +533,20 @@ sub help
 
 usage: --export=graphite,host[:port][,options]
   where each option is separated by a comma, noting some take args themselves
+    b=string    preface each variable name with string
     co          only reports changes since last reported value
     d=mask      debugging options, see beginning of graphite.ph for details
+    f           use fqdn instead of simple hostname for statistics naming
     h           print this help and exit
     i=seconds   reporting interval, must be multiple of collect's -i
     p=text      insert this text right after hostname, including '.' if you want one
     s=subsys    only report subsystems, must be a subset of collectl's -s
     ttl=num     if data hasn't changed for this many intervals, report it
                 only used with 'co', def=5
-    min         report minimal value since last report
-    max         report maximum value since last report
     avg         report average of values since last report
+    max         report maximum value since last report
+    min         report minimal value since last report
+    tot		report total values (as makes sense) since last report
 EOF
 
   print $text;

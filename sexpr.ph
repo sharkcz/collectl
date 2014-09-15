@@ -141,8 +141,13 @@ sub sexprRaw
     if ($subsys=~/d/)
     {
       my ($dRTot, $dRkbTot, $dWTot, $dWkbTot)=(0,0,0,0);
-      for (my $i=0; $i<$NumDisks; $i++)
+      for (my $i=0; $i<@dskOrder; $i++)
       {
+        # preserve display order but skip any disks not seen this interval
+        $dskName=$dskOrder[$i];
+        next    if !defined($dskSeen[$i]);
+        next    if ($dskFiltKeep eq '' && $dskName=~/$dskFiltIgnore/) || ($dskFiltKeep ne '' && $dskName!~/$dskFiltKeep/);
+
         $dRTot+=   $dskFieldsLast[$i][0];
         $dRkbTot+= $dskFieldsLast[$i][2];
         $dWTot+=   $dskFieldsLast[$i][4];
@@ -154,9 +159,14 @@ sub sexprRaw
     if ($subsys=~/D/)
     {
       my ($dName, $dRTot, $dRkbTot, $dWTot, $dWkbTot)=('','','','','');
-      for (my $i=0; $i<$NumDisks; $i++)
+      for (my $i=0; $i<@dskOrder; $i++)
       {
-        $dName.=   "$dskName[$i] ";
+        # preserve display order but skip any disks not seen this interval
+        $dskName=$dskOrder[$i];
+        next    if !defined($dskSeen[$i]);
+        next    if ($dskFiltKeep eq '' && $dskName=~/$dskFiltIgnore/) || ($dskFiltKeep ne '' && $dskName!~/$dskFiltKeep/);
+
+        $dName.=   "$dskName ";
         $dRTot.=   "$dskFieldsLast[$i][0] ";
         $dRkbTot.= "$dskFieldsLast[$i][2] ";
         $dWTot.=   "$dskFieldsLast[$i][4] ";
@@ -270,9 +280,13 @@ sub sexprRaw
     if ($subsys=~/n/)
     {
       my ($kbinT, $pktinT, $kboutT, $pktoutT)=(0,0,0,0);
-      for ($i=0; $i<$netIndex; $i++)
+      for ($i=0; $i<@netOrder; $i++)
       {
-        next    if $netName=~/lo|sit|bond/;  # also filters out 'ibbond'
+        $netName=$netOrder[$i];
+        next    if !defined($netSeen[$i]);
+        next    if ($netFiltKeep eq '' && $netName=~/$netFiltIgnore/) || ($netFiltKeep ne '' && $netName!~/$netFiltKeep/);
+        next    if $netName=~/lo|sit|bond/;
+
         $kbinT+=  $netRxKBLast[$i];
         $pktinT+= $netRxPktLast[$i];
         $kboutT+= $netTxKBLast[$i];
@@ -284,10 +298,14 @@ sub sexprRaw
     if ($subsys=~/N/)
     {
       my ($name, $kbinT, $pktinT, $kboutT, $pktoutT)=('','','','','');
-      for ($i=0; $i<$netIndex; $i++)
+      for ($i=0; $i<@netOrder; $i++)
       {
-        next    if $netName[$i]=~/lo|sit/;
-        $name.=   "$netName[$i] ";
+        $netName=$netOrder[$i];
+        next    if !defined($netSeen[$i]);
+        next    if ($netFiltKeep eq '' && $netName=~/$netFiltIgnore/) || ($netFiltKeep ne '' && $netName!~/$netFiltKeep/);
+        next    if $netName=~/lo|sit/;
+
+        $name.=   "$netName ";
         $kbinT.=  "$netRxKBLast[$i] ";
         $pktinT.= "$netRxPktLast[$i] ";
         $kboutT.= "$netTxKBLast[$i] ";
@@ -314,7 +332,13 @@ sub sexprRaw
   my $tcpString='';
   if ($subsys=~/t/)
   {
-    $tcpString="$pad(tcpinfo (tcppureack $tcpLast[27]) (tcphpack $tcpLast[28]) (tcploss $tcpLast[40]) (tcpftrans $tcpLast[45]))\n";
+    $tcpString="$pad(tcpinfo ";
+    $tcpString.=" (iperrs $ipErrors)"         if $tcpFilt=~/i/;
+    $tcpString.=" (tcperrs $tcpErrors)"       if $tcpFilt=~/t/;
+    $tcpString.=" (udperrs $udpErrors)"       if $tcpFilt=~/u/;
+    $tcpString.=" (icmperrs $icmpErrors)"     if $tcpFilt=~/c/;
+    $tcpString.=" (tcpxerrs $tcpExErrors)"    if $tcpFilt=~/T/;
+    $tcpString.=")\n";
   }
 
   my $intString='';
@@ -460,9 +484,14 @@ sub sexprRate
     if ($subsys=~/D/)
     {
       my ($dName, $dRTot, $dRkbTot, $dWTot, $dWkbTot)=('','','','','');
-      for (my $i=0; $i<$NumDisks; $i++)
+      for (my $i=0; $i<@dskOrder; $i++)
       {
-        $dName.=   "$dskName[$i] ";
+        # preserve display order but skip any disks not seen this interval
+        $dskName=$dskOrder[$i];
+        next    if !defined($dskSeen[$i]);
+        next    if ($dskFiltKeep eq '' && $dskName=~/$dskFiltIgnore/) || ($dskFiltKeep ne '' && $dskName!~/$dskFiltKeep/);
+
+        $dName.=   "$dskName ";
         $dRTot.=   sprintf("%d ", $dskRead[$i]/$intSecs);
         $dRkbTot.= sprintf("%d ", $dskReadKB[$i]/$intSecs);
         $dWTot.=   sprintf("%d ", $dskWrite[$i]/$intSecs);
@@ -525,7 +554,7 @@ sub sexprRate
     }
   }
 
-  my $memString='';
+  my ($memString,$memDetString)=('','');
   if ($subsys=~/m/)
   {
     $memString= "$pad(meminfo (memtot $memTot) (memused $memUsed) (memfree $memFree) ";
@@ -572,15 +601,20 @@ sub sexprRate
     if ($subsys=~/N/)
     {
       my ($name, $kbinT, $pktinT, $kboutT, $pktoutT)=('', '','','','');
-      for ($i=0; $i<$netIndex; $i++)
+      for ($i=0; $i<@netOrder; $i++)
       {
-        next    if $netName[$i]=~/lo|sit/;
-        $name.=  "$netName[$i] ";
+        $netName=$netOrder[$i];
+        next    if !defined($netSeen[$i]);
+        next    if ($netFiltKeep eq '' && $netName=~/$netFiltIgnore/) || ($netFiltKeep ne '' && $netName!~/$netFiltKeep/);
+        next    if $netName=~/lo|sit/;
+
+        $name.=   "$netName ";
         $kbinT.=  sprintf("%d ", $netRxKB[$i]/$intSecs);
         $pktinT.= sprintf("%d ", $netRxPkt[$i]/$intSecs);
         $kboutT.= sprintf("%d ", $netTxKB[$i]/$intSecs);
         $pktoutT.=sprintf("%d ", $netTxPkt[$i]/$intSecs);
       }
+
       $name=~s/ $|://g;    $kbinT=~s/ $//;    $pktinT=~s/ $//; 
       $kboutT=~s/ $//;     $pktoutT=~s/ $//;
       $netDetString= "$pad(netinfo\n";
@@ -602,9 +636,13 @@ sub sexprRate
   my $tcpString='';
   if ($subsys=~/t/)
   {
-    $tcpString=sprintf("$pad(tcpinfo (tcppureack %d) (tcphpack %d) (tcploss %d) (tcpftrans %d))\n",
-	        $tcpValue[27]/$intSecs,  $tcpValue[28]/$intSecs,
-        	$tcpValue[40]/$intSecs,  $tcpValue[45]/$intSecs);
+    $tcpString="$pad(tcpinfo ";
+    $tcpString.=" (iperrs $ipErrors)"         if $tcpFilt=~/i/;
+    $tcpString.=" (tcperrs $tcpErrors)"       if $tcpFilt=~/t/;
+    $tcpString.=" (udperrs $udpErrors)"       if $tcpFilt=~/u/;
+    $tcpString.=" (icmperrs $icmpErrors)"     if $tcpFilt=~/c/;
+    $tcpString.=" (tcpxerrs $tcpExErrors)"    if $tcpFilt=~/T/;
+    $tcpString.=")\n";
   }
 
   my $intString='';
@@ -709,8 +747,16 @@ sub sexprHeaderPrint
         if $subsys=~/n/;
   $sexprHdr.="$pad(sockinfo (sockused val) (socktcp val) (sockorphan val) (socktw val) (sockalloc val) (sockmem val)(sockudp val) (sockraw val) (sockfrag val) (sockfragm val))\n"
         if $subsys=~/s/;
-  $sexprHdr.="$pad(tcpinfo (tcppureack val) (tcphpack val) (tcploss val) (tcpftrans val))\n"
-        if $subsys=~/t/;
+  if ($subsys=~/t/)
+  {
+    $sexprHdr.="$pad(tcpinfo";
+    $sexprHdr.=" (iperrs val)"      if $tcpFilt=~/i/;
+    $sexprHdr.=" (tcperrs val)"     if $tcpFilt=~/t/;
+    $sexprHdr.=" (udperrs val)"     if $tcpFilt=~/u/;
+    $sexprHdr.=" (icmperrs val)"    if $tcpFilt=~/c/;
+    $sexprHdr.=" (tcpxerrs val)"    if $tcpFilt=~/T/;
+    $sexprHdr.=")\n";
+  }
   $sexprHdr.="$pad(iconnect (intkbin val) (intpktin val) (intkbout val) (intpktout val))\n"
         if $subsys=~/x/;
   $sexprHdr.=")\n"    if $XCFlag && $sumFlag;
@@ -740,9 +786,13 @@ sub sexprHeaderPrint
   {
     my $names='';
     $sexprHdr.="$pad(diskinfo\n";
-    for (my $i=0; $i<$NumDisks; $i++)
+    for (my $i=0; $i<@dskOrder; $i++)
     {
-      $names.="$dskName[$i] ";
+      # preserve display order but skip any disks not seen this interval
+      $dskName=$dskOrder[$i];
+      next    if !defined($dskSeen[$i]);
+      next    if ($dskFiltKeep eq '' && $dskName=~/$dskFiltIgnore/) || ($dskFiltKeep ne '' && $dskName!~/$dskFiltKeep/);
+      $names.="$dskName ";
     }
     $sexprHdr.="$pad  (name $names)\n";
     $sexprHdr.="$pad  (reads $names)\n";
@@ -755,10 +805,13 @@ sub sexprHeaderPrint
   {
     my $names='';
     $sexprHdr.="$pad(netinfo\n";
-    for (my $i=0; $i<$NumNets; $i++)
+    for ($i=0; $i<@netOrder; $i++)
     {
-      next    if $netName[$i]=~/lo|sit/;
-      $names.="$netName[$i] ";
+      $netName=$netOrder[$i];
+      next    if !defined($netSeen[$i]);
+      next    if ($netFiltKeep eq '' && $netName=~/$netFiltIgnore/) || ($netFiltKeep ne '' && $netName!~/$netFiltKeep/);
+      next    if $netName=~/lo|sit/;
+      $names.="$netName ";
     }
     $names=~s/://g;
     $sexprHdr.="$pad  (name $names)\n";

@@ -344,8 +344,8 @@ As with client data, when you only get read/write average sizes when
 <div class=terminal-wide14>
 <pre>
 # MEMORY SUMMARY
-#<-------------------------------Physical Memory------------------------------><-----------Swap------------><-------Paging------>
-#   Total    Used    Free    Buff  Cached    Slab  Mapped    Anon  Commit Inact Total  Used  Free   In  Out Fault MajFt   In  Out
+#<-------------------------------Physical Memory-------------------------------------><-----------Swap------------><-------Paging------>
+#   Total    Used    Free    Buff  Cached    Slab  Mapped    Anon  Commit Locked Inact Total  Used  Free   In  Out Fault MajFt   In  Out
 </pre></div>
 
 <table>
@@ -376,6 +376,9 @@ As with client data, when you only get read/write average sizes when
 <tr valign=top><td><b>Commit</b></td>
 <td>Accorting to RedHat: <i>"An estimate of how much RAM you would need to make a 99.99% guarantee
 that there never is OOM (out of memory) for this workload."</i></td></tr>
+
+<tr valign=top><td><b>Locked</b></td>
+<td>Locked Memory</td>
 
 <tr valign=top><td><b>Inactive</b></td>
 <td>Inactive pages.  On ealier kernels this number is the sum of the clean, dirty
@@ -693,20 +696,118 @@ in effect, this number will be equal to the Slabs field reported by -sm.</td></t
 
 <p><h3>TCP, <i>collectl -st</i></h3>
 
+These are the counters one sees when running the command <i>netstat -s</i>, whose output is very verbose.  Since this
+format is an attemt to compress those field names to 6 characters or less, sometime something gets lost in the translation.
+
+As described in the <a href=Data-brief.html>brief</a> data formats, the actual TCP data displayed is based on the value of
+<i>--tcpfilt</i> and like brief data, everything is displayed on a single line which can be quite wide, even more reason to
+use this switch, espcially since the default format is over 200 columns wide!  The following definitions are based the 
+value of that filter:
+
+<p><b>--tcpfilt i</b>
 <div class=terminal-wide14>
 <pre>
-# TCP SUMMARY (/sec)
-# PureAcks HPAcks   Loss FTrans
+# TCP SUMMARY (/sec)# TCP STACK SUMMARY (/sec)
+#<----------------------------------IpPkts----------------------------------->
+# Receiv Delivr Forwrd DiscdI InvAdd   Sent DiscrO ReasRq ReasOK FragOK FragCr
 </pre></div>
 
 <table>
-<tr><td><b>PureAcks</b></td><td>ACKs/sec that only contain acks (ie no data).</td></tr>
-<tr><td><b>HPAcks</b></td><td>Fast-path acks/sec.</td></tr>
-<tr><td><b>Loss</b></td><td>Packets/sec TCP thinks have been lost coming in.</td></tr>
-<tr><td><b>FTrans</b></td><td>Fast retransmissions/sec.</td></tr>
+<tr><td><b>Receiv</b><td></td><td>- total packets received/sec</td></tr>
+<tr><td><b>Delivr</b><td></td><td>- incoming packets delivered/sec</td></tr>
+<tr><td><b>Forwrd</b><td></td><td>- packets forwarded</td></tr>
+<tr><td><b>DiscdI</b><td></td><td>- discarded incoming packets</td></tr>
+<tr><td><b>InvAdd</b><td></td><td>- packets received with invalid addresses</td></tr>
+<tr><td><b>Sent</b><td></td><td>  - requests sent out/sec</td></tr>
+<tr><td><b>DiscrO</b><td></td><td>- discarded outbound requests</td></tr>
+<tr><td><b>ReasRq</b><td></td><td>- reassembled requests</td></tr>
+<tr><td><b>ReasOK</b><td></td><td>- reassembled OK</td></tr>
+<tr><td><b>FragOK</b><td></td><td>- fragments received OK</td></tr>
+<tr><td><b>FragCr</b><td></td><td>- fragments created</td></tr>
 </table>
 
-<table width=100%><tr><td align=right><i>updated September 29, 2011</i></td></tr></colgroup></table>
+<p><b>--tcpfilt t</b>
+<div class=terminal-wide14>
+<pre>
+# TCP SUMMARY (/sec)# TCP STACK SUMMARY (/sec)
+#<---------------------------------Tcp--------------------------------->
+# ActOpn PasOpn Failed ResetR  Estab   SegIn SegOut SegRtn SegBad SegRes
+</pre></div>
+
+<table>
+<tr><td><b>ActOpn</b></td><td>- active connections opened/sec</td></tr>
+<tr><td><b>PasOpn</b></td><td>- passive connection opened/sec</td></tr>
+<tr><td><b>Failed</b></td><td>- failed connection attempts</td></tr>
+<tr><td><b>ResetR</b></td><td>- connection resets received</td></tr>
+<tr><td><b>Estab</b></td><td> - connections established</td></tr>
+<tr><td><b>SegIn</b></td><td> - segments received/sec</td></tr>
+<tr><td><b>SegOut</b></td><td>- segments sent out/sec</td></tr>
+<tr><td><b>SegRtn</b></td><td>- segments retransmitted</td></tr>
+<tr><td><b>SegBad</b></td><td>- bad segments received</td></tr>
+<tr><td><b>SegRes</b></td><td>- resets sent</td></tr>
+</table>
+
+<p><b>--tcpfilt u</b>
+<div class=terminal-wide14>
+<pre>
+# TCP SUMMARY (/sec)# TCP STACK SUMMARY (/sec)
+#<------------Udp----------->
+#  InDgm OutDgm NoPort Errors
+</pre></div>
+
+<table>
+<tr><td><b>InDgm</b></td><td>- packets received/sec</tr>
+<tr><td><b>OutDgm</b></td><td>- packets sent/sec</tr>
+<tr><td><b>NoPort</b></td><td>- packets received to unknown port</tr>
+<tr><td><b>Errors</b></td><td>- packet receive errors</tr>
+</table>
+
+<p><b>--tcpfilt c</b>
+<div class=terminal-wide14>
+<pre>
+# TCP SUMMARY (/sec)# TCP STACK SUMMARY (/sec)
+#<----------------------------Icmp--------------------------->
+# Recvd FailI UnreI EchoI ReplI  Trans FailO UnreO EchoO ReplO
+</pre></div>
+
+<table>
+<tr><td><b>Recvd</b></td><td>- ICMP messages received</td></tr>
+<tr><td><b>FailI</b></td><td>- incoming ICMP messages failed</td></tr>
+<tr><td><b>UnreI</b></td><td>- input destination unreachable</td></tr>
+<tr><td><b>EchoI</b></td><td>- input echo requests</td></tr>
+<tr><td><b>ReplI</b></td><td>- input echo reploes</td></tr>
+<tr><td><b>Trans</b></td><td>- ICMP messages sent</td></tr>
+<tr><td><b>FailO</b></td><td>- outbound ICMP messages failed</td></tr>
+<tr><td><b>UnreO</b></td-><td>- output destination unreachable</td></tr>
+<tr><td><b>EchoO</b></td><td> - output echo requests</td></tr>
+<tr><td><b>ReplO</b></td><td> - output echo replies</td></tr>
+</table>
+
+<p><b>--tcpfilt T</b>
+<div class=terminal-wide14>
+<pre>
+# TCP SUMMARY (/sec)# TCP STACK SUMMARY (/sec)
+#<------------------------------------------TcpExt----------------------------------------->
+# FasTim Reject DelAck QikAck PktQue PreQuB HdPdct AkNoPy PreAck DsAcks RUData REClos  SackS
+</pre></div>
+
+<table>
+<tr><td><b>FasTim</b></td><td>- TCP sockets finished time wait in fast timer</td></tr>
+<tr><td><b>Reject</b></td><td>- packet rejects in established connections because of timestamp</td></tr>
+<tr><td><b>DelAck</b></td><td>- delayed ACKs sent</td></tr>
+<tr><td><b>QikAck</b></td><td>- times quick ACK mode activated </td></tr>
+<tr><td><b>PktQue</b></td><td>- packets directly queued to recvmsg prequeue</td></tr>
+<tr><td><b>PreQuB</b></td><td>- bytes directly received in process context from prequeue</td></tr>
+<tr><td><b>HdPdct</b></td><td>- packet headers predicted</td></tr>
+<tr><td><b>AkNoPy</b></td><td>- acknowledgements for received packets not containing data </td></tr>
+<tr><td><b>PreAck</b></td><td>- predicted acknowledgements</td></tr>
+<tr><td><b>DsAcks</b></td><td>- DSACKS sent for old packets</td></tr>
+<tr><td><b>RUData</b></td><td>- connections reset to do unexpected data</td></tr>
+<tr><td><b>REClos</b></td><td>- connections reset due to early close</td></tr>
+<tr><td><b>SackS</b></td><td>- SackShiftFallback</td></tr>
+</table>
+
+<table width=100%><tr><td align=right><i>updated November 9, 2011</i></td></tr></colgroup></table>
 
 </body>
 </html>

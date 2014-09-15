@@ -13,9 +13,7 @@ collectl will force --verbose format.
 
 <h3>Buddy (Memory Fragmentation) Data, <i>collectl -sB</i></h3>
 <p>
-This data does not appear on systems running 2.4 kernels and is an 11 character
-field, one character for each column of summary data.  The smaller the value
-the more accuracy as follows:
+The smaller the value the more accuracy as follows:
 <ul>
 <li>0-9 are represented by the digits 0 through 9</li>
 <li>10-99 by the letters a through i</li>
@@ -69,17 +67,9 @@ field.</td>
 <p>
 <h3>Disk, <i>collectl -sd</i></h3>
 <p>
-There are currently 3 places that collectl can gather disk performance data from.
-Fortunately you don't really have to worry about it unless you really care.
-In the 2.4 kernel, the most detailed disk data is stored in /proc/partitions and that
-is indeed where collectl tries to get it from.  However, some older kernels may not
-have been configured to provide this data in which case collectl will grab less 
-detailed data from /proc/stat.  In the 2.6 kernel, performance data has been moved 
-from /proc/partitions to /proc/diskstats and so it is gathered from there.
-<p>
-In any event, regardless of where the data comes from it is all presented in the same
-format.  This means some fields may be 0 (2.4 kernels and /proc/stat) when displayed
-with --verbose, but it is expected few systems will fall into this category.
+If you specify filtering with <i>--dskfilt</i>, the disks that match the pattern(s)
+will either be included or excluded from the the summary data.  However, the data will
+<i>still</i> be collected so if recorded to a file can later be viewed.
 
 <div class=terminal>
 <pre>
@@ -92,11 +82,11 @@ with --verbose, but it is expected few systems will fall into this category.
 <tr><td><b>KBRead</b></td><td>KB read/sec</td></tr>
 <tr><td><b>Reads</b></td><td>Number of reads/sec</td></tr>
 <tr><td><b>Size</b></td><td>Average read size in KB.  This field only included 
-if <i>--iosize</i> specified</td></tr>
+if <i>--dskopts i</i> or <i>--iosize</i> specified</td></tr>
 <tr><td><b>KBWrite<b></td><td>KB written/sec</td></tr>
 <tr><td><b>Writes</b></td><td>Number of writes/sec</td></tr>
 <tr><td><b>Size</b></td><td>Average write size in KB.  This field only included 
-if <i>--iosize</i> specified</td></tr>
+if <i>--dskopts i</i> or <i>--iosize</i> specified</td></tr>
 </table>
 <p>
 <h3>Infiniband, <i>collectl -sx</i></h3>
@@ -112,14 +102,28 @@ if <i>--iosize</i> specified</td></tr>
 <tr><td><b>KBIn</b></td><td>KB received/sec.</td></tr>
 <tr><td><b>PckIn</b></td><td>Packets received/sec.</td></tr>
 <tr><td><b>Size</b></td><td>Average incoming packet size in KB.  This field is only
-included if <i>--iosize</i> included</td></tr>
+included if <i>--xopts i</i> or <i>--iosize</i> included</td></tr>
 <tr><td><b>KBOut</b></td><td>KB sent/sec.</td></tr>
 <tr><td><b>PktOut</b></td><td>Packets sent/sec.</td></tr>
 <tr><td><b>Size</b></td><td>Average outgoing packet size in KB.  This field is only
-included if <i>--iosize</i> included</td></tr>
+included if <i>--xopts i</i> or <i>--iosize</i> included</td></tr>
 <tr valign=top><td><b>Errs</b></td><td>Count of current errors.  Since these 
 are typically infrequent, it is felt that reporting them as a rate would result 
 in either not seeing them OR round-off hiding their values.</td></tr>
+</table>
+
+<p><h3>Inodes/Filesystem, <i>collectl -si</i></h3>
+
+<div class=terminal>
+<pre>
+#<----Files--->
+#Handle Inodes
+   5100 116110
+</pre></div>
+
+<table>
+<tr><td><b>Handles</b></td><td>Number of allocated file handles</td></tr>
+<tr><td><b>Inodes</b></td><td>Number of inodes in use</td></tr>
 </table>
 
 <p><h3>Lustre</b></h3>
@@ -250,8 +254,12 @@ rather than absolute values.  This switch will also honor <i>-on</i> in that the
 be normalized to a rate but rather displayed as changes in size per interval.
 
 <p><h3>Network, <i>collectl -sn</i></h3>
-
-Be sure to keep in mind that like all other data, network counters are always normalized
+<p>
+If you specify filtering with <i>--netfilt</i>, the names that match the pattern(s)
+will either be included or excluded from the the summary data.  However, the data will
+<i>still</i> be collected so if recorded to a file can later be viewed.
+<p>
+Also be sure to keep in mind that like all other data, network counters are always normalized
 to /sec rates.  This means that something like errors, which themselves might be really
 small, could be reported as 0 if less than 1/2 the sampling interval.  To see unnormalized
 values use <i>-on</i>.
@@ -268,11 +276,11 @@ values use <i>-on</i>.
 excludes 'lo' and 'sit'.</td></tr>
 <tr><td><b>PktIn</b></td><td>Packets received/sec over all real network interfaces.</td></tr>
 <tr><td><b>Size</b></td><td>Average incoming packet size in bytes.  This field is only included
-if <i>--iosize</i> specified</td></tr>
+if <i>--netopts i</i> or <i>--iosize</i> specified</td></tr>
 <tr><td><b>KBOut</b></td><td>KB sent/sec over all real network interfaces.</td></tr>
 <tr><td><b>PktOut</b></td><td>Packets sent/sec over all real network interfaces.</td></tr>
 <tr><td><b>Size</b></td><td>Average outgoing packet size in bytes.  This field is only included
-if <i>--iosize</i> specified</td></tr>
+if <i>--netopts i</i> or <i>--iosize</i> specified</td></tr>
 <tr valign=top><td><b>Error</b></td><td>Total incoming/outgoing errors/sec.  To see individual error counts, use <i>--verbose</i>.
 This field is only included if <i>--netopts e</i> specified</td></tr>
 </table>
@@ -346,7 +354,7 @@ not all types of nfs version report all as V3 clients/servers do.</td></tr>
 <tr><td><b>FTrans</b></td><td>Fast retransmissions/sec.</td></tr>
 </table>
 
-<table width=100%><tr><td align=right><i>updated May 12, 2011</i></td></tr></colgroup></table>
+<table width=100%><tr><td align=right><i>updated September 29, 2011</i></td></tr></colgroup></table>
 
 </body>
 </html>

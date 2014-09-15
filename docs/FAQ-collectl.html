@@ -26,6 +26,13 @@
   <li><a href="#run7">What are the differences between --rawtoo, --lexpr and --sexpr</a></li>
   <li><a href="#run8">How can I pass collectl data to other applications?</a></li>
 </ul>
+
+<h2>Gottchas - what you don't know <i>can</i> hurt you<img src=new.gif></h2>
+<ul>
+  <li><a href="#got1">Round-off vs normalization</a></li>
+</ul>
+</h2>
+
 <h2>Operational Problems</h2>
 <ul>
   <li><a href="#ops1">Why won't collectl run as a service?</a></li>
@@ -249,6 +256,25 @@ If you do choose to use it, the arguments to readS take the following form:
 Detailed customization instructions for use of data returned by <i>readS</i> 
 is beyond the scope of this FAQ.
 
+<h1>Gottchas</h1>
+This section is for those things people might otherwise miss in the FAQ and Shouldn't, because
+they can cause misunderstanding of what is being reported.
+
+<a name="got1"></a>
+<h2>Round-off vs normalization</h2>
+
+Since most of the numbers collectl reports are large, certainly greater than the number of
+seconds in an interval,  they are not effected and so this is rarely an issue.  However there 
+are values that can be quite low such as the number of processes created/second or network errors.
+This can also be the case for many of the nfs metadata operations counters, some of which report
+values as low as 1 over many minutes.
+The issue is if you're looking at data at some inteval other than 1 second, the result of dividing
+these numbers by the interval size can result in values less than 0.5 and since collectl rounds off,
+those values would be reported as 0 and you could miss a critial data point.  If you
+tell collectl not to normalize the data, in other words NOT to divide the the interval, you'll
+always see the actual numbers.  However, since most people prefer values/sec, it's easy to
+forget.  Try not to...
+
 <h1>Operational Problems</h1>
 
 <a name="ops1"></a>
@@ -362,9 +388,9 @@ here.</a>
 <p>
 The way collectl determines a record is bogus is to look at the transmit and receive 
 rates for each interface and compare them to the speed of that interface
-(from ethtool <i>and</i> if running as <i>root</i> OR ELSE it uses
+(from ethtool <i>and</i> if running as <i>root</i> OR it uses
 the value of <i>DefNetSpeed</i> which can be overridden in collectl.conf).
-It either exceeds twice the inteface rate, the record is considered bogus
+It either exceeds twice the interface rate, the record is considered bogus
 and ignored.  This will cause collectl to report the previous rate
 for this interval.  While not foolproof, it is hoped this will reduce the
 frequency of this type of data.

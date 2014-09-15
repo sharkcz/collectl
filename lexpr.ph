@@ -240,31 +240,46 @@ sub lexpr
     }
   }
 
-  my $memString='';
-  if ($lexSubsys=~/m/)
+  my ($memString, $memDetString)=('','');
+  if ($lexSubsys=~/m/i)
   {
-    $memString.=sendData("meminfo.tot", $memTot);
-    $memString.=sendData("meminfo.used", $memUsed);
-    $memString.=sendData("meminfo.free", $memFree);
-    $memString.=sendData("meminfo.shared", $memShared);
-    $memString.=sendData("meminfo.buf", $memBuf);
-    $memString.=sendData("meminfo.cached", $memCached);
-    $memString.=sendData("meminfo.slab", $memSlab);
-    $memString.=sendData("meminfo.map", $memMap);
-    $memString.=sendData("meminfo.inactive", $memInact);
-    $memString.=sendData("meminfo.hugetot", $memHugeTot);
-    $memString.=sendData("meminfo.hugefree", $memHugeFree);
-    $memString.=sendData("meminfo.hugersvd", $memHugeRsvd);
-    $memString.=sendData("meminfo.sunreclaim", $memSUnreclaim);
-    $memString.=sendData("swapinfo.total", $swapTotal);
-    $memString.=sendData("swapinfo.free", $swapFree);
-    $memString.=sendData("swapinfo.used", $swapUsed);
-    $memString.=sendData("swapinfo.in", $swapin/$intSecs);
-    $memString.=sendData("swapinfo.out", $swapout/$intSecs);
-    $memString.=sendData("pageinfo.fault", $pagefault/$intSecs);
-    $memString.=sendData("pageinfo.majfault", $pagemajfault/$intSecs);
-    $memString.=sendData("pageinfo.in", $pagein/$intSecs);
-    $memString.=sendData("pageinfo.out", $pageout/$intSecs);
+    if ($lexSubsys=~/m/)
+    {
+      $memString.=sendData("meminfo.tot", $memTot);
+      $memString.=sendData("meminfo.used", $memUsed);
+      $memString.=sendData("meminfo.free", $memFree);
+      $memString.=sendData("meminfo.shared", $memShared);
+      $memString.=sendData("meminfo.buf", $memBuf);
+      $memString.=sendData("meminfo.cached", $memCached);
+      $memString.=sendData("meminfo.slab", $memSlab);
+      $memString.=sendData("meminfo.map", $memMap);
+      $memString.=sendData("meminfo.dirty", $memDirty);
+      $memString.=sendData("meminfo.inactive", $memInact);
+      $memString.=sendData("meminfo.hugetot", $memHugeTot);
+      $memString.=sendData("meminfo.hugefree", $memHugeFree);
+      $memString.=sendData("meminfo.hugersvd", $memHugeRsvd);
+      $memString.=sendData("meminfo.sunreclaim", $memSUnreclaim);
+      $memString.=sendData("swapinfo.total", $swapTotal);
+      $memString.=sendData("swapinfo.free", $swapFree);
+      $memString.=sendData("swapinfo.used", $swapUsed);
+      $memString.=sendData("swapinfo.in", $swapin/$intSecs);
+      $memString.=sendData("swapinfo.out", $swapout/$intSecs);
+      $memString.=sendData("pageinfo.fault", $pagefault/$intSecs);
+      $memString.=sendData("pageinfo.majfault", $pagemajfault/$intSecs);
+      $memString.=sendData("pageinfo.in", $pagein/$intSecs);
+      $memString.=sendData("pageinfo.out", $pageout/$intSecs);
+    }
+
+    if ($lexSubsys=~/M/)
+    {
+      for (my $i=0; $i<$CpuNodes; $i++)
+      {
+        foreach my $field ('used', 'free', 'slab', 'map', 'anon', 'act', 'inact')
+        {
+          $memDetString.=sendData("numainfo.$field.$i", $numaMem[$i]->{$field});
+        }
+      }
+    }
   }
 
   my ($netSumString,$netDetString)=('','');
@@ -381,7 +396,7 @@ sub lexpr
   $lexprRec.=$lexprExtString;
 
   $lexprRec.="sample.time $lastSecs[$rawPFlag]\n"   if !$lexSumFlag;
-  $lexprRec.="$cpuDetString$diskDetString$netDetString$impDetString";
+  $lexprRec.="$cpuDetString$diskDetString$memDetString$netDetString$impDetString";
 
   # Either send data over socket or print to terminal OR write to
   # a file, but not both!

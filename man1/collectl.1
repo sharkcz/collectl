@@ -1,18 +1,16 @@
 .TH COLLECTL 1 "APRIL 2003" LOCAL "Collectl" -*- nroff -*-
 .SH NAME
-
-.B collectl
 collectl - Collects data that describes the current system status.
 
 .SH SYNOPSIS
 Record Mode - read data from live system and write to file or display on terminal
 
-.B collectl [-f file] [options]
+.B collectl [\-f file] [options]
 
-Playback Mode - read data from one or more raw data files and display
+Playback Mode \- read data from one or more raw data files and display
 on terminal
 
-.B collectl -p file1 [file2 ...] [options]
+.B collectl \-p file1 [file2 ...] [options]
 
 .SH OPTIONS
 
@@ -40,13 +38,13 @@ delay the start of sampling up to 2 full process monitoring intervals.
 Collect summary data for ALL subsystems except slabs, since slab monitoring requires
 a different monitoring interval.  This also means you won't get any detail data which
 also includes processes and environmementals.
-You can use this switch anywhere -s can be used
+You can use this switch anywhere \-s can be used
 but not both together.  If the system supports lustre and/or interconnect monitoring
 those statistics will be provided but the warnings produced when they are not 
-available you try to select them with -s will not be displayed.
+available you try to select them with \-s will not be displayed.
 .RE
 
-.B "-A, --address address[:port] | server[:port]"
+.B "\-A, --address address[:port] | server[:port]"
 .RS
 In the first form, one species an address or hostname and optional port.
 All data is then written to that socket prefaced with the current host
@@ -60,25 +58,25 @@ if the client exists collectl keeps running and will again look for a
 new connection, allowing it to survive client restarts or crashes.
 If collectl receives the text "exit" from the client, it will shut down.
 
-The default port is set at 2655 but can be changed - see collectl.conf.  
+The default port is set at 2655 but can be changed \- see collectl.conf.  
 
 In both forms, one can additionally request local data logging by 
-specifying a combination of -P and -f.  See
+specifying a combination of \-P and \-f.  See
 .B "man collectl-logging"
 for more details.
 .RE
 
-.B "-c, --count Samples"
+.B "\-c, --count Samples"
 .RS
 The number of samples to record. This is one way of 3 ways of describing
 how long collectl should run (see
-.BR -r
+.BR \-r
 and
-.BR -R
+.BR \-R
 ).  Note that these 3 switches are mutually exclusive.
 .RE
 
-.B "-C, --config filename"
+.B "\-C, --config filename"
 .RS
 Name/location of the collectl configuration file.
 If not specified, 
@@ -90,7 +88,7 @@ first in /etc (the default), then in the same directory the
 executable is in, and finally the current working directory.
 .RE
 
-.B "-D, --daemon"
+.B "\-D, --daemon"
 .RS
 Run
 .BR collectl
@@ -110,7 +108,7 @@ simply  "file"(@options) to generate the exported formatted output.  See the doc
 sections on Exporting Custom Output and Logging for more details.
 .RE
 
-.B "-f, --filename Filename"
+.B "\-f, --filename Filename"
 .RS
 This is the name of a file to write the output to.  See the
 description of
@@ -119,11 +117,11 @@ description of
 for further details.
 .RE
 
-.B -F, --flush seconds
+.B \-F, --flush seconds
 .RS
 Flush output buffers after this number of seconds.  This is equivalent to 
 issuing 
-.B kill -s USR1
+.B kill \-s USR1
 at the same frequency (but a lot easier!).  If 0, a flush will occur every
 data collection interval.
 .RE
@@ -140,7 +138,7 @@ to be of any real value.  This switch does just that and then some.
 Specifically, it allows you to playback a file and instead of processing it normally
 it simply searches for any entries that match the perl pattern and reports those
 lines prefaced with time stamps.  You can optionally change the time format
-with the usual -o options and can even select the timeframe with --from and --thru.
+with the usual \-o options and can even select the timeframe with --from and --thru.
 .RE
 
 .B --home
@@ -150,13 +148,13 @@ also known as the home position (non-plot format only).  This generates a
 real-time, continously refreshing display when the data fits on a single screen.
 .RE
 
-.B "-i, --interval interval[:interval2[:interval3]]"
+.B "\-i, --interval interval[:interval2[:interval3]]"
 .RS
 This is the sampling interval in seconds.  The default is 10 seconds when run
-as a daemon and 1 second otherwise.  The process subsystem and slabs (-sY and -sZ)
+as a daemon and 1 second otherwise.  The process subsystem and slabs (\-sY and \-sZ)
 are sampled at the lower rate of
 .BR interval2.
-Environmentals (-sE), which only apply to a subset of hardware, are sampled at
+Environmentals (\-sE), which only apply to a subset of hardware, are sampled at
 .BR interval3.
 Both
 .BR interval2
@@ -164,12 +162,12 @@ and
 .BR interval3,
 if specified, must be an even multiple of 
 .BR interval1.
-The daemon default is -i10:60:300 and all other modes are -i1:60:300.  
+The daemon default is \-i10:60:300 and all other modes are \-i1:60:300.  
 To sample only processes once every 10 seconds 
-use -i:10.
+use \-i:10.
 .RE
 
-.B "-r, --rolllogs time[[,days][,minutes]]"
+.B "\-r, --rolllogs time[[,days][,minutes]]"
 .RS
 When selected, 
 .BR collectl
@@ -186,25 +184,25 @@ an individual collection file in minutes the default of which is 1440 or 1 day.
 .B "--quiet"
 .RS
 Whenever collectl wants to tell the user something, it assigns a category to it such as
-Informational, Warning, Error or Fatal.  When run with -m, all messages are displayed 
-for the user and if logging data to a file with -f, these messages are also sent to a
+Informational, Warning, Error or Fatal.  When run with \-m, all messages are displayed 
+for the user and if logging data to a file with \-f, these messages are also sent to a
 log file which is in the data collection directory and has an extenion of "log".  
-However, if -m is not specified Informational messages (such as collectl starting
+However, if \-m is not specified Informational messages (such as collectl starting
 or stopping) are not reported on the terminal but the other 3 are.  Sometimes the 
 warnings can be annoying and one can suppress these with --quiet though they will still be
-written to the message log in -f.  You cannot suppress Error or Fatal errors.
+written to the message log in \-f.  You cannot suppress Error or Fatal errors.
 .RE
 
 .B "--rawtoo"
 .RS
-Only available in conjunction with -P, this switch causes the creation/logging
+Only available in conjunction with \-P, this switch causes the creation/logging
 of raw data in addition to plottable data.  While this may seem excessive,
 keep in mind that unlike plottable data, raw data can be played back with different
 switches potentially providing more details.  The overhead to write out this 
 additional data is minimal, the only real cost being that of extra disk space.
 .RE
 
-.B "-R, --runtime duration"
+.B "\-R, --runtime duration"
 .RS
 Specify the duration of data collection where the duration is a number followed
 by one of 
@@ -215,7 +213,7 @@ the collection is to be taken for.
 
 .B "--sep separator"
 .RS
-Specify the plot format separator - default is a space.  If this is a numeric field it is 
+Specify the plot format separator \- default is a space.  If this is a numeric field it is 
 interpretted as the decimal value of the associated ASCII character code.  Otherwise it
 is interpretted as the character itself.  In other words, "--sep :" sets the separator 
 character to a colon and "--sep 9" sets it to a horizontal tab.  "--sep 58" would also
@@ -233,10 +231,10 @@ as well but NOT collectl, unless --s is specified.
 
 .B --tworaw
 .RS
-The switches -G and --group have been replaced by --rawtoo, which is more rescriptive of
-its function.  When specified, it tells collectl to treat process and slab data as an 
-entirely separate of raw files, named with the extention "rawp".  These separate files 
-can be played back and processed just like any other collectl raw files and in fact one 
+The switches \-G and --group have been replaced by --rawtoo, which is more rescriptive of
+its function.  When specified, it tells collectl to treat process and slab data as an
+entirely separate group of raw files, named with the extention "rawp".  These separate files
+can be played back and processed just like any other collectl raw files and in fact one
 can even play back both at the same time if that is what is
 desired.  The only real purpose of this switch is that on some systems with many processes, it is
 possible to generate huge raw files (some have been observerd to be >250MB!) and while collectl
@@ -250,12 +248,30 @@ Playback Mode
 In this mode, data is read from one or more data files that were
 generated in Record Mode
 
-.B "-f, --filename Filename"
+.B "--export Filename"
+.RS
+When playing back a file, use this switch to create an identical raw file differing only in
+the timeframe being convered, so naturally one must also include --from, --thru or both.
+Further, since the resultant file will contain the exact same raw data you cannot select a
+subset using \-s.  This switch is actually intended for a support function for situations
+where somone is having problems playing back a file and a subset of the original raw file
+that covers the problem time has been requested, hopefully allowing a significantly 
+file to be posted or emailed.
+.RE
+
+.B "--extract filename"
+.RS
+If specified, rather than actually play back the file specified with \-p, ALL raw data between
+the date ranges is selected and a subset of that raw file created.  The rules for how to interpret
+the filename are the same as used for \-f.
+.RE
+
+.B "\-f, --filename filename"
 .RS
 If specified, this is the name of a file or directory 
 to write the output to (rather than
 the terminal).  See the description for details on the format of this field.
-This requires the -P flag as well.
+This requires the \-P flag as well.
 .RE
 
 .B "--from time range"
@@ -264,7 +280,7 @@ Play back data starting with this time, which may optionally include the ending
 time as well, which is of the format of [date:]time[-[date:]time].
 The leading 0 of the hour is optional and if the seconds field is not specified
 is assumed to be 0.  If no dates specified the time(s) apply to each file specified
-by -P.  Otherwise the time(s) only apply to the first/last dates and any files
+by \-P.  Otherwise the time(s) only apply to the first/last dates and any files
 between those dates will have all their data reported. 
 .RE
 
@@ -295,13 +311,13 @@ this happens one may have to play back the samples in pieces and manually set
 the time offset.
 .RE
 
-.B "-p, --playback Filename"
+.B "\-p, --playback Filename"
 .RS
 Read data from the specified 
 .BR playback
 file(s), noting that one can use wildcards in the filename if
 quoted (if playing back multiple files to the terminal you probably
-want to include -m to see the filenames as they are processed).
+want to include \-m to see the filenames as they are processed).
 The filename must either end 
 in 
 .BR raw
@@ -332,16 +348,16 @@ with one entry unique slab containing data on physical memory usage by that slab
 Time thru which to play back a raw file.  See --from for more
 .RE
 
-Common Switches - both record and playback modes
+Common Switches \- both record and playback modes
 .RE
 
-.B "-d, --debug debug"
+.B "\-d, --debug debug"
 .RS
 Control the level of debugging information, not typically used.  For details
 see the source code.
 .RE
 
-.B -h, --help, -x, --helpext, -X, --helpall
+.B \-h, --help, \-x, --helpext, \-X, --helpall
 .RS
 Display standard, extended help message (which doesn't include the optional displays
 such as --showoptions, --showsubsys, --showsubopts, --showtopopts) or everything.
@@ -350,7 +366,7 @@ such as --showoptions, --showsubsys, --showsubopts, --showtopopts) or everything
 .B --hr, --headerrepeat num
 .RS
 Sets the number of intervals to display data for before repeating the header.
-A value -1 will prevent any headers from being displayed and a value of 0
+A value \-1 will prevent any headers from being displayed and a value of 0
 will cause only a single header to be displayed and never repeated.
 .RE
 
@@ -359,7 +375,7 @@ will cause only a single header to be displayed and never repeated.
 In brief mode, include iosize with disk, infiniband and network data.
 .RE
 
-.B -l, --limits limit
+.B \-l, --limits limit
 .RS
 Override one or more default exception limits.  If more than one limit they
 must be separated by hyphens.  Current values are:
@@ -397,30 +413,30 @@ is the default value and is only included for completeness.
 Report device activity if either IOS or SVC thresholds are reached.
 .RE
 
-.B -L, --lustsvcs [c|m|o][:seconds]
+.B \-L, --lustsvcs [c|m|o][:seconds]
 .RS
 This switch limits which servics lustre checks for and the frequency of those checks.
-For more information see the man page collectl-lustre.
+For more information see the man page collectl\-lustre.
 .RE
 
 .RE
-.B -m, --messages
+.B \-m, --messages
 .RS
 Write status to a monthly log file in the same directory as the output file 
-(requires -f to be specified as well).  The name of the file will be 
-.BR collectl-yyyymm.log
+(requires \-f to be specified as well).  The name of the file will be 
+.BR collectl\-yyyymm.log
 and will track various messages that may get generated during every run of 
 .BR collectl.
 .RE
 
-.B -N, --nice
+.B \-N, --nice
 .RS
 Set priority to a 
 .BR nicer
 one of 10.
 
 .RE
-.B "-o, --options Options"
+.B "\-o, --options Options"
 .RS
 These apply to the way output is displayed OR written to a plot file.  They
 do not effect the way data is selected for recording.  Most of these switches
@@ -521,7 +537,7 @@ in the name.  This forces
 multiple collections taken the same day to be written to multiple files.
 .RE
 
-.B "U or --utc"
+.B "\-U or --utc"
 .RS
 In plot format only, report timestamps in Coordinated Universal time which is more
 commonly know as UTC.
@@ -555,7 +571,7 @@ a warning which can be suppressed with this switch.
 .RE
 
 .RE
-.B -P, --plot
+.B \-P, --plot
 .RS
 Generate output in plot format.  This format is space separated data which 
 consists of a header (prefaced with a # for easy identification by an analysis
@@ -570,60 +586,60 @@ file and the
 .BR detail
 elements written to one or
 more files, one per detail subsystem.  
-If -f is not specified, all output is sent to the terminal.  
+If \-f is not specified, all output is sent to the terminal.  
 Output is always one line per sampling interval.
 .RE
 
-.B "-s, --subsys subsystem"
+.B "\-s, --subsys subsystem"
 .RS
 This field controls which subsystem data is to be collected or played back
 for. The rules for displaying results vary depending on the type of data to be
 displayed.  If you write data for CPUs and DISKs to a raw file and play it back
-with -sc, you will only see CPU data.  If you play it back with -scm you will
+with \-sc, you will only see CPU data.  If you play it back with \-scm you will
 still only see CPU data since memory data was not collected.  However, when 
-used with -P, collectl will always honor the subsystems specified with 
+used with \-P, collectl will always honor the subsystems specified with 
 this switch so in the previous example you will see CPU
 data plus memory data of all 0s.  To see the current set of default subsystems,
 which are a subset of this full list,
-use -h.
+use \-h.
 
-You can also use + or - to add or subtract subsystems to/from the default values. 
-For example, "-s-cdn+N"< will remove cpu, disk and network monitoring from the
+You can also use + or \- to add or subtract subsystems to/from the default values. 
+For example, "\-s\-cdn+N"< will remove cpu, disk and network monitoring from the
 defaults while adding network detail.
 
-The default is "cdn", which stands for CPU, Disk and Network data.
+The default is "cdn", which stands for CPU, Disk and Network summary data.
 
 Refer to data definitions on the sourceforge website OR in 
-/usr/share/collectl/doc/collectl-xxx to see complete descriptions of the data returned.
+/usr/share/collectl/doc/collectl\-xxx to see complete descriptions of the data returned.
 
 SUMMARY SUBSYSTEMS
 
 .br
-b - buddy info (memory fragmentation)
+b \- buddy info (memory fragmentation)
 .br
-c - CPU
+c \- CPU
 .br
-d - Disk
+d \- Disk
 .br
-f - NFS V3 Data
+f \- NFS V3 Data
 .br
-i - Inode and File System
+i \- Inode and File System
 .br
-j - Interrupts
+j \- Interrupts
 .br
-l - Lustre
+l \- Lustre
 .br
-m - Memory
+m \- Memory
 .br
-n - Networks
+n \- Networks
 .br
-s - Sockets
+s \- Sockets
 .br
-t - TCP
+t \- TCP
 .br
-x - Interconnect
+x \- Interconnect
 .br
-y - Slabs (system object caches)
+y \- Slabs (system object caches)
 
 DETAIL SUBSYSTEMS
 
@@ -633,37 +649,39 @@ data from which in most cases the corresponding summary data is
 derived.  There are currently 2 types that do not have corresponding summary
 data and those are "Environmental" and "Process".  So, if one has 3 disks
 and chooses 
-.B -sd,
+.B \-sd,
 one will only see a single total taken
 across all 3 disks.  If one
 chooses 
-.B -sD,
+.B \-sD,
 individual disk totals will be reported but no totals.  Choosing 
-.B -sdD
+.B \-sdD
 will get you both.
 
 .br
-C - CPU
+C \- CPU
 .br
-D - Disk
+D \- Disk
 .br
-E - Environmental data (fan, power, temp),  via ipmitool
+E \- Environmental data (fan, power, temp),  via ipmitool
 .br
-F - NFS Data
+F \- NFS Data
 .br
-J - Interrupts
+J \- Interrupts
 .br
-L - Lustre OST detail OR client Filesystem detail
+L \- Lustre OST detail OR client Filesystem detail
 .br
-N - Networks
+M \- Memory node data, which is also known as numa data
 .br
-T - 65 TCP counters only available in plot format
+N \- Networks
 .br
-X - Interconnect
+T \- 65 TCP counters only available in plot format
 .br
-Y - Slabs (system object caches)
+X \- Interconnect
 .br
-Z - Processes
+Y \- Slabs (system object caches)
+.br
+Z \- Processes
 .RE
 
 .B --showheader
@@ -675,7 +693,7 @@ overview of the system configuration.
 
 .B --showoptions
 .RS
-This command shows only the portion of the help text that desribes the -o and --options switches
+This command shows only the portion of the help text that desribes the \-o and --options switches
 to save the time of wading through the entire help screen.
 .RE
 
@@ -715,7 +733,7 @@ slabs that only have a single (or no) alias they will not be included in this re
 
 .B --showsubopts
 .RS
-Similar to --showoptions, this command summaries just the paramaters associated with -O and
+Similar to --showoptions, this command summaries just the paramaters associated with \-O and
 --subopts.
 .RE
 
@@ -731,7 +749,7 @@ of the window if it can be determined otherwise 24, and the
 default resource is the total cpu time which is taken as the sum of SysT and UsrT.  
 See --showtopopts for a list of other types of data you can sort on.
 
-This switch can also be used with -s in which case a portion of the window is reserved at the
+This switch can also be used with \-s in which case a portion of the window is reserved at the
 top to fill in the subsystem data, which is currently in verbose mode though a brief format
 is contemplated for some time in the future.
 
@@ -752,20 +770,20 @@ the umask.  See "man umask" for details.
 Write periodic micro-timestamps into raw file at different points in time for 
 fine grained measurements of operation times.
 .br
-1 - write timestamps when entering major sections
+1 \- write timestamps when entering major sections
 .br
-2 - write timestamps for all /proc accesses except for process data
+2 \- write timestamps for all /proc accesses except for process data
 .br
-4 - write timestamps for /proc data for all processes including threads
+4 \- write timestamps for /proc data for all processes including threads
 .RE
 
-.B -v
+.B \-v
 .RS
 Show version and whether or not Compression and/or HiResTime modules have
 been installed and exit.
 .RE
 
-.B -V
+.B \-V
 .RS
 Show default parmeter and control settings, all of which can be changed in
 /etc/collectl.conf
@@ -779,7 +797,7 @@ subsystem is to be displayed in verbose mode, the headers are only repeated occa
 if multiple subsystems are involved each needs their own header.
 .RE
 
-.B -w
+.B \-w
 .RS
 Disply data in
 .BR wide
@@ -794,12 +812,22 @@ to align data with the column headings in this mode.
 The following options are subsystem specific and typically filter data for collection
 and/or display as well as affect the output format:
 
-.B "--dskfilt perl-regx[,perl-regx...]"
+.B "--dskfilt [^]perl-regx[,perl-regx...]"
 .RS
-This ONLY applies to disk detail output and not data collection.
-Only data for disk names that match the pattern(s) will
-be displayed.  If you don't know perl, a partial string will usually 
-work too.
+NOTE \- this does NOT effect data collection,  ALL disk data will always be collected.
+However, only data for disk names that match the pattern(s) will be included in the summary
+totals and displayed displayed when details are requested.  Alternaltively, if you preface the
+first expression with a caret, all names that match that string will be excluded from the summary
+totals and detail displays rather then included.  If you don't know perl, a partial string will 
+usually work too.
+.RE
+
+.B "--dskopts"
+.RS
+.br
+i \- display the i/o sizes in brief mode just like with --iosize
+.br
+z \- only applies to disk details, do not report any lines with values of all zeros.
 .RE
 
 .B "--envopts Environmental Options"
@@ -807,31 +835,31 @@ work too.
 The default is to display ALL data but the following will cause a subset to be displayed
 
 .br
-f - display fan data
+f \- display fan data
 .br
-p - display current (power) data
+p \- display current (power) data
 .br
-t - display temperature data
+t \- display temperature data
 .br
-C - convert temperature to Celcius if in Farenheit
+C \- convert temperature to Celcius if in Farenheit
 .br
-F - convert temperature to Farenheit if in Celcius
+F \- convert temperature to Farenheit if in Celcius
 .br
-M - display each type of data on separate line
+M \- display each type of data on separate line
 .br
-T - display data truncated to whole integers (some implemenations
+T \- display data truncated to whole integers (some implemenations
 displayed them with fractional components)
 .br
-9 - any number, will tell ipmitool to read on this device number
+9 \- any number, will tell ipmitool to read on this device number
 .RE
 
 .B "--envfilt regx"
-.RS
 If specified, this regx is evaluated against each line of data returned by ipmitool
 and only those that match are retained.  All other data is lost.
+.RS
 .RE
 
-.B "--envremap
+.B "--envremap perl-regx,..."
 .RS
 If specified as a comma separated list of perl regular substitution expressions without the
 =~s portion, each expression is applied to each environmental field name, thereby allowing
@@ -842,38 +870,42 @@ systems and you want consistent column names.
 .B "--lustopts Lustre Options"
 .RS
 .br
-B - For clients and servers, show buffer stats
+B \- For clients and servers, show buffer stats
 .br
-D - For MDSs and OSTs AND running earlier versions of HPSFS, collect disk block iostats
+D \- For MDSs and OSTs AND running earlier versions of HPSFS, collect disk block iostats
 .br
-M - For clients, collect metadata
+M \- For clients, collect metadata
 .br
-O - For OSTs, show detail level stats
+O \- For OSTs, show detail level stats
 .br
-R - For client, collect readahead stats
+R \- For client, collect readahead stats
 .RE
 
 .B "--memopts Memory Options"
 .RS
-R - show memory values (including swap space) as rates of change as opposed to absolute
-values.  One can also show absolute changes between intervals by including -on.
+R \- show memory values (including swap space) as rates of change as opposed to absolute
+values.  One can also show absolute changes between intervals by including \-on.
 .RE
 
-.B "--netfilt perl-regx[,perl-regx...]"
+.B "--netfilt [^]perl-regx[,perl-regx...]"
 .RS
-This ONLY applies to network detail output and not data collection.
-Only data for network interface names that match the pattern(s) will
-be displayed.  If you don't know perl, a partial string will usually 
-work too.
+NOTE \- this does NOT effect data collection,  ALL network data will always be collected.
+However, only data for network names that match the pattern(s) will be included in the summary
+totals and displayed displayed when details are requested.  Alternaltively, if you preface the
+first expression with a caret, all names that match that string will be excluded from the summary
+totals and detail displays rather then included.  If you don't know perl, a partial string will 
+usually work too.
 .RE
 
 .B "--netopts"
 .RS
-e - include network error counts in brief and explicit error types elsewhere
+e \- include network error counts in brief and explicit error types elsewhere
 .br
-E - only include lines with network errors in them
+E \- only include lines with network errors in them
 .br
-w - set width of network device name
+i \- include i/o sizes in brief mode
+.br
+w \- set width of network device name
 .RE
 
 .B "--nfsfilt NFS Filters"
@@ -886,32 +918,31 @@ actually be collected for all clients as is also done for servers.
 .RE
 
 .B "--nfsopts NFS Options"
-
-.RS
-z - only display detail lines which have data
+q.RS
+z \- only display detail lines which have data
 .RE
 
 .B "--procfilt Process Filters"
 .RS
 These filters restrict which processes are selected for collection/display
-and replaces -Z which is now deprecated.  The format of a filter is a one
+and replaces \-Z which is now deprecated.  The format of a filter is a one
 charter type followed by a match string.  Multiple filters may be specified
 if separated by commas.
 
 .br
-c - substring of the command being executed
+c \- substring of the command being executed
 .br
-C - any command that starts with the specified string
+C \- any command that starts with the specified string
 .br
-f - full path of the command, including arguments
+f \- full path of the command, including arguments
 .br
-p - pid
+p \- pid
 .br
-P - parent pid
+P \- parent pid
 .br
-u - any process ownerd by this user's UID or in the range specifide by uxxx-yyy
+u \- any process ownerd by this user's UID or in the range specifide by uxxx\-yyy
 .br
-U - any process owned by this username
+U \- any process owned by this username
 .RE
 
 .B --procopts options
@@ -920,25 +951,25 @@ These options control the way data is displayed and can also improved data
 collection  performance
 
 .br
-c - include CPU time of children who have exited (same as ps -S)
+c \- include CPU time of children who have exited (same as ps \-S)
 .br
-f - use cumulative totals for page faults in process data instead of rates
+f \- use cumulative totals for page faults in process data instead of rates
 .br
-i - show process I/O counters in display instead of default format
+i \- show process I/O counters in display instead of default format
 .br
-m - show breakdown of memory utilization instead of default format
+m \- show breakdown of memory utilization instead of default format
 .br
-p - never look for new pids or threads during data collection
+p \- never look for new pids or threads during data collection
 .br
-r - show root command name only (no directory) for narrower display
+r \- show root command name only (no directory) for narrower display
 .br
-R - show ALL process priorities ('RT' currently displayed if realtime)
+R \- show ALL process priorities ('RT' currently displayed if realtime)
 .br
-t - include ALL process threads (increases collection overhead)
+t \- include ALL process threads (increases collection overhead)
 .br
-w - widen display by including whole argument string, with optional max width
+w \- widen display by including whole argument string, with optional max width
 .br
-z - exclude any processes with 0 in sort field (in --top mode)
+z \- exclude any processes with 0 in sort field (in --top mode)
 .RE
 
 .RE
@@ -951,10 +982,15 @@ slabs whose names start with those strings will be listed or summaried.
 
 .B "--slabopts Slab Options"
 .RS
-.B "s - exclude any slabs with an allocation of 0"
+.B "s \- exclude any slabs with an allocation of 0"
 .RE
 .RS
-.B "S - only show those slabs whose allocations changed since last display"
+.B "S \- only show those slabs whose allocations changed since last display"
+.RE
+
+.B "--xopts"
+.RS
+i \- include i/o sizes in brief mode
 .RE
 
 .SH DESCRIPTION
@@ -982,7 +1018,7 @@ is read, which sets a number of default parameters and switch values.  Collectl
 searches for this file first in /etc, then in the directory the collectl
 execuable lives in (typically /usr/sbin) and finally the current directory.
 These locations can be overriden with the 
-.BR -C 
+.BR \-C 
 switch.  Unless
 you're doing something really special, this file need never be touched, the
 only exception perhaps being when choosing to run collectl as a service and you
@@ -999,7 +1035,7 @@ need to scale the numbers you're seeing accordingly.
 
 I have recently discovered there is a bug in /proc in that an extra line
 is occasionally read with the end of the previous buffer!  When this
-occurs a message is written (if -m enabled) and always written to the
+occurs a message is written (if \-m enabled) and always written to the
 terminal.  Since this happens with a higher frequency with process data
 I silently ignore those as the output can get pretty noisey.  
 If for any reason this is a problem, be sure to let me know.

@@ -20,7 +20,7 @@
 #               and ### if from formatit.ph
 # 1024 - show list of SLABS to be monitored
 # 2048 - playback preprocessing 
-# 4096 - show from/thru processing
+# 4096 - not used
 # 8192 - show creation of RAW, PLOT and files
 
 # debug tricks
@@ -84,16 +84,16 @@ $ReqDir=       '/usr/share/collectl';    # may not exist
 
 # Constants and removing -w warnings
 $miniDateFlag=0;
-$kernel2_4=$kernel2_6=$PageSize=0;
+$PageSize=0;
 $Memory=$Swap=$Hyper=$Distro=$ProductName='';
-$CpuVendor=$CpuMHz=$CpuCores=$CpuSiblings='';
+$CpuVendor=$CpuMHz=$CpuCores=$CpuSiblings=$CpuNodes='';
 $PidFile='/var/run/collectl.pid';    # default, unless --pname
 $PQuery=$PCounter=$VStat=$VoltaireStats=$IBVersion=$HCALids=$OfedInfo='';
 $numBrwBuckets=$cfsVersion=$sfsVersion='';
 $Resize=$IpmiCache=$IpmiTypes=$ipmiExec='';
 $i1DataFlag=$i2DataFlag=$i3DataFlag=0;
 $lastSecs=$interval2Print=0;
-$diskRemapFlag=$diskChangeFlag=$cpuDisabledFlag=$cpusDisabled=0;
+$diskRemapFlag=$diskChangeFlag=$cpuDisabledFlag=$cpusDisabled=$cpusEnabled=0;
 
 # Find out ASAP if we're linux or WNT based as well as whether or not XC based
 $PcFlag=($Config{"osname"}=~/MSWin32/) ? 1 : 0;
@@ -107,7 +107,7 @@ require "Sys/Syslog.pm"    if !$PcFlag;
 $rootFlag=(!$PcFlag && `whoami`=~/root/) ? 1 : 0;
 $SrcArch= $Config{"archname"};
 
-$Version=  '3.5.1-1';
+$Version=  '3.6.0-3';
 $Copyright='Copyright 2003-2011 Hewlett-Packard Development Company, L.P.';
 $License=  "collectl may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
@@ -179,7 +179,7 @@ undef %playbackSettings;
 $recHdr1=$miniDateTime=$miniFiller=$DaemonOptions='';
 $OstNames=$MdsNames=$LusDiskNames=$LusDiskDir='';
 $NumLustreCltOsts=$NumLusDisks=$MdsFlag=0;
-$NumSlabs=$SlabGetProc=$SlabSkipHeader=$newSlabFlag=0;
+$NumSlabs=$SlabGetProc=$newSlabFlag=0;
 $wideFlag=$coreFlag=$newRawSlabFlag=0;
 $totalCounter=$separatorCounter=0;
 $NumCpus=$NumDisks=$NumNets=$DiskNames=$NetNames=$HZ='';
@@ -227,7 +227,8 @@ $TimeHiResCheck=1;
 $PasswdFile='/etc/passwd';
 $umask='';
 $DiskMaxValue=-1;    # disabled
-$DiskFilter='cciss/c\d+d\d+ |hd[ab] | sd[a-z]+ |xvd[a-z] |fio[a-z]+ |dm-\d+ |emcpower[a-z]+ |psv\d+';
+
+$DiskFilter='cciss/c\d+d\d+ |hd[ab] | sd[a-z]+ |dm-\d+ |xvd[a-z] |fio[a-z]+ | vd[a-z]+ |emcpower[a-z]+ |psv\d+ ';
 $DiskFilterFlag=0;   # only set when filter set in collectl.conf
 
 # Standard locations
@@ -235,7 +236,7 @@ $SysIB='/sys/class/infiniband';
 
 # These aren't user settable but are needed to build the list of ALL valid
 # subsystems
-$SubsysDet=   "BCDEFJLNTXYZ";
+$SubsysDet=   "BCDEFJLMNTXYZ";
 $SubsysExcore='y';
 
 # These are the subsystems allowed in brief mode
@@ -341,8 +342,10 @@ $lastLogPrefix=$passwdFile='';
 $memOpts=$nfsOpts=$nfsFilt=$lustOpts=$userEnvOpts='';
 $grepPattern=$pname='';
 $dskFilt=$netFilt='';
-$netOpts='';
+$dskOpts=$netOpts=$xOpts='';
 $utimeMask=0;
+
+my ($extract,$extractMode)=('',0);
 
 # Since --top has optionals arguments, we need to see if it was specified without
 # one and stick in the defaults noting -1 means to use the window size for size
@@ -427,6 +430,7 @@ GetOptions('align!'     => \$alignFlag,
 
            'all!'          => \$allFlag,
            'dskfilt=s'     => \$dskFilt,
+           'dskopts=s'     => \$dskOpts,
            'export=s'      => \$export,
 	   'from=s'        => \$from,
 	   'thru=s'        => \$thru,
@@ -445,6 +449,7 @@ GetOptions('align!'     => \$alignFlag,
            'envtest=s'     => \$envTestFile,
            'envfilt=s'     => \$envFilt,
            'envremap=s'    => \$envRemap,
+           'extract=s'     => \$extract,
            'grep=s'        => \$grepPattern,
            'offsettime=s'  => \$offsetTime,
            'pname=s'       => \$pname,
@@ -465,6 +470,7 @@ GetOptions('align!'     => \$alignFlag,
            'verbose!'      => \$verboseFlag,
            'vmstat!'       => \$vmstatFlag,
            'whatsnew!'     => \$whatsnewFlag,
+           'xopts=s'       => \$xOpts,
            ) or error("type -h for help");
 
 if ($pname ne '')
@@ -563,8 +569,8 @@ if ($XSwitch)
 }
 
 error('invalid value for --lustopts')    if $lustOpts ne '' && $lustOpts!~/^[BDMOR]+$/;
-error('invalid value for --memopts')     if $memOpts ne '' && $memOpts ne 'R';
 error('invalid value for --nfsopts')     if $nfsOpts ne '' && $nfsOpts ne 'z';
+error('invalid value for --memopts')     if $memOpts ne '' && $memOpts!~/^[R]+$/;
 
 # in playback mode all we're really doing is verifying the options
 setNFSFlags($nfsFilt);
@@ -864,7 +870,7 @@ error("--home does not apply to -p")                       if $homeFlag && $play
 error("--home and -sY doesn't make sense.  use --top")     if $homeFlag && $subsys=~/Y/ && $topOpts eq '';
 error("--home and -sZ doesn't make sense.  use --top")     if $homeFlag && $subsys=~/Z/ && $topOpts eq '';
 error('--procopts only makes sense with --top or -sZ')     if $procOpts ne '' && $subsys!~/Z/ && !$topType;
-error("--envopts does not apply to -P")                    if $userEnvOpts ne '' && $plotFlag;
+error("--envopts M does not apply to -P")                  if $userEnvOpts ne '' && $userEnvOpts=~/M/ && $plotFlag;
 error("--envopts are only fptCFMT and/or a number")        if $userEnvOpts ne '' && $userEnvOpts!~/^[fptCFMT0-9]+$/;
 error("--envrules does not exist")                         if $envRules ne '' && !-e $envRules;
 error("--grep only applies to -p")                         if $grepPattern ne '' && $playback eq '';
@@ -895,9 +901,14 @@ error('--umask can only be set by root')                   if $umask ne '' && !$
 
 error('-sT can only be used with -f or -P')                if $subsys=~/T/ && !$plotFlag && $filename eq '';
 
-# if user enters --envOpts that don't conflict with defaults, we need to add it to theh
-# otherwise override them
-$envOpts=($userEnvOpts=~/(^[CFMT\d]+$')/) ? "$1$envOpts" : $userEnvOpts    if $userEnvOpts ne '';
+# if user enters --envOpts
+if ($userEnvOpts ne '')
+{
+  # remove ALL ipmi data types if user specified any, then add in ALL user options
+  # which could include formatting options
+  $envOpts=~s/[fpt]+//g    if $userEnvOpts=~/[fpt]/;
+  $envOpts.=$userEnvOpts;
+}
 $allThreadFlag=($procOpts=~/t/) ? 1 : 0;
 
 # The separator is either a space if not defined or the character supplied if 
@@ -906,17 +917,40 @@ $allThreadFlag=($procOpts=~/t/) ? 1 : 0;
 $SEP=' '                    if !defined($SEP);
 $SEP=sprintf("%c", $SEP)    if $SEP=~/\d+/;
 
-# comma is the same as | in perl
-error("--dskfilt only applies to -sD")    if $dskFilt ne '' && $subsys!~/D/;
-error("--netfilt only applies to -sN")    if $netFilt ne '' && $subsys!~/N/;
-$dskFilt=~s/,/|/g;
-$netFilt=~s/,/|/g;
+# DISK and NETWORK filtering
+$dskFiltKeep='';
+$dskFiltIgnore='';
+my $ignoreFlag=($dskFilt=~s/^\^//) ? 1 : 0;
+foreach my $disk (split(/,/, $dskFilt))
+{
+  $dskFiltIgnore.="|$disk"    if $ignoreFlag;
+  $dskFiltKeep.=  "|$disk"    if !$ignoreFlag;
+}
+$dskFiltKeep=~s/^\|//;
+$dskFiltIgnore=~s/^\|//;
+print "DskFilt - Ignore: $dskFiltIgnore  Keep: $dskFiltKeep\n"    if $debug & 1;
+
+$netFiltKeep='';
+$netFiltIgnore='';
+$ignoreFlag=($netFilt=~s/^\^//) ? 1 : 0;
+foreach my $net (split(/,/, $netFilt))
+{
+  $netFiltIgnore.="|$net"    if $ignoreFlag;
+  $netFiltKeep.=  "|$net"    if !$ignoreFlag;
+}
+$netFiltKeep=~s/^\|//;
+$netFiltIgnore=~s/^\|//;
+print "NetFilt - Ignore: $netFiltIgnore  Keep: $netFiltKeep\n"    if $debug & 1;
+
+error("--dskopts z only applies to -sD")              if $dskOpts=~/z/  && $subsys!~/D/;
+error("only valid values for --dskopts are 'iz'")     if $dskOpts ne '' && $dskOpts!~/^[iz]+$/;
+error("only valid value for --xopts is 'i'")          if $xOpts ne '' && $xOpts!~/^[i]+$/;
 
 $netOptsW=5;    # minumum width
 if ($netOpts ne '')
 {
   error("--netopts only applies to -sn or -sN")       if $subsys!~/n/i;
-  error("only valid --netopts values are 'eEw'")      if $netOpts ne '' && $netOpts!~/^[eEw0-9]+$/;
+  error("only valid --netopts values are 'eEiw'")     if $netOpts ne '' && $netOpts!~/^[eEiw0-9]+$/;
   if ($netOpts=~/w/)
   {
     error("--netopts -w only applies to -sN")         if $subsys!~/N/;
@@ -933,7 +967,7 @@ if (!$PcFlag)
   # This matches THIS host, but in playback mode will be reset to the target
   $Kernel=`uname -r`;
   chomp $Kernel;
-  setKernelFlags($Kernel);
+  error("collectl no longer supports 2.4 kernels")    if $Kernel=~/^2\.4/;
 
   $LocalTimeZone=`date +%z`;
   chomp $LocalTimeZone;
@@ -1147,7 +1181,9 @@ $precision=($options=~/(\d+)/) ? $1 : 0;
 $FS=".${precision}f";
 
 # playback mode specific
-error('--showmerged only applied to playback mode')    if $playback eq '' && $showMergedFlag;
+error('--showmerged only applies to playback mode')    if $playback eq '' && $showMergedFlag;
+error('--extract only applies to playback mode')       if $playback eq '' && $extract ne '';
+
 if ($playback ne "")
 {
   error("--offsettime must be in seconds with optional leading '-'")
@@ -1159,6 +1195,13 @@ if ($playback ne "")
   error("-p filename must end in '*', 'raw' or 'gz'") 
       if $playback!~/\*$|raw$|gz$/;
   error("MUST specify -P if -p and -f")      if $filename ne "" and !$plotFlag;
+
+  if ($extract ne '')
+  {
+    $extractMode=1;
+    error("-s not allowed in 'extract' mode")               if $userSubsys ne '';
+    error("--from OR --thru required in 'extract' mode")    if !defined($from) && !defined($thru);
+  }
 
   # Quick check to make sure at least one file matches playback string
   my $foundFlag=0;
@@ -1513,6 +1556,7 @@ if ($playback ne '')
     # we need to initialize a bunch of stuff including these variables and the
     # starting time for the file as well as the corresponding UTC seconds.
     ($recVersion, $recDate, $recTime, $recSecs, $recTZ, $recInterval, $recSubsys, $recNfsFilt)=initFormat($file);
+    error("$file was created before collectl V2.0 and so cannot be played back")    if $recVersion lt '2.0';
     printf "RECORDED -- Host: $Host  Version: %s  Date: %s  Time: %s  Interval: %s Subsys: $recSubsys\n",
               $recVersion, $recDate, $recTime, $recInterval
 		  if $debug & 1;
@@ -1584,12 +1628,15 @@ if ($playback ne '')
     }
     setNFSFlags($tempFilt);
 
-    # We can only do this test after figuring out what's in the header.
+    # We can only do this test after figuring out what's in the header.  NOTE that since the number
+    # of enabled CPUs can change dynamically when doing -sC and we've already skipped the code in 
+    # formatit that sets the number to 0, we have to do it here too.
     if ($subsys=~/j/i && $subsys!~/C/ && $plotFlag)
     {
       logmsg('I', "-sj or -sJ with -P also requires CPU details so adding -sC.  See FAQ for details.");
       $subsys.='C';
       $subsysAll.='C';
+      $cpusEnabled=0;
     }
 
     # the way the process/slab tests work is if raw file not built with -G, look at all files.
@@ -1725,7 +1772,7 @@ if ($playback ne '')
     $thruSecs=(!defined($thru)) ? 2145934800 : getSeconds($tempDate, $thruTime).'.999';
 
     # this is just to make debugging time frames easier especially if user gets odd results.
-    if ($debug & 4097)
+    if ($debug & 1)
     {
       my $fromstamp=getDateTime($fromSecs);
       my $thrustamp=getDateTime($thruSecs);
@@ -1739,6 +1786,19 @@ if ($playback ne '')
     else
     {
       open PLAY, "<$file" or logmsg("F", "Couldn't open '$file'");
+    }
+
+    if ($extractMode)
+    {
+      my $base=basename($file);
+      $outfile=(-d $extract) ? "$extract$Sep$base" : "$extract-$base";
+      #print "BASE: $base  PREFIX: $prefix OUT: $outfile\n";
+      error("--extract specifies an output file with the same name as original!")    if $outfile eq $file;
+      logmsg('I', "Extracting to '$outfile'");
+
+      # compress the output file, but only if the input one was compressed.
+      $ZRAW=Compress::Zlib::gzopen($outfile, 'wc') or logmsg("F", "Couldn't create '$outfile'")    if $outfile=~/gz$/;
+      open RAW, ">$outfile"                        or logmsg("F", "Couldn't create '$outfile'")    if $outfile!~/gz$/;
     }
 
     # only call this if generating plot data either in file or on terminal AND
@@ -1816,10 +1876,20 @@ if ($playback ne '')
     $numProcessed++;    # it's not until we get here that we can say this
     while (1)
     {
-      # read a line from either zip file or plain ol' one and skip comments
+      # read a line from either zip file or plain ol' one
       last    if ( $zInFlag && ($bytes=$ZPLAY->gzreadline($line))<1) ||
 	         (!$zInFlag && !($line=<PLAY>)); 
-      next    if $line=~/^#/;
+
+      # we always skip comments, but in extract mode we need to echo them to output file
+      if ($line=~/^#/)
+      {
+        if ($extractMode)
+        {
+          $ZRAW->gzwrite($line)    if $outfile=~/gz$/;
+	  print RAW $line          if $outfile!~/gz$/; 
+        }
+	next;
+      }
 
       # Doncha love special cases?  Turns out when reading back process data
       # from a PRC file which was created from multiple logs, if a process from
@@ -1833,7 +1903,7 @@ if ($playback ne '')
       # time is that of the new one so process last interval before saving.
       # if this isn't a valid interval marker the file somehow got corrupted
       # which was seen one time before flush error handling was put in.  Don't
-      # if that was the problem or not so we'll keep this extra test.
+      # know if that was the problem or not so we'll keep this extra test.
       $timestampFlag=0;
       if ($line=~/^>>>/)
       {
@@ -1855,6 +1925,13 @@ if ($playback ne '')
         $lastSeconds[$rawPFlag]=(defined($newSeconds[$rawPFlag])) ? $newSeconds[$rawPFlag] : 0;
   	$skip=0    if $fromSecs && $thisSeconds>=$fromSecs;
         last       if $thruSecs && $lastSeconds[$rawPFlag]>$thruSecs;
+
+        # Always echo timestamp in extract mode when we're processing this interval
+        if ($extractMode && !$skip)
+        {
+          $ZRAW->gzwrite($line)    if $outfile=~/gz$/;
+          print RAW $line          if $outfile!~/gz$/; 
+        }
 
         $timestampCounter[$rawPFlag]++    if !$skip;
         if ($timestampCounter[$rawPFlag]==1)
@@ -1885,6 +1962,10 @@ if ($playback ne '')
           $fileFrom=$newSeconds[$rawPFlag]    if !defined($fileFrom);
           $fileThru=$newSeconds[$rawPFlag];
         }
+
+        # Normally we fall through on a timestamp marker so we can process the interval results
+        # but in extract we don't want to generate any output, just record data.
+	next    if $extractMode;
       }
       next    if $skip;
       print $line    if $debug & 4;
@@ -1893,6 +1974,7 @@ if ($playback ne '')
       {
         if ($line=~/$grepPattern/)
         {
+  	  $firstTime=0;    # to indicate something found
           my $msec=(split(/\./, $newSeconds[$rawPFlag]))[1];
           my ($ss, $mm, $hh, $mday, $mon, $year)=localtime($newSeconds[$rawPFlag]);
 	  $datetime=sprintf("%02d:%02d:%02d", $hh, $mm, $ss);
@@ -1901,6 +1983,15 @@ if ($playback ne '')
 	  $datetime.=".$msec"                                                           if ($options=~/m/);
 	  print "$datetime $line";
         }
+	next;
+      }
+
+      if ($extractMode)
+      {
+        # clear flag to prevent error message later.
+	$firstTime=0;
+        $ZRAW->gzwrite($line)    if $outfile=~/gz$/;
+	print RAW $line          if $outfile!~/gz$/; 
 	next;
       }
 
@@ -1926,8 +2017,15 @@ if ($playback ne '')
       $firstTime=0;
     }
 
+    # Write 'next' timestamp at end of file.
+    if ($extractMode)
+    {
+      $ZRAW->gzwrite($line)    if $outfile=~/gz$/;
+      print RAW $line          if $outfile!~/gz$/; 
+    }
+
     # We really only need message when -p specifies single file
-    if ($firstTime && $numSelected==1 && $grepPattern eq '')
+    if ($firstTime && $numSelected==1)
     {
       print "No records selected for playback!  Are --from/--thru` wrong?\n";
       next;
@@ -1946,7 +2044,7 @@ if ($playback ne '')
     # if we reported data from this file (we may have skipped it entirely if --from
     # used with multiple files), calculate how many seconds reported on in for 
     # stats reporting with -oA
-    if (!$skip && !$rawPFlag)
+    if (!$skip && !$rawPFlag && !$extractMode)
     {
       # Note that by default we never include first interval data, but if this was a
       # consecitive file we need to include that interval to so add it back in
@@ -1991,8 +2089,6 @@ if ($playback ne '')
 error("-offsettime only applies to playback mode")    if defined($offsetTime);
 
 # need to load even if interval is 0, but don't allow for -p mode
-error("threads only currently supported in 2.6 kernels")
-    if ($procFilt=~/\+/ || $allThreadFlag) && !$kernel2_6;
 loadPids($procFilt)     if $subsys=~/Z/;
 loadUids($passwdFile)   if $subsys=~/Z/;
 
@@ -2393,7 +2489,7 @@ for (; $count!=0 && !$doneFlag; $count--)
     getProc(0, "/proc/buddyinfo", "buddy");
   }
 
-  if ($cFlag || $CFlag || $dFlag || $DFlag ||$mFlag)
+  if ($cFlag || $CFlag || $dFlag || $DFlag)
   {
     # Too crazy to do in getProc() though maybe someday should be moved there
     open PROC, "</proc/stat" or logmsg("F", "Couldn't open '/proc/stat'");
@@ -2401,10 +2497,8 @@ for (; $count!=0 && !$doneFlag; $count--)
     {
       last             if $line=~/^kstat/;
       record(2, $line)
-	  if (( ($cFlag || $CFlag) && $line=~/^cpu|^ctx|^proce/) ||
-              ( ($dFlag || $DFlag) && $kernel2_4 && !$partDataFlag && $line=~/^disk/) ||
-	      ( $DFlag && !$hiResFlag && $line=~/^cpu /) ||
-              ( $mFlag && $line=~/^page|^swap|^procs/));  # note that 'page/swap' 2.4 and procs in 2.6 and later 2.4s
+	  if (( ($cFlag || $CFlag) && $line=~/^cpu|^ctx|^proc/) ||
+	      ( $DFlag && !$hiResFlag && $line=~/^cpu /));
       record(2, "$1\n")
           if ($cFlag || $CFlag) && $line=~/(^intr \d+)/;
     }
@@ -2416,12 +2510,9 @@ for (; $count!=0 && !$doneFlag; $count--)
     getProc(0, '/proc/interrupts', 'int', 1);
   }
 
-  # Disk data can come from 'diskstats' OR 'partitions'.  If no data in 
-  # partitions and a 2.4 kernel, we'll have gotten it from /proc/stat
   if ($dFlag || $DFlag)
   {
-    getProc(9, "/proc/diskstats", "disk")    if $kernel2_6;
-    getProc(9, "/proc/partitions", "par", 2) if $kernel2_4 && $partDataFlag;
+    getProc(9, "/proc/diskstats", "disk");
   }
 
   if ($cFlag || $CFlag)
@@ -2534,16 +2625,20 @@ for (; $count!=0 && !$doneFlag; $count--)
 
   if ($mFlag)
   {
-    if ($kernel2_4)
+    getProc(0, "/proc/meminfo", "");
+    getProc(5, "/proc/vmstat",  "");
+  }
+
+  # NOTE - unlike other detail data this is only recorded when explicitly requested
+  if ($MFlag)
+  {
+    for (my $i=0; $i<$CpuNodes; $i++)
     {
-      getProc(4, "/proc/meminfo", "", 1);
-    }
-    else
-    {
-      # In 2.6 kernels just grab all of /proc/meminfo and most of vmstat
-      # which does not appear to be a constant layout
-      getProc(0, "/proc/meminfo", "");
-      getProc(5, "/proc/vmstat",  "");
+      # skip first line which is blank, noting 'Node X' is already part of data
+      getProc(0, "/sys/devices/system/node/node$i/meminfo", "numai", 1);
+
+      # only if we want hits, adds about 2 secs for 2 node home box
+      getProc(0, "/sys/devices/system/node/node$i/numastat", "numas Node $i");
     }
   }
 
@@ -2637,10 +2732,9 @@ for (; $count!=0 && !$doneFlag; $count--)
     if ($yFlag || $YFlag)
     {
       # NOTE - $SlabGetProc is either 99 for all slabs or 14 for selective
-      #        $SlabHeader is 1 for 2.4 kernels and 2 for 2.6 ones
       if ($slabinfoFlag)
       {
-        getProc($SlabGetProc, "/proc/slabinfo", "Slab", $SlabSkipHeader);
+        getProc($SlabGetProc, "/proc/slabinfo", "Slab", 2);
       }
       else
       {
@@ -3467,17 +3561,9 @@ sub getProc
       if ($line=~/^mds_/)      { record(2, "$tag $line"); next; }
     }
 
-    # /proc/meminfo 2.4 kernel
-    elsif ($type==4)
-    {
-      if ($line=~/^Mem:/)    { record(2, "$line"); next; }
-      if ($line=~/^Cached:/) { record(2, "$line"); next; }
-      if ($line=~/^Swap:/)   { record(2, "$line"); next; }
-      if ($line=~/^Active:/) { record(2, "$line"); next; }
-      if ($line=~/^Inact/)   { record(2, "$line"); next; }
-    }
+    # type=4 no longer used
 
-    # /proc/meminfo 2.6 kernel
+    # Memory
     elsif ($type==5)
     {
       next    if $line=~/^nr/;
@@ -3507,11 +3593,12 @@ sub getProc
         if ($line=~/cciss\/c\d+d\d+ /)   { record(2, "$tag $line"); next; }
         if ($line=~/hd[ab] /)            { record(2, "$tag $line"); next; }
         if ($line=~/ sd[a-z]+ /)         { record(2, "$tag $line"); next; }
+        if ($line=~/dm-\d+ /)            { record(2, "$tag $line"); next; }
         if ($line=~/xvd[a-z] /)          { record(2, "$tag $line"); next; }
         if ($line=~/fio[a-z]+ /)         { record(2, "$tag $line"); next; }
-        if ($line=~/dm-\d+ /)            { record(2, "$tag $line"); next; }
-        if ($line=~/emcpower[a-z]+/)     { record(2, "$tag $line"); next; }
-        if ($line=~/psv\d+/)             { record(2, "$tag $line"); next; }
+        if ($line=~/ vd[a-z] /)          { record(2, "$tag $line"); next; }
+        if ($line=~/emcpower[a-z]+ /)    { record(2, "$tag $line"); next; }
+        if ($line=~/psv\d+ /)            { record(2, "$tag $line"); next; }
       }
       else
       {
@@ -3555,14 +3642,14 @@ sub getProc
     # /proc/*/status - save it all!
     elsif ($type==13)
     {
+      # only saving 3 types of data
       if ($line=~/^Tgid/)       { record(2, "$tag $line", undef, 1); next; }
       if ($line=~/^Uid/)        { record(2, "$tag $line", undef, 1); next; }
-      if ($line=~/^Vm/)
-      {
-        record(2, "$tag $line", undef, 1);
-        last    if $line=~/^VmLib/;  # stop reading when we hit last VM variable
-        next;
-      }
+      if ($line=~/^Vm/)         { record(2, "$tag $line", undef, 1); next; }
+
+      # since VmSwap isn't available with all kernels, this looks like the first thing
+      # in command on older/newer kernels
+      last    if $line=~/^Threads/;
     }
 
     # /proc/slabinfo - only if not doing all of them
@@ -3822,7 +3909,9 @@ sub newLog
   if ($recDate eq '')
   {
     # We need EXACT seconds associated with the timestamp of the filename.
-    $timesecs=time;
+    # turns out time() and gettimeofday can differ by 5 or 6 msec and when that happens files could end up
+    # getting rolled 1 second earlier.  Therefore always use gettimeofday when using hires to be consistent.
+    $timesecs=($hiResFlag) ? (Time::HiRes::gettimeofday())[0] : time();
     ($ss, $mm, $hh, $mday, $mon, $year)=localtime($timesecs);
     $datetime=sprintf("%d%02d%02d-%02d%02d%02d", 
 		      $year+1900, $mon+1, $mday, $hh, $mm, $ss);
@@ -3876,21 +3965,22 @@ sub newLog
     # a script and turns off headers things lock up unless these 
     # files are set to auto-flush.
     $zFlag=0;
-    open $LOG, ">-" or logmsg("F", "Couldn't open LOG for STDOUT"); select $LOG; $|=1;
-    open BLK, ">-" or logmsg("F", "Couldn't open BLK for STDOUT"); select BLK; $|=1;
-    open BUD, ">-" or logmsg("F", "Couldn't open BUD for STDOUT"); select BUD; $|=1;
-    open CLT, ">-" or logmsg("F", "Couldn't open CLT for STDOUT"); select CLT; $|=1;
-    open CPU, ">-" or logmsg("F", "Couldn't open CPU for STDOUT"); select CPU; $|=1;
-    open DSK, ">-" or logmsg("F", "Couldn't open DSK for STDOUT"); select DSK; $|=1;
-    open ELN, ">-" or logmsg("F", "Couldn't open ELN for STDOUT"); select ELN; $|=1;
-    open ENV, ">-" or logmsg("F", "Couldn't open ENV for STDOUT"); select ENV; $|=1;
-    open IB,  ">-" or logmsg("F", "Couldn't open IB for STDOUT");  select IB;  $|=1;
-    open NFS, ">-" or logmsg("F", "Couldn't open NFS for STDOUT"); select NFS; $|=1;
-    open NET, ">-" or logmsg("F", "Couldn't open NET for STDOUT"); select NET; $|=1;
-    open OST, ">-" or logmsg("F", "Couldn't open OST for STDOUT"); select OST; $|=1;
-    open TCP, ">-" or logmsg("F", "Couldn't open TCP for STDOUT"); select TCP; $|=1;
-    open SLB, ">-" or logmsg("F", "Couldn't open SLB for STDOUT"); select SLB; $|=1;
-    open PRC, ">-" or logmsg("F", "Couldn't open PRC for STDOUT"); select PRC; $|=1;
+    open $LOG, ">-" or logmsg("F", "Couldn't open LOG for STDOUT");  select $LOG; $|=1;
+    open BLK,  ">-" or logmsg("F", "Couldn't open BLK for STDOUT");  select BLK; $|=1;
+    open BUD,  ">-" or logmsg("F", "Couldn't open BUD for STDOUT");  select BUD; $|=1;
+    open CLT,  ">-" or logmsg("F", "Couldn't open CLT for STDOUT");  select CLT; $|=1;
+    open CPU,  ">-" or logmsg("F", "Couldn't open CPU for STDOUT");  select CPU; $|=1;
+    open DSK,  ">-" or logmsg("F", "Couldn't open DSK for STDOUT");  select DSK; $|=1;
+    open ELN,  ">-" or logmsg("F", "Couldn't open ELN for STDOUT");  select ELN; $|=1;
+    open ENV,  ">-" or logmsg("F", "Couldn't open ENV for STDOUT");  select ENV; $|=1;
+    open IB,   ">-" or logmsg("F", "Couldn't open IB for STDOUT");   select IB;  $|=1;
+    open NFS,  ">-" or logmsg("F", "Couldn't open NFS for STDOUT");  select NFS; $|=1;
+    open NET,  ">-" or logmsg("F", "Couldn't open NET for STDOUT");  select NET; $|=1;
+    open NUMA, ">-" or logmsg("F", "Couldn't open NUMA for STDOUT"); select NUMA; $|=1;
+    open OST,  ">-" or logmsg("F", "Couldn't open OST for STDOUT");  select OST; $|=1;
+    open TCP,  ">-" or logmsg("F", "Couldn't open TCP for STDOUT");  select TCP; $|=1;
+    open SLB,  ">-" or logmsg("F", "Couldn't open SLB for STDOUT");  select SLB; $|=1;
+    open PRC,  ">-" or logmsg("F", "Couldn't open PRC for STDOUT");  select PRC; $|=1;
     for (my $i=0; $i<$impNumMods; $i++)
     {
       open $impGz[$i], ">-" or logmsg("F", "Couldn't open $impKey[$i] for STDOUT"); select $impGz[$i]; $|=1;
@@ -4095,6 +4185,11 @@ sub newLog
     $ZNFS=Compress::Zlib::gzopen("$filename.nfs.gz", $zmode) or
           logmsg("F", "Couldn't open NFS gzip file")     if  $zFlag && $FFlag;
 
+    open NUMA, "$mode$filename.numa" or 
+	  logmsg("F", "Couldn't open '$filename.numa'")  if !$zFlag && $MFlag;
+    $ZNUMA=Compress::Zlib::gzopen("$filename.numa.gz", $zmode) or
+          logmsg("F", "Couldn't open NUMA gzip file")    if  $zFlag && $MFlag;
+
     open NET, "$mode$filename.net" or 
 	  logmsg("F", "Couldn't open '$filename.net'")   if !$zFlag && $NFlag;
     $ZNET=Compress::Zlib::gzopen("$filename.net.gz", $zmode) or
@@ -4137,31 +4232,34 @@ sub newLog
     # Open any detail files associated with --import
     for (my $i=0; $i<$impNumMods; $i++)
     {
+      next    if $impOpts[$i]!~/d/;
+
       open $impText[$i], "$mode$filename.$impKey[$i]" or
-	logmsg("F", "Couldn't open '$filename.$impKey[$i]'")  if !$zFlag && $impOpts[$i]=~/d/;
+	logmsg("F", "Couldn't open '$filename.$impKey[$i]'")  if !$zFlag;
       $impGz[$i]=Compress::Zlib::gzopen("$filename.$impKey[$i].gz", $zmode) or
-	logmsg("F", "Couldn't open $impKey[$i] gzip file")    if  $zFlag && $impOpts[$i]=~/d/;
+	logmsg("F", "Couldn't open $impKey[$i] gzip file")    if  $zFlag;
     }
 
     if ($autoFlush)
     {
       print "Setting non-compressed files to 'autoflush'\n"    if $debug & 1;
-      if (defined($LOG))          { select $LOG; $|=1; }
-      if (defined(fileno(BLK)))   { select BLK;  $|=1; }
-      if (defined(fileno(BUD)))   { select BUD;  $|=1; }
-      if (defined(fileno(CLT)))   { select CLT;  $|=1; }
-      if (defined(fileno(CPU)))   { select CPU;  $|=1; }
-      if (defined(fileno(DSK)))   { select DSK;  $|=1; }
-      if (defined(fileno(DSKX)))  { select DSKX; $|=1; }
-      if (defined(fileno(ELN)))   { select ELN;  $|=1; }
-      if (defined(fileno(ENV)))   { select ENV;  $|=1; }
-      if (defined(fileno(IB)))    { select IB;   $|=1; }
-      if (defined(fileno(OST)))   { select OST;  $|=1; }
-      if (defined(fileno(NET)))   { select NET;  $|=1; }
-      if (defined(fileno(NFS)))   { select NFS;  $|=1; }
-      if (defined(fileno(PRC)))   { select PRC;  $|=1; }
-      if (defined(fileno(SLB)))   { select SLB;  $|=1; }
-      if (defined(fileno(TCP)))   { select TCP;  $|=1; }
+      if (defined($LOG))           { select $LOG; $|=1; }
+      if (defined(fileno(BLK)))    { select BLK;  $|=1; }
+      if (defined(fileno(BUD)))    { select BUD;  $|=1; }
+      if (defined(fileno(CLT)))    { select CLT;  $|=1; }
+      if (defined(fileno(CPU)))    { select CPU;  $|=1; }
+      if (defined(fileno(DSK)))    { select DSK;  $|=1; }
+      if (defined(fileno(DSKX)))   { select DSKX; $|=1; }
+      if (defined(fileno(ELN)))    { select ELN;  $|=1; }
+      if (defined(fileno(ENV)))    { select ENV;  $|=1; }
+      if (defined(fileno(IB)))     { select IB;   $|=1; }
+      if (defined(fileno(OST)))    { select OST;  $|=1; }
+      if (defined(fileno(NET)))    { select NET;  $|=1; }
+      if (defined(fileno(NFS)))    { select NFS;  $|=1; }
+      if (defined(fileno(NUMA)))   { select NUMA;  $|=1; }
+      if (defined(fileno(PRC)))    { select PRC;  $|=1; }
+      if (defined(fileno(SLB)))    { select SLB;  $|=1; }
+      if (defined(fileno(TCP)))    { select TCP;  $|=1; }
       select STDOUT; $|=1;
     }
   }
@@ -4253,7 +4351,7 @@ sub buildCommonHeader
   $commonHeader.=               " NumBud: $NumBud Flags: $flags\n";
   $commonHeader.="# Filters:    NfsFilt: $nfsFilt EnvFilt: $envFilt\n";
   $commonHeader.="# HZ:         $HZ  Arch: $SrcArch PageSize: $PageSize\n";
-  $commonHeader.="# Cpu:        $CpuVendor Speed(MHz): $CpuMHz Cores: $CpuCores  Siblings: $CpuSiblings\n";
+  $commonHeader.="# Cpu:        $CpuVendor Speed(MHz): $CpuMHz Cores: $CpuCores  Siblings: $CpuSiblings Nodes: $CpuNodes\n";
   $commonHeader.="# Kernel:     $Kernel  Memory: $Memory  Swap: $Swap\n";
   $commonHeader.="# NumDisks:   $NumDisks DiskNames: $DiskNames\n";
   $commonHeader.="# NumNets:    $NumNets NetNames: $NetNames\n";
@@ -4476,6 +4574,7 @@ sub flushBuffers
     $ZIB->  gzflush(2)<0 and flushError('ib',  $ZIB)      if $XFlag && $NumHCAs;
     $ZENV-> gzflush(2)<0 and flushError('env', $ZENV)     if $EFlag;
     $ZNFS-> gzflush(2)<0 and flushError('nfs', $ZNFS)     if $FFlag;
+    $ZNUMA->gzflush(2)<0 and flushError('net', $ZNET)     if $MFlag;
     $ZNET-> gzflush(2)<0 and flushError('net', $ZNET)     if $NFlag;
     $ZOST-> gzflush(2)<0 and flushError('ost', $ZOST)     if $LFlag && $OstFlag;
     $ZTCP-> gzflush(2)<0 and flushError('tcp', $ZTCP)     if $TFlag;
@@ -4641,7 +4740,7 @@ sub setFlags
   $iFlag=($subsys=~/i/) ? 1 : 0;
   $jFlag=($subsys=~/j/) ? 1 : 0;  $JFlag=($subsys=~/J/) ? 1 : 0;
   $lFlag=($subsys=~/l/) ? 1 : 0;  $LFlag=($subsys=~/L/) ? 1 : 0;  
-  $mFlag=($subsys=~/m/) ? 1 : 0;
+  $mFlag=($subsys=~/m/) ? 1 : 0;  $MFlag=($subsys=~/M/) ? 1 : 0;
   $nFlag=($subsys=~/n/) ? 1 : 0;  $NFlag=($subsys=~/N/) ? 1 : 0;
   $sFlag=($subsys=~/s/) ? 1 : 0;
   $tFlag=($subsys=~/t/) ? 1 : 0;  $TFlag=($subsys=~/T/) ? 1 : 0;
@@ -4787,15 +4886,18 @@ sub closeLogs
   setFlags($subsys);
   
   # closing raw files based on presence of zlib and NOT -oz
-  if ($zlibFlag && $logToFileFlag && $rawFlag)
+  if ($rawFlag)
   {
-    $ZRAW->  gzclose()    if $recFlag0;
-    $ZRAWP-> gzclose()    if $recFlag1;
-  }
-  else
-  {
-    close $RAW     if defined($RAW)  && $recFlag0;
-    close $RAWP    if defined($RAWP) && $recFlag1;
+    if ($zlibFlag && $logToFileFlag)
+    {
+      $ZRAW->  gzclose()    if $recFlag0;
+      $ZRAWP-> gzclose()    if $recFlag1;
+    }
+    else
+    {
+      close $RAW     if defined($RAW)  && $recFlag0;
+      close $RAWP    if defined($RAWP) && $recFlag1;
+    }
   }
 
   # doesn't hurt to close everything, even if not open
@@ -4821,7 +4923,7 @@ sub closeLogs
   else  # These must be opened in order to close them
   {
     $temp="$SubsysCore$SubsysExcore";
-    $ZLOG-> gzclose()     if $plotFlag && $subsys=~/[$temp]+/;
+    $ZLOG-> gzclose()     if $plotFlag && ($subsys=~/[$temp]+/ || $impSummaryFlag);
     $ZBUD-> gzclose()     if $BFlag && $plotFlag;
     $ZCLT-> gzclose()     if $LFlag && $plotFlag && CltFlag;
     $ZCPU-> gzclose()     if $CFlag && $plotFlag;
@@ -4831,12 +4933,22 @@ sub closeLogs
     $ZIB->  gzclose()     if $XFlag && $plotFlag && $NumHCAs;
     $ZENV-> gzclose()     if $EFlag && $plotFlag;
     $ZNFS-> gzclose()     if $FFlag && $plotFlag;
+    $ZNUMA->gzclose()     if $MFlag && $plotFlag;
     $ZNET-> gzclose()     if $NFlag && $plotFlag;
     $ZOST-> gzclose()     if $LFlag && $plotFlag && $OstFlag;
     $ZTCP-> gzclose()     if $TFlag && $plotFlag;
     $ZSLB-> gzclose()     if $YFlag && $plotFlag && !$rawtooFlag && !$slabAnalOnlyFlag;
     $ZPRC-> gzclose()     if $ZFlag && $plotFlag && !$rawtooFlag && !$procAnalOnlyFlag;
   }
+
+  # Finally, close any detail logs that may have been opened via --import
+  for (my $i=0; $i<$impNumMods; $i++)
+  {
+    next    if $impOpts[$i]!~/d/;
+    close $impText[$i]       if !$zFlag;
+    $impGz[$i]->gzclose()    if  $zFlag;
+  }
+
 }
 
 sub loadConfig
@@ -5506,30 +5618,26 @@ sub findThreads
 {
   my $pid=shift;
 
-  # For now...
-  if ($kernel2_6)
+  # In some cases the thread owning process may have gone away.  When this 
+  # happens we can't open 'task', so act accordingly.
+  if (!opendir DIR2, "/proc/$pid/task")
   {
-    # In some cases the thread owning process may have gone away.  When this 
-    # happens we can't open 'task', so act accordingly.
-    if (!opendir DIR2, "/proc/$pid/task")
-    {
-	logmsg("W", "Looks like $pid exited so not looking for new threads");
-	$pidThreads{$pid}=0;
-	return;
-    }
-    while ($tpid=readdir(DIR2))
-    {
-      next    if $tpid=~/^\./;    # skip . and ..
-      next    if $tpid==$pid;     # skip parent beause already covered
+    logmsg("W", "Looks like $pid exited so not looking for new threads");
+    $pidThreads{$pid}=0;
+    return;
+  }
+  while ($tpid=readdir(DIR2))
+  {
+    next    if $tpid=~/^\./;    # skip . and ..
+    next    if $tpid==$pid;     # skip parent beause already covered
 
-      # since this routine gets called both at the start when %tpidProc is empty and
-      # every thread found is new AND during runtime when they may not be, check the
-      # active thread hash and only include it if not already there
-      if (!defined($tpidProc{$tpid}))
-      {
-        print "%%% Discovered new thread $tpid for pid: $pid\n"    if $debug & 256;
-        $tpidProc{$tpid}=$pid;        # add to thread watch list
-      }
+    # since this routine gets called both at the start when %tpidProc is empty and
+    # every thread found is new AND during runtime when they may not be, check the
+    # active thread hash and only include it if not already there
+    if (!defined($tpidProc{$tpid}))
+    {
+      print "%%% Discovered new thread $tpid for pid: $pid\n"    if $debug & 256;
+      $tpidProc{$tpid}=$pid;        # add to thread watch list
     }
   }
 }
@@ -5753,6 +5861,7 @@ This is the complete list of switches, more details in man page
   -c, --count      count        collect this number of samples and exit
   -d, --debug      debug        see source for details or try -d1 to get started
   -D, --daemon                  run as a daemon
+      --extract    file         extract a subset of a raw file into another one
   -f, --filename   file         name of directory/file to write to
   -F, --flush      seconds      number of seconds between output buffer flushes
       --from       time         time from which to playback data, -thru optional
@@ -5861,9 +5970,10 @@ These generate detail data, typically but not limited to the device level
   C -  individual CPUs, including interrupts if -sj or -sJ
   D -  individual Disks
   E -  environmental (fan, power, temp) [requires ipmitool]
-  F -  nsf data
+  F -  nfs data
   J -  interrupts by CPU by interrupt number
   L -  lustre
+  M -  memory numa/node
   N -  individual Networks
   T -  tcp details (lots of data!)
   X -  interconnect ports/rails (Infiniband/Quadrics)
@@ -5937,6 +6047,9 @@ Disk
       this ONLY applies to disk detail output and not data collection
       only data for disk names that match the pattern(s) will be displayed
       if you don't know perl, a partial string will usually work too
+  --dskopts
+      i - include average i/o size in brief mode (as with --iosize)
+      z - do not show any detail lines which are ALL 0     
 
 Environmental
   --envopts [def=fpt]  NOTE: these do not filter data on collection
@@ -5979,6 +6092,14 @@ Lustre
     case other tools might care.  see the collectl documentation on lustre
     for details
 
+Interconnect
+  --xopts
+      i - include i/o sizes in brief mode
+      
+Memory
+  --memopts
+      R - show changes in memory as rates, not instantaneous values
+
 Network
   --netfilt perl-regx[,perl-regx...]
       this ONLY applies to network detail output and not data collection
@@ -5988,12 +6109,10 @@ Network
       e - include errors in brief mode and explicit error types in
           verbose and detail formats
       E - only display intervals which have network errors in them
+      i - include i/o sizes in brief mode
       w - sets minimal network name width in network stats output which 
           can be useful for aligning output from multiple systems
 
-MEMORY
-  --memopts
-      R - show changes in memory as rates, not instantaneous values
 NFS
   --nfsfilt  TypeVer,...
       C - client
@@ -6128,7 +6247,23 @@ exit    if !defined($_[0]);
 sub whatsnew
 {
   my $whatsnew=<<EOF6;
-What's new in collectl?
+What's new in collectl since January 2011?
+
+Version 3.6.0
+- dropped support for 2.4 kernels, collectl data prior to V2
+- new subsys: -sM will display NUMA stats
+- new switch: --dskopts i will cause i/o sizes to be included in brief mode
+              --dskopts z will suppress any disk output lines that are all 0s
+- new switch: --xopts i will cause i/o sizes to be included in brief mode
+- new switch: --extract will create a subset raw file for support purposes
+- new switch: --netopts i will cause i/o sizes to be included in brief mode
+- new cpu verbose fields: RunT and BlkT
+- split out anon mem into new field for verbose mode
+- support for disks of type 'vd' added
+- enhanced disk/network filtering by allowed to exclude names
+
+Version 3.5.2
+- new switch: --dsopts z, suppresses detail lines of all zeros
 
 Version 3.5.1
 - ability to correctly playback files that cross midnight

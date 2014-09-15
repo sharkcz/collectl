@@ -332,6 +332,18 @@ sub gexpr
     }
   }
 
+  # gexFlag doesn't apply
+  if ($gexSubsys=~/M/)
+  {
+    for (my $i=0; $i<$CpuNodes; $i++)
+    {
+      foreach my $field ('used', 'free', 'slab', 'map', 'anon', 'act', 'inact')
+      {
+        sendData("numainfo.$field.$i", 'kb', $numaMem[$i]->{$field});
+      }
+    }
+  }
+
   if ($gexSubsys=~/n/i)
   {
     if ($gexSubsys=~/n/)

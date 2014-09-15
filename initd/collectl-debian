@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 # Startup script for collectl on distros that support update-rc.d such
 # as debian & ubuintu
 #
@@ -20,6 +20,12 @@
 
 # description: Run data collection for a number of subsystems
 #    see /etc/collectl.conf for startup options
+#
+# EXAMPLES:
+#  run at 1 second interval and only collect cpu/disk data
+#    /etc/init.d/collectl start "-i1 -scd"
+#  run a second instance with instance name of 'int5', with interval of 5 seconds
+#    /etc/init.d/collectl start int5 "-i5"
 
 PERL=/usr/bin/perl
 COLLECTL=/usr/bin/collectl

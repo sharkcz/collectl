@@ -33,6 +33,14 @@ certainly could be added if the demand is there.
   <td><b>Other Commands</b></td><td width=25%><b>Equivalence</b></td>
 </tr>
 <tr>
+  <td>sar -b</td><td>collectl -sd</td>
+  <td>iostat -x</td><td>collectl -sD</td>
+</tr>
+<tr>
+  <td>sar -B</td><td>collectl -sm --verbose</td>
+  <td>/proc/fs/lustre</td><td>collectl -sl --verbose</td>
+</tr>
+<tr>
   <td>sar -clquw</td><td>collectl -sx --verbose</td>
   <td>mpstat</td>    <td>collectl -sc --verbose</td>
 </tr>
@@ -57,7 +65,7 @@ certainly could be added if the demand is there.
   <td>ps</td>    <td>collectl -sZ</td>
 </tr>
 <tr>
-  <td>sar -R</td><td><i>-sm --memopts R</i></td>
+  <td>sar -R</td><td>collectl -sm --memopts R</td>
   <td>slabtop</td> <td>collectl -sY --slabopts S</td>
 </tr>
 <tr>
@@ -71,7 +79,7 @@ certainly could be added if the demand is there.
 </table>
 </center>
 
-<table width=100%><tr><td align=right><i>updated Nov 22, 2008</i></td></tr></colgroup></table>
+<table width=100%><tr><td align=right><i>updated October 4, 2011</i></td></tr></colgroup></table>
 
 </body>
 </html>

@@ -224,7 +224,7 @@ sub sexprRaw
     }
   }
 
-  my $memString='';
+  my ($memString, $memDetString)=('','');
   if ($subsys=~/m/)
   {
     $memString= "$pad(meminfo (memtot $memTot) (memused $memUsed) (memfree $memFree) ";
@@ -232,6 +232,30 @@ sub sexprRaw
     $memString.="(memslab $memSlab) (memmap $memMap) (meminact $memInact) ";
     $memString.="(memhugetot $memHugeTot) (memhugefree $memHugeFree) (memhugersvd $memHugeRsvd) ";
     $memString.="(swaptot $swapTotal) (swapused $swapUsed) (swapfree $swapFree))\n";
+  }
+
+  if ($subsys=~/M/)
+  {
+    my ($names,$used,$free,$slab,$map,$anon,$act,$inact)=('','','','','','','','');
+    for (my $i=0; $i<$CpuNodes; $i++)
+    {
+      $names.=" $i";
+      $free.=  " $numaMem[$i]->{free}";
+      $used.=  " $numaMem[$i]->{used}";
+      $slab.=  " $numaMem[$i]->{slab}";
+      $map.=   " $numaMem[$i]->{map}";
+      $anon.=  " $numaMem[$i]->{anon}";
+      $act.=   " $numaMem[$i]->{act}";
+      $inact.= " $numaMem[$i]->{inact}";
+    }
+    $memDetString= "$pad(numainfo\n";
+    $memDetString.="  (name$names)\n";
+    $memDetString.="  (free$free)\n";
+    $memDetString.="  (used$used)\n";
+    $memDetString.="  (slab$slab)\n";
+    $memDetString.="  (map$map)\n";
+    $memDetString.="  (anon$anon)\n";
+    $memDetString.="  (inact$inact))\n";
   }
 
   my $netSumString=$netDetString='';
@@ -342,7 +366,7 @@ sub sexprRaw
 
   $sexprRec.="$pad(sample (time $lastSecs[$rawPFlag]))\n"    if !$sumFlag;
   $sexprRec.="(collectl_detail\n"     if $XCFlag && $detFlag;
-  $sexprRec.="$cpuDetString$diskDetString$netDetString$envDetString$impDetString";
+  $sexprRec.="$cpuDetString$diskDetString$memDetString$netDetString$envDetString$impDetString";
   $sexprRec.=")\n"                    if $XCFlag && $detFlag;
 
   # Either send data over socket or print to terminal OR write to
@@ -505,6 +529,30 @@ sub sexprRate
     $memString.="(swaptot $swapTotal) (swapused $swapUsed) (swapfree $swapFree)\n";
   }
 
+  if ($subsys=~/M/)
+  {
+    my ($names,$used,$free,$slab,$map,$anon,$act,$inact)=('','','','','','','','');
+    for (my $i=0; $i<$CpuNodes; $i++)
+    {
+      $names.=" $i";
+      $free.=  " $numaMem[$i]->{free}";
+      $used.=  " $numaMem[$i]->{used}";
+      $slab.=  " $numaMem[$i]->{slab}";
+      $map.=   " $numaMem[$i]->{map}";
+      $anon.=  " $numaMem[$i]->{anon}";
+      $act.=   " $numaMem[$i]->{act}";
+      $inact.= " $numaMem[$i]->{inact}";
+    }
+    $memDetString= "$pad(numainfo\n";
+    $memDetString.="  (name$names)\n";
+    $memDetString.="  (free$free)\n";
+    $memDetString.="  (used$used)\n";
+    $memDetString.="  (slab$slab)\n";
+    $memDetString.="  (map$map)\n";
+    $memDetString.="  (anon$anon)\n";
+    $memDetString.="  (inact$inact))\n";
+  }
+
   my $netSumString=$netDetString='';
   if ($subsys=~/n/i)
   {
@@ -606,7 +654,7 @@ sub sexprRate
 
   $sexprRec.="(collectl_detail\n"     if $XCFlag && $detFlag;
   $sexprRec.="$pad(sample (time $lastSecs[$rawPFlag]))\n"    if !$sumFlag;
-  $sexprRec.="$cpuDetString$diskDetString$netDetString$envDetString$impDetString";
+  $sexprRec.="$cpuDetString$diskDetString$memDetString$netDetString$envDetString$impDetString";
   $sexprRec.=")\n"                    if $XCFlag && $detFlag;
 
   # Either send data over socket or print to terminal OR write to

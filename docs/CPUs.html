@@ -8,7 +8,7 @@
 <center><h1>CPU Monitoring</h1></center>
 <p>
 <h3>Introduction</h3>
-The only thing really worthy of note is that as of Version 3.4.2, collectl can now detect
+As of Version 3.4.2 of collectl, collectl can now detect
 dynamic changes to a CPU's state.  In other words, going offline or coming back online.
 When one or more CPUs is indeed found to be off line, collectl will include a message in
 an output header to indicate this.  Furthermore, when display CPU numbers in headers, those
@@ -37,8 +37,8 @@ will be written to the file header in the field <i>CPUsDis</i>.  A new flag <i>D
 be added to the <i>Flags</i> field.  However, one will still see the same effects of a CPU
 state change in the output during playback.
 <p>
-<h3>Restrictions</h3>
-If a CPU goes offline <i>after</i> collectl has started and one is logging to disk, it will not
+<b>Restrictions</b>
+<br>If a CPU goes offline <i>after</i> collectl has started and one is logging to disk, it will not
 be noted in the file header.
 <p>
 When monitoring process data, this header will indicate if a CPU was found to be offline at the
@@ -49,7 +49,38 @@ If you are only monitoring interrupt data and there is a state change things wil
 As users typically monitor Interrupts and CPU data at the same time it is not felt to be worth 
 the extra effort or processng overhead to try and accommodate this rare case.
 
-<table width=100%><tr><td align=right><i>updated June 25, 2010</i></td></tr></colgroup></table>
+<center><b><i>Caution:</i> Large numa systems and the performance impact with kernels >= 2.6.32</b></center>
+<br>Systems with higher CPU and numa node counts will now see additional monitoring
+overhead, which can be as much as a factor or 50 or more, depending on the actual hardware
+configuration!  The specific reason is that it's now more expensive to read /proc/stat.
+<p>
+In this first example, which is a 4 core/2 node system runnng rhel5.3, we measure the
+system overhead for monitoring cpu stats at about 3 seconds/day using <i>standard</i> 
+way to measure collectl overhead:
+
+<div class=terminal><pre>
+time collectl -sc -i0 -c 8640 -f/tmp
+real    0m2.879s
+user    0m1.908s
+sys     0m0.913s
+</pre></div>
+
+In this example we're measuring 1/10th the number of samples (I get impatient) on an 48 core/8 node
+system running fedora 14, which is a 2.6.35 kernel, and this alone is over 5 times the overhead
+of the previous example which normalizing to a full day would be over 50 times the load:
+
+<div class=terminal><pre>
+time collectl -sc -i0 -c 864 -f/tmp
+real    0m16.783s
+user    0m3.003s
+sys     0m13.523s
+</pre></div>
+
+This overhead will also be felt when monitoring memory as well, but by a
+much smaller factor if only doing -sm.  The -sM command will suffer a similar fate to cpu
+stats, though more in the range of a factor of 10.
+
+<table width=100%><tr><td align=right><i>updated Sept 15, 2011</i></td></tr></colgroup></table>
 
 </body>
 </html>

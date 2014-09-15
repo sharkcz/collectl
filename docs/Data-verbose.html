@@ -15,8 +15,6 @@ such as B, D and M will also force verbose format.
 
 <h3>Buddy (Memory Fragmentation) Data, <i>collectl -sb</i></h3>
 <p>
-This data does not appear on systems running 2.4 kernels.
-
 <div class=terminal-wide14><pre>
 # MEMORY FRAGMENTATION SUMMARY (4K pages)
 #     1Pg    2Pgs    4Pgs    8Pgs   16Pgs   32Pgs   64Pgs  128Pgs  256Pgs  512Pgs 1024Pgs
@@ -30,7 +28,7 @@ all the memory types.
 <div class=terminal-wide14>
 <pre>
 # CPU SUMMARY (INTR, CTXSW & PROC /sec)
-# USER  NICE   SYS  WAIT   IRQ  SOFT STEAL  IDLE  INTR  CTXSW  PROC  RUNQ   RUN   AVG1  AVG5 AVG15
+# USER  NICE   SYS  WAIT   IRQ  SOFT STEAL  IDLE  INTR  CTXSW  PROC  RUNQ   RUN   AVG1  AVG5 AVG15 RunT BlkT
 </pre>
 </div>
 
@@ -75,9 +73,16 @@ This next set of fields apply to processes
 <tr><td><b>Runq</b></td><td>Number of processes in the run queue.</li></td></tr>
 <tr><td><b>Run</b></td><td>Number of processes in the run state.</li></td></tr>
 <tr><td><b>Avg1, Avg5, Avg15</b></td><td>Load average over the last 1,5 and 15 minutes.</td></tr>
+<tr><td><b>RunT</b></td><td>Total number of process in the run state, not counting collectl itself</td></tr>
+<tr><td><b>BlkT</b></td><td>Total number of process blocked, waiting on I/O</td></tr>
 </table>
 
 <p><h3>Disks, <i>collectl -sd</i></h3>
+<p>
+If you specify filtering with <i>--dskfilt</i>, the disks that match the pattern(s)
+will either be included or excluded from the the summary data.  However, the data will
+<i>still</i> be collected so if recorded to a file can later be viewed.
+
 <div class=terminal>
 <pre>
 # DISK SUMMARY (/sec)
@@ -86,10 +91,7 @@ This next set of fields apply to processes
 
 <table>
 <tr><td><b>KBRead</b></td><td>KB read/sec</td></tr>
-<tr valign=top><td><b>RMerged</b></td>
-<td>Read requests merged per second when being dequeued.
-These statistics are not available in older kernels which 
-only record disk statistics in /proc/stat.</td></tr>
+<tr valign=top><td><b>RMerged</b></td><td>Read requests merged per second when being dequeued.</td></tr>
 <tr><td><b>Reads</b></td><td>Number of reads/sec</td></tr>
 <tr><td><b>SizeKB</b></td><td>Average read size in KB</td></tr>
 <tr><td><b>KBWrite<b></td><td>KB written/sec</td></tr>
@@ -111,14 +113,14 @@ only record disk statistics in /proc/stat.</td></tr>
 
 <table>
 <tr><td colspan=2>DCache</td></tr>
-<tr><td><b>Number</b></td><td>Number of entries in directory cache</td</tr>
-<tr><td><b>Unused</b></td><td>Number of unused entries in directory cache</td</tr>
-<tr><td><b>Handles</b></td><td>Number of allocated file handles</td></tr>
-<tr><td><b>% Max</b></td><td>Percentage of maximum available file handles</td></tr>
-<tr><td><b>Inode</b></td><td>Number of used inode handles</td></tr>
+<tr><td><b>Dentries Number</b></td><td>Number of entries in directory cache</td</tr>
+<tr><td><b>Dentried Unused</b></td><td>Number of unused entries in directory cache</td</tr>
+<tr><td><b>Handles Alloc</b></td><td>Number of allocated file handles</td></tr>
+<tr><td><b>handles % Max</b></td><td>Percentage of maximum available file handles</td></tr>
+<tr><td><b>Inodes Number</b></td><td>Number of inodes in use</td></tr>
 </table>
 
-<i>NOTE - as of this writing I'm baffled by the dentry unused field.  No matter how 
+<p><i>NOTE - as of this writing I'm baffled by the dentry unused field.  No matter how 
 many files and/or directories I create, this number goes up!  Sholdn't it go down?</i>
 
 <p><h3>Infiniband, <i>collectl -sx</i></h3>
@@ -339,13 +341,11 @@ As with client data, when you only get read/write average sizes when
 
 <p><h3>Memory, <i>collectl -sm</i></h3>
 
-The format for a 2.4 kernel will not include the <i>Slab, Mapped</i> or <i>Commit</i> columns.
-
 <div class=terminal-wide14>
 <pre>
-# MEMORY STATISTICS
-#<---------------------------Physical Memory---------------------------><-----------Swap------------><-------Paging------>
-#   Total    Used    Free    Buff  Cached    Slab  Mapped  Commit  Inact Total  Used  Free   In  Out Fault MajFt   In  Out
+# MEMORY SUMMARY
+#<-------------------------------Physical Memory------------------------------><-----------Swap------------><-------Paging------>
+#   Total    Used    Free    Buff  Cached    Slab  Mapped    Anon  Commit Inact Total  Used  Free   In  Out Fault MajFt   In  Out
 </pre></div>
 
 <table>
@@ -369,6 +369,9 @@ The format for a 2.4 kernel will not include the <i>Slab, Mapped</i> or <i>Commi
 
 <tr valign=top><td><b>Mapped</b></td>
 <td>Memory mapped by processes</td></tr>
+
+<tr valign=top><td><b>Anon</b></td>
+<td>Anonymous memory.  <i>NOTE - this </i>is included<i> with mapped memory in brief format</i></td></tr>
 
 <tr valign=top><td><b>Commit</b></td>
 <td>Accorting to RedHat: <i>"An estimate of how much RAM you would need to make a 99.99% guarantee
@@ -419,6 +422,10 @@ types of errors.  To get individual error counts, you must either include <i>--n
 or report details on individual interfaces in plot format by specifying -P.  
 Transmission errors are categorized by errors, dropped, fifo, collisions and carrier.
 Receive errors are broken out for errors, dropped, fifo and framing errors.
+<p>
+If you specify filtering with <i>--netfilt</i>, the names that match the pattern(s)
+will either be included or excluded from the the summary data.  However, the data will
+<i>still</i> be collected so if recorded to a file can later be viewed.
 
 <div class=terminal>
 <pre>
@@ -681,7 +688,7 @@ in effect, this number will be equal to the Slabs field reported by -sm.</td></t
 <tr><td><b>FTrans</b></td><td>Fast retransmissions/sec.</td></tr>
 </table>
 
-<table width=100%><tr><td align=right><i>updated May 12, 2011</i></td></tr></colgroup></table>
+<table width=100%><tr><td align=right><i>updated September 29, 2011</i></td></tr></colgroup></table>
 
 </body>
 </html>

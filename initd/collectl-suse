@@ -21,6 +21,17 @@
 #                    to read format.
 ### END INIT INFO
 
+# description: Run data collection for a number of subsystems
+#    see /etc/collectl.conf for startup options
+#      $2: process name extension, if other than collectl [optional for start/restart/reload]
+#      $3: parameters, in quotes if more than one, to pass to daemon command
+#
+# EXAMPLES:
+#  run at 1 second interval and only collect cpu/disk data
+#    /etc/init.d/collectl start "-i1 -scd"
+#  run a second instance with instance name of 'int5', with interval of 5 seconds
+#    /etc/init.d/collectl start int5 "-i5"
+
 COLLECTL=/usr/bin/collectl
 if [ ! -f $COLLECTL ]; then
     echo -n "Cannot find $COLLECTL"

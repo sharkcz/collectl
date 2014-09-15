@@ -117,7 +117,8 @@ sub helloPrintVerbose
   my $homeFlag=   shift;
   my $lineref=    shift;
 
-  my $line='';
+  # Note that last line of verbose data (if any) still sitting in $$lineref
+  my $line=$$lineref='';
   if ($hwOpts=~/s/)
   {
     if ($printHeader)

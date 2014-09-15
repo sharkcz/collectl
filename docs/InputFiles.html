@@ -38,8 +38,9 @@ Infiniband data which is obtained by the <i>perfquery</i> OFED utility as noted.
 <tr><td>&nbsp;</td><td>/proc/fs/lustre/obdfilter/OST_.../brw_stats</td><td>&nbsp;</td></tr>
 <tr><td>&nbsp;</td><td>/proc/fs/lustre/osc/OSC...mds.../stats</td><td>&nbsp;</td></tr>
 <tr><td>Memory</td><td>/proc/meminfo</td><td>sar -rB, free, vmstat</td></tr>
-<tr><td>&nbsp;</td><td>/proc/stat</td><td>&nbsp;</td></tr>
-<tr><td>&nbsp;</td><td>/proc/vmstat</td><td>&nbsp;</td></tr>
+<td>&nbsp;</td><td>/proc/vmstat</td><td>&nbsp;</td></tr>
+<tr><td>&nbsp;</td><td>/sys/device/system/node/node*/meminfo/</td><td>&nbsp;</td></tr>
+<tr><td>&nbsp;</td><td>/sys/device/system/node/node*/numastat/</td><td>&nbsp;</td></tr>
 <tr><td>Network</td><td>/proc/net/dev</td><td>netstat -i</td></tr>
 <tr><td>NFS</td><td>/proc/net/rpc/nfs</td><td>nfsstat -c/s [c if -o C]</td></tr>
 <tr><td>&nbsp;</td><td>/proc/net/rpc/nfsd</td><td>&nbsp;</td></tr>
@@ -59,7 +60,7 @@ Infiniband data which is obtained by the <i>perfquery</i> OFED utility as noted.
 </table>
 </center>
 
-<table width=100%><tr><td align=right><i>updated Feb 21, 2011</i></td></tr></colgroup></table>
+<table width=100%><tr><td align=right><i>updated Sept 15, 2011</i></td></tr></colgroup></table>
 
 </body>
 </html>

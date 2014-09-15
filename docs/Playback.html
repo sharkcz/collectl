@@ -49,9 +49,9 @@ these switches to select the appropriate subset of files that match your selecti
 When filtering wildcarded files using <i>--from</i> and/or <i>--thru</i> switches,
 collectl compares those values with the timestamps of the filenames to determine
 whether or not that file is likey to contain the data requested.  However, collectl
-doesn't know if a file contains data that spans midnight or so it simply assumes it
-doesn't since this is a rarely used feature.  Therefore, collectl <i>only</i> allows
-relaxes it's tests when wildcard are not specified in the filename playback string.
+doesn't know if a file contains data that spans midnight or not so it simply assumes it
+doesn't since this is a rarely used feature.  Therefore, collectl <i>only</i>
+relaxes these tests when wildcards are <i>not</i> specified in the filename playback string.
 <p>
 <b>Processing files that span midnight</b>
 <br>

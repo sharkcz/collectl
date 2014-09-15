@@ -41,14 +41,35 @@ this can be extremely boring in real-time mode, consider what happens during pla
 you'll have 8640 samples but this switch will allow you to see the one that recorded the network error!
 
 <p><b>Filtering</b>
-<br>If you'd like to limit the networks included in either the detail output or the summary
-totals, you can explicitly include or exclude them using <i>--netfilt</i>.  The target of
-this switch is actually one or more perl expressions, but if you don't know perl all you
-really need to know is these are strings that are compared to each network name.  If the first
-(or only) name is preceded with a ^, names that match the string(s) will be excluded.
+<br>Before describing how filtering works, let's quickly review the difference between summary and detail
+data.  When looking at summary data collectl reports the totals across all network interfaces except
+for those it knows have already been accounted for.  For example, if your machine has eth0 and eth1 bonded
+together, the bond shows up as a third interface and if collectl were to report the totals across all
+three, the numbers would be twice that expected.  For this reason, collectl only looks at specific
+types of interfaces, which at time of this writing are limited to <i>eth, ib, em</i> and <i>p1p</i>,
+though no doubt there will be others in the future.
 <p>
-This switch works <i>exactly</i> the same way as <i>--dskfilt</i> so for use case examples
-see <a href=Disks.html>Disk Monitoring</a>.
+You can change the set of interfaces collectl includes in its summary totals with <i>--netfilt</i>,
+the target of which is actually one or more comma separated perl expressions, but if you don't know
+perl all you really need to know is these are strings that are compared to each network name and
+only those that match will be included in the summary.  This not only makes it possible to reduce
+those network you wish to summarize (say you want to summarize ethernet networks but not infiniband
+ones) OR include new ones that are not currently known by collectl.
+<p>
+A second form of the switch, in which the first character is a ^ cause all names that match the
+expression to be excluded from the summary data.  Whether to use the first or second form may be more
+a matter of which is less complex for the particular form of summarization you're looking for, but
+if you're trying to extend the list of those interfaces recognized as being summarizable, your only
+choice is the first form.
+<p>
+In addition to controlling how network data is summarized, this switch also controls which
+interfaces are reported as detail data.  However, be careful when using this switch during playback
+because you may not wish to see detailed and summary data filtered the same way.  If this is the case,
+you will need to play back the data twice, once with -sn using the <i>--netfilt</i> to control the
+summary data and a second time with -sN and a different value for <i>--netfilt</i> to control the
+detail listing.  It would certainly be possible to introduce separate filtering switches for
+summary and detail data, but it is felt that this situation is uncommon enough to not make things
+more confising than they already are.
 
 <a name="dynamic"></a>
 <p><b>Dynamic Network Discovery</b>
@@ -76,7 +97,7 @@ files in that the data will no longer be consistent.  In fact, it is probably be
 generate detail files for dynamic network when using this switch.  As of this writing I'm still trying
 to think of ways to improve the situation.
 
-<table width=100%><tr><td align=right><i>updated Sept 4, 2013</i></td></tr></colgroup></table>
+<table width=100%><tr><td align=right><i>updated April 21, 2014</i></td></tr></colgroup></table>
 
 </body>
 </html>

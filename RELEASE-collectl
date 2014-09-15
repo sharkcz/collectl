@@ -38,6 +38,68 @@ KNOWN PROBLEMS/RESTRICTIONS
 
 CHANGES
 
+3.7.4-1  Sep 10, 2014
+  - typo in $netFilt (should have been $netFiltIgnore) preventing any
+    network from being included in totals when --netfilt specified, but
+    also made me rethink the way summaries are calculalted (see next item)
+  - 2 more network types were discovered to be causing double counting
+    in summaries, specifically vibr and vnets.   since the exceptions occur
+    at a far greater rate it was decided that rather than have a default list
+    of those network types to exclude from the summaries, it makes far more
+    sense to have a list with those that SHOULD be included as well as a
+    mechanism for handling new summary types.  This led to a reinterpretation
+    of --netfilt.  see the man page and Network.html for more details
+  - removed references to XC, which is no longer supported
+  - use abs to generate path to exe, simpler and cleaner [thanks Jeff]
+  - extended the way formatit is loaded and changed the order that collectl.conf
+    is discovered, noting it should only effect people actually modifying
+    code or moving things to non-standard locations.  it IS now documented
+    in Startup and Initialization. [thanks again, Jeff]
+  - set max lines to read for diskstats to 20000 for those with real large
+    disk counts where 10000 wasn't enough [thanks jean-marc]
+  - very rare, but if doing timing and no hires present, $microInterval gets set
+    to zero and the division by the interval blows up
+  - finally remembered to remove -G and --group which were replaced by --tworaw
+  - clarified description of -s defaults in manpage as well as adding a
+    pointer to the online documentation on file naming [thanks rob]
+  - added additional error message for when files match selection string
+    but none contain -date-time.raw  [thanks rob]
+  - add support for newer kernel CPU stats: guest, guest_nice
+  - now that 2.4 kernels no longer supported, make sure CPU stats contain
+    at least softirq field
+  - change headers with % to PCT and remove space, also remove whitespace in
+    interrupt detail output for type and devices columns [thanks rob]
+  - new switch --ALL, selects summary and detail data for all subsystems
+    [thanks rob]
+  - new switch --full, selects --verbose, always includes RECORD separator and
+    includes which subsystem data is being reported with each interval in
+    the RECORD header to make parsing easier for rob  [thanks rob]
+  - if you DON'T collect tcp data but want to play it back, variables weren't
+    initialized to 0 and you get uninit variable warnings
+  - if disk name ends with a digit (can only happen when manually changing
+    disk filtering in either collectl.conf or with --rawdskfilt, don't
+    include in disk summary stats [thanks guy]
+  - discovered a place where some numa counters go backwards!  This MUST be a
+    kernel bug but inserted code to mitigate and warn if it happens [thanks rob]
+  - removed a line of code incorrectly initializing $HCAPosts[] because that is
+    now a doubly indexed array [thanks Jeff]
+  - discovered tap devices don't set default network speeds correctly and can
+    cause 'bogus' messages so use default max
+  - make 'Intrpt' header mixed case for CPU details, not all upper
+  - new 3rd option for --top, allows one to display the top-n processes sorted
+    by any column vertically, similar to playback mode, which in some cases
+    can be very handy
+  - if only 1 tcp subtype selected with --tcpfilt, was printing column
+    header of ERR and I've no idea why.  Changed it to TCP.
+  - I didn't like --tcpfilt I by itself forcing --verbose so changed it to just
+    being in the --tcpfilt string will force it and updated man page as well
+    since --tcpfilt wasn't even documented in it
+  - As warned I'm in the process of direct support for lustre and you should
+    contact Peter Piela at TeraScala to get a copy of his lustre plugin.
+    Therefore -sl is being removed as a default.  To get collectl's native
+    lustre support in daemon mode, you must add it to -s.  Native support will
+    be completely removed around the summer of 2015.
+
 3.7.3-1  Apr  1, 2014
   - had to change 'defined(@array)' to remove the 'defined() which is
     deprecated on RHEL7

@@ -1,0 +1,55 @@
+<html>
+<head>
+<link rel=stylesheet href="style.css" type="text/css">
+<title>collectl - Startup and Initialization</title>
+</head>
+
+<body>
+<center><h1>Startup and Initialization</h1></center>
+<p>
+<h3>Introduction</h3>
+Much of this is really intended for those who want to learn more about how collectl
+initializes and don't feel the urge to weigh through the code.  Quite frankly I don't
+blame you!
+<p>
+When you run the collectl command, it goes through a number of initialization steps
+most of which are not being documented here.  Rather as initialization internals
+becomes more important or identified as areas people want to here more about, now
+I'll have a place to put it.
+
+<h3>Finding formatit.ph</h3>
+Collectl basically consists to 2 main perl scripts, the first is collectl itself,
+whose main job is reading data from /proc and writing it to a raw file.  The
+functions for generating formatted output live in formatit.ph.  When collectl is
+installed from an rpm, debian package or one has simply executed INSTALL, formatit.ph
+is copied to /usr/share/collectl.  This is also the directory collectl looks in for
+--include and --export modules.
+<p>
+However, there are some cases in which one wishes to install collectl in a non-standard
+location by modifying the INSTALL script or they're modifying collectl and want to test
+those changes without disturbing the installed copy.  To accomodate this feature,
+collectl actually looks in a couple of places to locate formatit.ph, based on the directory
+collectl itself is run from so let's call that $bindir:
+<ul>
+<li>If $bindir/formatit.ph exists, load that one</li>
+<li>Otherwise, if $bindir/../share/collectl/formatit.ph exists, load that one</li>
+<li>Otherwise, if /usr/share/collectl/formatit.ph exists, load that one</li>
+<li>Otherwise, error!</li>
+</ul>
+
+<h3>Finding collectl.conf</h3>
+A similar mechanism exists for opening/reading the collectl.conf file which among
+other things sets the parameters used by collectl run running as a Daemon.  This
+search path is also based on $bindir.
+<ul>
+<li>If collectl is run with <i>-C configfile</i> read settings from there</li>
+<li>Otherwise, if $bindir/collectl.conf exists, read settings from there</li>
+<li>Otherwise, if $bindir../../etc/collectl.conf exists, use that one</li>
+<li>Otherwise, if /etc/collectl.conf exists, read that one</li>
+<li>Otherwise, error!</li>
+</ul>
+
+<table width=100%><tr><td align=right><i>updated April 29, 2014</i></td></tr></colgroup></table>
+
+</body>
+</html>

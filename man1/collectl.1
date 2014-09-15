@@ -44,6 +44,13 @@ those statistics will be provided but the warnings produced when they are not
 available you try to select them with \-s will not be displayed.
 .RE
 
+.B "--ALL"
+.RS
+This is actually a superset of --all by adding detail statistics as well with the
+exception of TCP details when displaying to a terminal since those are only available
+with -P or -f.
+.RE
+
 .B "\-A, --address address[:port[:timeout]] | server[:port]"
 .RS
 In the first form, one specifies an address, optional port
@@ -118,11 +125,13 @@ online documentation on Exporting Custom Output and Logging for more details.
 
 .B "\-f, --filename Filename"
 .RS
-This is the name of a file to write the output to.  See the
-description of
+This is the name of a file to write the output to.  For details on how
+the output files are named, see the
 .BR File 
 .BR Naming
-for further details.
+section of the documentation on collectl.sourceforge.net OR
+/usr/share/doc/collectl/FileNaming.html
+
 .RE
 
 .B \-F, --flush seconds
@@ -369,6 +378,15 @@ The leading 0 of the hour is optional and if the seconds field is not specified
 is assumed to be 0.  If no dates specified the time(s) apply to each file specified
 by \-P.  Otherwise the time(s) only apply to the first/last dates and any files
 between those dates will have all their data reported. 
+.RE
+
+.B "--full"
+.RS
+Full mode is actually a superset of --verbose and if selected will force --verbose.
+It will also force the RECORD separator to be printed for every interval even if
+only a single subsystem was requested and to include the actual subsystems that
+follow following the utc timestamp as a parsing aid for those who may wish to
+parse the text output rather than the plot data.
 .RE
 
 .B "--offsettime seconds"
@@ -695,9 +713,12 @@ s \- print summary stats at the end of each file processed even if more than one
 
 .B "\-s, --subsys subsystem"
 .RS
-This field controls which subsystem data is to be collected or played back
-for. The rules for displaying results vary depending on the type of data to be
-displayed.  If you write data for CPUs and DISKs to a raw file and play it back
+This field controls which subsystem data is to be collected or played back.
+The default for collecting data is "cdn", which stands for CPU, Disk and Network
+summary data and the default for playback is everthing that was collected.
+
+The rules for displaying results vary depending on the type of data selected.
+If you write data for CPUs and DISKs to a raw file and play it back
 with \-sc, you will only see CPU data.  If you play it back with \-scm you will
 still only see CPU data since memory data was not collected.  However, when 
 used with \-P, collectl will always honor the subsystems specified with 
@@ -709,8 +730,6 @@ use \-h.
 You can also use + or \- to add or subtract subsystems to/from the default values. 
 For example, "\-s\-cdn+N"< will remove cpu, disk and network monitoring from the
 defaults while adding network detail.
-
-The default is "cdn", which stands for CPU, Disk and Network summary data.
 
 Refer to data definitions on the sourceforge website OR in 
 /usr/share/collectl/doc/collectl\-xxx to see complete descriptions of the data returned.
@@ -845,7 +864,7 @@ Similar to --showoptions, this command summaries just the paramaters associated 
 Yet another way to summare a portion of the help text, this command only shows valid subsystems.
 .RE
 
-.B "--top [type][,num]"
+.B "--top [type][,num[,v]]"
 .RS
 Include the top "num" consumers by resource for this interval.  The default number is the height
 of the window if it can be determined otherwise 24, and the 
@@ -860,6 +879,9 @@ In interactive mode and if not specified, the process
 monitoring interval will be set to that for other subsystems.  The screen will be cleared for each interval
 resulting in a display similar to the "top" utility.  In playback more the screen will NOT be cleared.  You
 cannot use this switch in "record" mode.
+
+Finally, if v is specified as the 3rd parameter, the output scrolls vertically (like playbak mode) rather
+than clearing the screen between intervals.
 .RE
 
 .B "--umask mask"
@@ -931,7 +953,8 @@ words all entries are zero except for IDLE.
 
 .B "--dskfilt [^]perl-regx[,perl-regx...]"
 .RS
-NOTE \- this does NOT effect data collection,  ALL disk data will always be collected.
+NOTE \- this does NOT effect data collection and ALL disk data will always be collected,
+unless --rawdskfilt is specified too.
 However, only data for disk names that match the pattern(s) will be included in the summary
 totals and displayed when details are requested.  Alternatively, if you preface the
 first expression with a caret, all names that match all strings will be excluded from the summary
@@ -1024,12 +1047,16 @@ values.  One can also show absolute changes between intervals by including \-on.
 
 .B "--netfilt [^]perl-regx[,perl-regx...]"
 .RS
-NOTE \- this does NOT effect data collection,  ALL network data will always be collected.
-However, only data for network names that match the pattern(s) will be included in the summary
-totals and displayed when details are requested.  Alternatively, if you preface the
-first expression with a caret, all names that match all strings will be excluded from the summary
-totals and detail displays rather then included.  If you don't know perl, a partial string will 
-usually work too.
+NOTE \- this does NOT effect data collection and ALL network data will always be collected,
+unless --rawnetfilt is specified too.  Also note that by default only eth, ib, em and
+p1p networks when present are included in the summary.  When this switch is specified,
+only data for network names that match the pattern(s) will be included in the summary and 
+displayed when details are requested.  This switch therefore also gives you the ability
+to add other, possibly new, network devices to the summary totals.
+
+Alternatively, if you preface the first expression with a caret, all names
+that match all strings will be excluded from the summary totals and detail displays rather
+then included.  If you don't know perl, a partial string will usually work too.
 .RE
 
 .B "--netopts"
@@ -1091,7 +1118,6 @@ U \- any process owned by this username
 .B "caution:"
 the process names collectl tries to match with c and C is the second field in /proc/pid/stat
 which may not necessarily be what you think!  eg the name for X emacs is actually emacs-x
-
 .RE
 
 .B --procopts options
@@ -1146,10 +1172,7 @@ A security hole was identified that allowed non-priviledged users to read
 /proc/pid/io and guess password lengths and noe many distros retrict
 access to the owner or root.  As a result, non-priviledged users will see 
 all 0 I/O counts for processes that are not theirs when specifying --procopt i.
-
-
 .RE
-
 .RE
 
 .B "--slabfilt Slab Filters"
@@ -1161,9 +1184,29 @@ slabs whose names start with those strings will be listed or summaried.
 .B "--slabopts Slab Options"
 .RS
 .B "s \- exclude any slabs with an allocation of 0"
-.RE
-.RS
+.br
 .B "S \- only show those slabs whose allocations changed since last display"
+.RE
+
+.B "--tcpfilt"
+.RS
+These filters actually control both what is collected as well as displayed.  If
+one selects non-collected filters, 0s will be reported.  There is one special
+case and that is if one includes T (tcp extended stats) in the filter string,
+there are no brief ones and therefore --verbose will be forced.
+.br
+.B "i \- ip stats"
+.br
+.B "t \- tcp stats"
+.br
+.B "u \- udp stats"
+.br
+.B "c \- icmp stats"
+.br
+.B "I \- ip extended stats"
+.br
+.B "T \- tcp excented stats"
+.RE
 .RE
 
 .B "--xopts"

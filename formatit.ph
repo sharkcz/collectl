@@ -560,7 +560,7 @@ sub initRecord
 
     $line=~/.*\/(\S+)\/speed/;
     my $netName=$1;
-    $speed='??'    if $netName=~/^vnet/;                     # hardcoded in kernel to 10 which causes bogus msgs later
+    $speed='??'    if $netName=~/^vnet|^tap/;               # hardcoded in kernel to 10 which causes bogus msgs later
     $netSpeeds{$netName}=$speed    if $speed!~/Invalid/;    # this can happen on a VM where operstate IS up
     #print "set netSpeeds{$netName}=$speed\n";
   }
@@ -1302,6 +1302,7 @@ sub initFormat
   $i=$NumCpus;
   $userP[$i]=$niceP[$i]=$sysP[$i]=$idleP[$i]=$totlP[$i]=0;
   $irqP[$i]=$softP[$i]=$stealP[$i]=$waitP[$i]=0;
+  $guestP[$i]=$guestNP[$i]=0;
 
   for (my $i=0; $i<$CpuNodes; $i++)
   {
@@ -1371,18 +1372,43 @@ sub initFormat
   # tcp - this is sooo ugly.  not all variable are part of all kernels and these are at least
   # some of the ones I've found to be missing in some.  This list may need to be augmented over
   # time.  The alternative it to have conditional tests on all the printing and there is just
-  # too much of that.
-  $tcpData{TcpExt}->{PAWSEstab}=      $tcpData{TcpExt}->{DelayedACKs}=   $tcpData{TcpExt}->{TW}=0;
-  $tcpData{TcpExt}->{DelayedACKLost}= $tcpData{TcpExt}->{TCPPrequeued}=  $tcpData{TcpExt}->{TCPDirectCopyFromPrequeue}=0;
-  $tcpData{TcpExt}->{TCPHPHits}=      $tcpData{TcpExt}->{TCPPureAcks}=   $tcpData{TcpExt}->{TCPHPAcks}=0;
-  $tcpData{TcpExt}->{TCPDSACKOldSent}=$tcpData{TcpExt}->{TCPAbortOnData}=$tcpData{TcpExt}->{TCPAbortOnClose}=0;
+  # too much of that.  Also, if you don't collect ANY tcp stats but try playing back in verbose
+  # they need to be initialized too
+  $tcpData{Ip}->{InReceives}=	 $tcpData{Ip}->{InDelivers}=0;
+  $tcpData{Ip}->{ForwDatagrams}= $tcpData{Ip}->{InDiscards}=0;
+  $tcpData{Ip}->{InAddrErrors}=  $tcpData{Ip}->{OutRequests}=0;
+  $tcpData{Ip}->{OutDiscards}=   $tcpData{Ip}->{ReasmReqds}=0;
+  $tcpData{Ip}->{ReasmOKs}=      $tcpData{Ip}->{FragOKs}=$tcpData{Ip}->{FragCreates}=0;
+
+  $tcpData{Tcp}->{ActiveOpens}=  $tcpData{Tcp}->{PassiveOpens}=0;
+  $tcpData{Tcp}->{AttemptFails}= $tcpData{Tcp}->{EstabResets}=0;
+  $tcpData{Tcp}->{CurrEstab}=    $tcpData{Tcp}->{InSegs}=0;
+  $tcpData{Tcp}->{OutSegs}=      $tcpData{Tcp}->{RetransSegs}=0;
+  $tcpData{Tcp}->{InErrs}=       $tcpData{Tcp}->{OutRsts}=0;
+
+  $tcpData{Udp}->{InDatagrams}=  $tcpData{Udp}->{OutDatagrams}=0;
+  $tcpData{Udp}->{NoPorts}=      $tcpData{Udp}->{InErrors}=0;
+
+  $tcpData{Icmp}->{InMsgs}=      $tcpData{Icmp}->{InErrors}=0;
+  $tcpData{Icmp}->{InDestUnreachs}=$tcpData{Icmp}->{InEchos}=0;
+  $tcpData{Icmp}->{InEchoReps}=  $tcpData{Icmp}->{OutMsgs}=0;
+  $tcpData{Icmp}->{OutErrors}=   $tcpData{Icmp}->{OutDestUnreachs}=0;
+  $tcpData{Icmp}->{OutEchos}=    $tcpData{Icmp}->{OutEchoReps}=0;
+
+  $tcpData{IpExt}->{InMcastPkts}=$tcpData{IpExt}->{InBcastPkts}=0;
+  $tcpData{IpExt}->{InOctets}=   $tcpData{IpExt}->{InMcastOctets}=0;
+  $tcpData{IpExt}->{InBcastOctets}=$tcpData{IpExt}->{OutMcastPkts}=0;
+  $tcpData{IpExt}->{OutOctets}=  $tcpData{IpExt}->{OutMcastOctets}=0;
+
+  $tcpData{TcpExt}->{TW}=        $tcpData{TcpExt}->{PAWSEstab}=0;
+  $tcpData{TcpExt}->{DelayedACKs}=$tcpData{TcpExt}->{DelayedACKLost}=0;
+  $tcpData{TcpExt}->{TCPPrequeued}=$tcpData{TcpExt}->{TCPDirectCopyFromPrequeue}=0;
+  $tcpData{TcpExt}->{TCPHPHits}= $tcpData{TcpExt}->{TCPPureAcks}=0;
+  $tcpData{TcpExt}->{TCPHPAcks}= $tcpData{TcpExt}->{TCPDSACKOldSent}=0;
+  $tcpData{TcpExt}->{TCPAbortOnData}=$tcpData{TcpExt}->{TCPAbortOnClose}=0;
   $tcpData{TcpExt}->{TCPSackShiftFallback}=0;
-
-  $tcpData{IpExt}->{InMcastPkts}=  $tcpData{IpExt}->{InBcastPkts}=  $tcpData{IpExt}->{InOctets}=0;
-  $tcpData{IpExt}->{InMcastOctets}=$tcpData{IpExt}->{InBcastOctets}=$tcpData{IpExt}->{OutMcastPkts}=0;
-  $tcp{IpExt}->{OutOctets}=        $tcpData{IpExt}->{OutMcastOctets}=0;
-
   $tcpData{TcpExt}->{TCPLoss}=$tcpData{TcpExt}->{TCPFastRetrans}=0;
+
   $ipErrors=$icmpErrors=$tcpErrors=$udpErrors=$ipExErrors=$tcpExErrors=0;
 
   # this is here strictly for compatibility with older raw files
@@ -1407,6 +1433,7 @@ sub initFormat
   {
     $userP[$i]=$niceP[$i]=$sysP[$i]=$idleP[$i]=$totlP[$i]=0;
     $irqP[$i]=$softP[$i]=$stealP[$i]=$waitP[$i]=0;
+    $guestP[$i]=$guestNP[$i]=0;
   }
 
   # these all need to be initialized in case we use /proc/stats since not all variables
@@ -1565,6 +1592,7 @@ sub initLast
   {
     $userLast[$i]=$niceLast[$i]=$sysLast[$i]=$idleLast[$i]=0;
     $waitLast[$i]=$irqLast[$i]=$softLast[$i]=$stealLast[$i]=0;
+    $guestLast[$i]=$guestNLast[$i]=0;
   }
 
   for (my $i=0; $i<$CpuNodes; $i++)
@@ -1625,7 +1653,7 @@ sub disableSubsys
   my $unique=shift;
 
   # If user specified --all, they shouldn't see these messages
-  logmsg("W", "-s$type disabled because $why")    if !$allFlag;
+  logmsg("W", "-s$type disabled because $why")    if !$allFlag && !$AllFlag;
   $subsys=~s/$type//ig    if !defined($unique) || !$unique;    # disable using /i if unique not set
   $subsys=~s/$type//g     if  defined($unique) &&  $unique;    # otherwise just disablehe one specified
 
@@ -1640,7 +1668,7 @@ sub disableSubsys
   {
     if ($expOpts[$i]=~/s=.*$type/i)
     {
-      logmsg('W', "found 's=$type' in lexpr so disabled there too")     if !$allFlag;
+      logmsg('W', "found 's=$type' in lexpr so disabled there too")     if !$allFlag || $AllFlag;
       $expOpts[$i]=~s/$type//ig;
     }
   }
@@ -1818,6 +1846,7 @@ sub initInterval
 
   $userP[$NumCpus]=$niceP[$NumCpus]=$sysP[$NumCpus]=$idleP[$NumCpus]=0;
   $irq[$NumCpus]=$softP[$NumCpus]=$stealP[$NumCpus]=$waitP[$NumCpus]=0;
+  $guestP[$NumCpus]=$guestNP[$NumCpus]=0;
 
   # Since the number of cpus can change dynamically, we need to clear these every pass,
   # BUT for now since we're only checking when monitoring CPUS and not interrupts we
@@ -2071,7 +2100,7 @@ sub intervalEnd
       # we need to manaually force their current values to 0.
       for (my $i=0; $i<$NumCpus; $i++)    # in case cpu0 goes offline on its own?
       {
-        $userP[$i]=$niceP[$i]=$sysP[$i]=$waitP[$i]=$irqP[$i]=$softP[$i]=$stealP[$i]=$idleP[$i]=0
+        $userP[$i]=$niceP[$i]=$sysP[$i]=$waitP[$i]=$irqP[$i]=$softP[$i]=$stealP[$i]=$guestP[$i]=$guestNP[$i]=$idleP[$i]=0
 	  if !$cpuEnabled[$i];
       }
     }
@@ -2475,9 +2504,11 @@ sub dataAnalyze
     $cpuIndex=($1 ne "") ? $1 : $NumCpus;
     $cpuEnabled[$cpuIndex]=1;
     $cpusEnabled++    if $cpuIndex != $NumCpus;
-    ($userNow, $niceNow, $sysNow, $idleNow, $waitNow, $irqNow, $softNow, $stealNow)=split(/\s+/, $data);
-    $stealNow=0                              if !defined($stealNow);
-    if (!defined($idleNow))
+    ($userNow, $niceNow, $sysNow, $idleNow, $waitNow, $irqNow, $softNow, $stealNow, $guestNow, $guestNNow)=split(/\s+/, $data);
+    $stealNow=0     if !defined($stealNow);
+    $guestNow=0     if !defined($guestNow);
+    $guestNNow=0    if !defined($guestNNow);
+    if (!defined($softNow))
     {
       incomplete("CPU", $lastSecs[$rawPFlag]);
       return;
@@ -2486,38 +2517,47 @@ sub dataAnalyze
     # we don't care about saving raw seconds other than in 'last' variable
     # Also note that the total number of jiffies may be needed elsewhere (-s p)
     # "wait" doesn't happen unti 2.5, but might as well get ready now.
-    $user= fix($userNow-$userLast[$cpuIndex]);
-    $nice= fix($niceNow-$niceLast[$cpuIndex]);
-    $sys=  fix($sysNow-$sysLast[$cpuIndex]);
-    $idle= fix($idleNow-$idleLast[$cpuIndex]);
-    $wait= fix($waitNow-$waitLast[$cpuIndex]);
-    $irq=  fix($irqNow-$irqLast[$cpuIndex]);
-    $soft= fix($softNow-$softLast[$cpuIndex]);
-    $steal=fix($stealNow-$stealLast[$cpuIndex]);
-    $total=$user+$nice+$sys+$idle+$wait+$irq+$soft+$steal;
+    $user=  fix($userNow-$userLast[$cpuIndex]);
+    $nice=  fix($niceNow-$niceLast[$cpuIndex]);
+    $sys=   fix($sysNow-$sysLast[$cpuIndex]);
+    $idle=  fix($idleNow-$idleLast[$cpuIndex]);
+    $wait=  fix($waitNow-$waitLast[$cpuIndex]);
+    $irq=   fix($irqNow-$irqLast[$cpuIndex]);
+    $soft=  fix($softNow-$softLast[$cpuIndex]);
+    $steal= fix($stealNow-$stealLast[$cpuIndex]);
+    $guest= fix($guestNow-$guestLast[$cpuIndex]);
+    $guestN=fix($guestNNow-$guestNLast[$cpuIndex]);
+
+    $total=$user+$nice+$sys+$idle+$wait+$irq+$soft+$steal+$guest+$guestN;
     $total=100    if $options=~/n/;    # when normalizing, this cancels '100*'
     $total=1      if !$total;          # has seen to be 0 when interval=0;
 
-    $userP[$cpuIndex]= 100*$user/$total;
-    $niceP[$cpuIndex]= 100*$nice/$total;
-    $sysP[$cpuIndex]=  100*$sys/$total;
-    $idleP[$cpuIndex]= 100*$idle/$total;
-    $waitP[$cpuIndex]= 100*$wait/$total;
-    $irqP[$cpuIndex]=  100*$irq/$total;
-    $softP[$cpuIndex]= 100*$soft/$total;
-    $stealP[$cpuIndex]=100*$steal/$total;
+    $userP[$cpuIndex]=  100*$user/$total;
+    $niceP[$cpuIndex]=  100*$nice/$total;
+    $sysP[$cpuIndex]=   100*$sys/$total;
+    $idleP[$cpuIndex]=  100*$idle/$total;
+    $waitP[$cpuIndex]=  100*$wait/$total;
+    $irqP[$cpuIndex]=   100*$irq/$total;
+    $softP[$cpuIndex]=  100*$soft/$total;
+    $stealP[$cpuIndex]= 100*$steal/$total;
+    $guestP[$cpuIndex]= 100*$guest/$total;
+    $guestNP[$cpuIndex]=100*$guestN/$total;
+
     $totlP[$cpuIndex]=$userP[$cpuIndex]+$niceP[$cpuIndex]+
 		      $sysP[$cpuIndex]+$irqP[$cpuIndex]+
-		      $softP[$cpuIndex]+$stealP[$cpuIndex];
+		      $softP[$cpuIndex]+$stealP[$cpuIndex]+
+		      $guestP[$cpuIndex]+$guestNP[$cpuIndex];
 
-    $userLast[$cpuIndex]= $userNow;
-    $niceLast[$cpuIndex]= $niceNow;
-    $sysLast[$cpuIndex]=  $sysNow;
-    $idleLast[$cpuIndex]= $idleNow;
-    $waitLast[$cpuIndex]= $waitNow;
-    $irqLast[$cpuIndex]=  $irqNow;
-    $softLast[$cpuIndex]= $softNow;
-    $stealLast[$cpuIndex]=$stealNow;
+    $userLast[$cpuIndex]=  $userNow;
+    $niceLast[$cpuIndex]=  $niceNow;
+    $sysLast[$cpuIndex]=   $sysNow;
+    $idleLast[$cpuIndex]=  $idleNow;
+    $waitLast[$cpuIndex]=  $waitNow;
+    $irqLast[$cpuIndex]=   $irqNow;
+    $softLast[$cpuIndex]=  $softNow;
+    $stealLast[$cpuIndex]= $stealNow;
+    $guestLast[$cpuIndex]= $guestNow;
+    $guestNLast[$cpuIndex]=$guestNNow;
 
     # this is messy and needs some explanation...  the way cpu average
     # load currently works is that those values are simply taken from
@@ -2530,35 +2570,41 @@ sub dataAnalyze
       $cpuIndex=$NumCpus;
       $userP[$cpuIndex]=$niceP[$cpuIndex]=$sysP[$cpuIndex]=$idleP[$cpuIndex]=0;
       $waitP[$cpuIndex]=$irqP[$cpuIndex]=$softP[$cpuIndex]=$stealP[$cpuIndex]=0;
+      $guestP[$cpuIndex]=$guestNP[$cpuIndex]=0;
+
       for (my $i=0; $i<$NumCpus; $i++)
       {
         next    if (@cpuFiltKeep && !defined($cpuFiltKeep[$i])) ||
 		   (@cpuFiltIgnore && defined($cpuFiltIgnore[$i]));
 
 	$cpusUsed++;
-	$userP[$cpuIndex]+= $userP[$i];
-	$niceP[$cpuIndex]+= $niceP[$i];
-	$sysP[$cpuIndex]+=  $sysP[$i];
-	$idleP[$cpuIndex]+= $idleP[$i];
-	$waitP[$cpuIndex]+= $waitP[$i];
-	$irqP[$cpuIndex]+=  $irqP[$i];
-	$softP[$cpuIndex]+= $softP[$i];
-	$stealP[$cpuIndex]+=$stealP[$i];
+	$userP[$cpuIndex]+=  $userP[$i];
+	$niceP[$cpuIndex]+=  $niceP[$i];
+	$sysP[$cpuIndex]+=   $sysP[$i];
+	$idleP[$cpuIndex]+=  $idleP[$i];
+	$waitP[$cpuIndex]+=  $waitP[$i];
+	$irqP[$cpuIndex]+=   $irqP[$i];
+	$softP[$cpuIndex]+=  $softP[$i];
+	$stealP[$cpuIndex]+= $stealP[$i];
+	$guestP[$cpuIndex]+= $guestP[$i];
+	$guestNP[$cpuIndex]+=$guestNP[$i];
       }
 
       # now convert totals of all percents back to averages
-      $userP[$cpuIndex]/= $cpusUsed;
-      $niceP[$cpuIndex]/= $cpusUsed;
-      $sysP[$cpuIndex]/=  $cpusUsed;
-      $idleP[$cpuIndex]/= $cpusUsed;
-      $waitP[$cpuIndex]/= $cpusUsed;
-      $irqP[$cpuIndex]/=  $cpusUsed;
-      $softP[$cpuIndex]/= $cpusUsed;
-      $stealP[$cpuIndex]/=$cpusUsed;
-
+      $userP[$cpuIndex]/=  $cpusUsed;
+      $niceP[$cpuIndex]/=  $cpusUsed;
+      $sysP[$cpuIndex]/=   $cpusUsed;
+      $idleP[$cpuIndex]/=  $cpusUsed;
+      $waitP[$cpuIndex]/=  $cpusUsed;
+      $irqP[$cpuIndex]/=   $cpusUsed;
+      $softP[$cpuIndex]/=  $cpusUsed;
+      $stealP[$cpuIndex]/= $cpusUsed;
+      $guestP[$cpuIndex]/= $cpusUsed;
+      $guestNP[$cpuIndex]/=$cpusUsed;
       $totlP[$cpuIndex]=$userP[$cpuIndex]+$niceP[$cpuIndex]+
 		      $sysP[$cpuIndex]+$irqP[$cpuIndex]+
-		      $softP[$cpuIndex]+$stealP[$cpuIndex];
+		      $softP[$cpuIndex]+$stealP[$cpuIndex]+
+		      $guestP[$cpuIndex]+$guestNP[$cpuIndex];
     }
   }
 
@@ -2632,11 +2678,12 @@ sub dataAnalyze
         $intDevices=''    if !defined($intDevices);
 
         chomp $intDevices;
+	$intDevices=~s/\s+//g;    # remove whitespace
         $intName{$typeSort}=sprintf("%-15s %s", $intType, $intDevices);
         if ($type!~/^\d/)
         {
-          $intName{$typeSort}="$intType $intDevices";
-          $intName{$typeSort}=~s/ interrupts$//;
+          $intName{$typeSort}="$intType$intDevices";
+          $intName{$typeSort}=~s/interrupts$//;
         }
       }
 
@@ -3299,8 +3346,9 @@ sub dataAnalyze
     # Apply filters to summary totals, explicitly ignoring those we don't want
     if ($diskName!~/^dm-|^psv/ && ($dskFilt eq '' || $diskName!~/$dskFiltIgnore/))
     {
-      # if some explicitly named to keep, keep only those
-      if ($dskFiltKeep eq '' || $diskName=~/$dskFiltKeep/)
+      # if some explicitly named to keep, keep only those BUT only if not a
+      # partition or else we end up double counting.
+      if ($diskName!~/\d$/ && ($dskFiltKeep eq '' || $diskName=~/$dskFiltKeep/))
       {
         $dskReadTot+=      $dskRead[$dskIndex];
         $dskReadMrgTot+=   $dskReadMrg[$dskIndex];
@@ -3319,6 +3367,10 @@ sub dataAnalyze
     # get interval time in jiffies and if no hires, just fudge it noting
     # it's pretty rare that hiRes::Time isn't available
     $microInterval=($hiResFlag) ? ($fullTime-$lastSecs[$rawPFlag])*100 : $interval*100;
+
+    # another very rare one: if we're doing timing tests AND no hires, we 
+    # need a non-zero micro-interval so the divide below doesn't blow up
+    $microInterval=1    if !$interval && !$hiResFlag;
 
     $numIOs=$dskRead[$dskIndex]+$dskWrite[$dskIndex];
     $dskRqst[$dskIndex]=   $numIOs ? ($dskReadKB[$dskIndex]+$dskWriteKB[$dskIndex])/$numIOs : 0;
@@ -3884,6 +3936,19 @@ sub dataAnalyze
         $numaStat[$node]->{miss}=$numaStat[$node]->{missNow}-$numaStat[$node]->{missLast};
         $numaStat[$node]->{for}=$numaStat[$node]->{forNow}-$numaStat[$node]->{forLast};
 
+	# These MUST be caused by a kernel bug as counters shouldn't go backwards!!!
+	if ($numaStat[$node]->{miss}<0)
+	{
+	  print "#yikes!  numa_miss < 0    on node: $node NOW: $numaStat[$node]->{missNow} LAST: $numaStat[$node]->{missLast}\n";
+  	  $numaStat[$node]->{miss}=0;
+	}
+
+	if ($numaStat[$node]->{for}<0)
+	{
+	  print "#yikes!  numa_foreign < 0 on node: $node NOW: $numaStat[$node]->{forNow} LAST: $numaStat[$node]->{forLast}\n";
+  	  $numaStat[$node]->{for}=0;
+	}
+
         $numaStat[$node]->{hitsLast}=$numaStat[$node]->{hitsNow};
         $numaStat[$node]->{missLast}=$numaStat[$node]->{missNow};
         $numaStat[$node]->{forLast}=$numaStat[$node]->{forNow};
@@ -4091,11 +4156,12 @@ sub dataAnalyze
 
     # at least for now, we're only worrying about totals on real network
     # first, always ignore those in ignore list
-    if ($netNameNow!~/^lo|^sit|^bond|^vmnet|^vlan|^tap|^dp|^nl/ && ($netFilt eq '' || $netNameNow!~/$netFiltIgnore/))
+    if (($netFilt eq '' && $netNameNow=~/^eth|^ib|^em|^p1p/) ||
+        ($netFiltKeep ne '' && $netNameNow=~/$netFiltKeep/) ||
+        ($netFiltIgnore ne '' && $netNameNow!~/$netFiltIgnore/))
     {
-      # if filter specified, only include those we want.
       # NOTE - we >>>never<<< include aliased networks in the summary calculations
-      if ($netNameNow!~/\./ && ($netFiltKeep eq '' || $netNameNow=~/$netFiltKeep/))
+      if ($netNameNow!~/\./)
       {
         $netRxKBTot+= $netRxKB[$netIndex];
         $netRxPktTot+=$netRxPkt[$netIndex];
@@ -4347,6 +4413,7 @@ sub printPlotHeaders
   {
     $headers.="[CPU]User%${SEP}[CPU]Nice%${SEP}[CPU]Sys%${SEP}[CPU]Wait%${SEP}";
     $headers.="[CPU]Irq%${SEP}[CPU]Soft%${SEP}[CPU]Steal%${SEP}[CPU]Idle%${SEP}[CPU]Totl%${SEP}";
+    $headers.="[CPU]Guest%${SEP}[CPU]GuestN%${SEP}";
     $headers.="[CPU]Intrpt$rate${SEP}[CPU]Ctx$rate${SEP}[CPU]Proc$rate${SEP}";
     $headers.="[CPU]ProcQue${SEP}[CPU]ProcRun${SEP}[CPU]L-Avg1${SEP}[CPU]L-Avg5${SEP}[CPU]L-Avg15${SEP}";
     $headers.="[CPU]RunTot${SEP}[CPU]BlkTot${SEP}";
@@ -4510,6 +4577,7 @@ sub printPlotHeaders
       $cpuHeaders.="[CPU:$i]User%${SEP}[CPU:$i]Nice%${SEP}[CPU:$i]Sys%${SEP}";
       $cpuHeaders.="[CPU:$i]Wait%${SEP}[CPU:$i]Irq%${SEP}[CPU:$i]Soft%${SEP}";
       $cpuHeaders.="[CPU:$i]Steal%${SEP}[CPU:$i]Idle%${SEP}[CPU:$i]Totl%${SEP}";
+      $cpuHeaders.="[CPU:$i]Guest%${SEP}[CPU:$i]GuestN%${SEP}";
       $cpuHeaders.="[CPU:$i]Intrpt${SEP}";
     }
     writeData(0, $ch, \$cpuHeaders, CPU, $ZCPU, 'cpu', \$headersAll);
@@ -4546,6 +4614,17 @@ sub printPlotHeaders
       }
     }
     writeData(0, $ch, \$envHeaders, ENV, $ZENV, 'env', \$headersAll);
+  }
+
+  if ($subsys=~/M/)
+  {
+    $numaHeaders='';
+    for ($i=0; $i<$CpuNodes; $i++)
+    {
+      $numaHeaders.="[NUMA:$i]Used${SEP}[NUMA:$i]Free${SEP}[NUMA:$i]Slab${SEP}[NUMA:$i]Mapped${SEP}";
+      $numaHeaders.="[NUMA:$i]Anon${SEP}[NUMA:$i]Inactive${SEP}[NUMA:$i]Hits${SEP}";
+    }
+    writeData(0, $ch, \$numaHeaders, NUMA, $ZNUMA, 'numa', \$headersAll);
   }
 
   if ($subsys=~/F/)
@@ -4605,17 +4684,6 @@ sub printPlotHeaders
 
     writeData(0, $ch, \$nfsHeaders, NFS, $ZNFS, 'nfs', \$headersAll);
    }
-
-  if ($subsys=~/M/)
-  {
-    $numaHeaders='';
-    for ($i=0; $i<$CpuNodes; $i++)
-    {
-      $numaHeaders.="[NUMA:$i]Used${SEP}[NUMA:$i]Free${SEP}[NUMA:$i]Slab${SEP}[NUMA:$i]Mapped${SEP}";
-      $numaHeaders.="[NUMA:$i]Anon${SEP}[NUMA:$i]Inactive${SEP}[NUMA:$i]Hits${SEP}";
-    }
-    writeData(0, $ch, \$numaHeaders, NUMA, $ZNUMA, 'numa', \$headersAll);
-  }
 
   if ($subsys=~/N/)
   {
@@ -4917,9 +4985,10 @@ sub printPlot
     if ($subsys=~/c/)
     {
       $i=$NumCpus;
-      $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
+      $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
                 $userP[$i], $niceP[$i], $sysP[$i], $waitP[$i],
-                $irqP[$i], $softP[$i], $stealP[$i], $idleP[$i], $totlP[$i]);
+                $irqP[$i], $softP[$i], $stealP[$i], $idleP[$i], $totlP[$i],
+		$guestP[$i], $guestNP[$i]);
       $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%4.2f$SEP%4.2f$SEP%4.2f$SEP%d$SEP%d",
                 $intrpt/$intSecs, $ctxt/$intSecs, $proc/$intSecs,
                 $loadQue, $loadRun, $loadAvg1, $loadAvg5, $loadAvg15, $procsRun, $procsBlock);
@@ -5137,9 +5206,10 @@ sub printPlot
       next    if (@cpuFiltKeep && !defined($cpuFiltKeep[$i])) ||
       	         (@cpuFiltIgnore && defined($cpuFiltIgnore[$i]));
 
-      $cpuPlot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
+      $cpuPlot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
                 $userP[$i], $niceP[$i],  $sysP[$i],  $waitP[$i], $irqP[$i],  
-                $softP[$i], $stealP[$i], $idleP[$i], $totlP[$i], $intrptTot[$i]/$intSecs);
+                $softP[$i], $stealP[$i], $idleP[$i], $totlP[$i], $intrptTot[$i]/$intSecs,
+		$guestP[$i], $guestNP[$i]);
     }
     writeData(0, $datetime, \$cpuPlot, CPU, $ZCPU, 'cpu', \$oneline);
   }
@@ -5674,8 +5744,8 @@ sub printTerm
     print $clscr    if !$printTermFirst;
     if ($printTermFirst)   # --brief OR single subsys --verbose
     {
-      # move the cursor to the correct location for ALL cases
-      if ($subsys ne 'Z')
+      # only on the first pass move the cursor to the correct location for ALL cases
+      if ($subsys!~/^[YZ]+$/)
       {
         my $lineNum=$totalCounter+2;
         $lineNum=$scrollEnd    if $lineNum>$scrollEnd;
@@ -5744,12 +5814,13 @@ sub printTerm
     {
       printText("\n")    if !$homeFlag;
       printText("# CPU$Hyper SUMMARY (INTR, CTXSW & PROC $rate)$cpuDisabledMsg\n");
-      printText("#$miniDateTime User  Nice   Sys  Wait   IRQ  Soft Steal  Idle  CPUs  Intr  Ctxsw  Proc  RunQ   Run   Avg1  Avg5 Avg15 RunT BlkT\n");
+      printText("#$miniDateTime User  Nice   Sys  Wait   IRQ  Soft Steal Guest NiceG  Idle  CPUs  Intr  Ctxsw  Proc  RunQ   Run   Avg1  Avg5 Avg15 RunT BlkT\n");
       exit(0)    if $showColFlag;
     }
-    $line=sprintf("$datetime  %4d  %4d  %4d  %4d  %4d  %4d  %4d  %4d  %4d  %4s   %4s  %4d  %4d  %4d  %5.2f %5.2f %5.2f %4d %4d\n",
-	    $userP[$i], $niceP[$i], $sysP[$i],   $waitP[$i],
-            $irqP[$i],  $softP[$i], $stealP[$i], $idleP[$i], 
+    $line=sprintf("$datetime  %4d  %4d  %4d  %4d  %4d  %4d  %4d  %4d  %4d  %4d  %4d  %4s   %4s  %4d  %4d  %4d  %5.2f %5.2f %5.2f %4d %4d\n",
+	    $userP[$i], $niceP[$i], $sysP[$i],  $waitP[$i],
+            $irqP[$i],  $softP[$i], $stealP[$i],
+	    $guestP[$i], $guestNP[$i], $idleP[$i],
             $cpusEnabled,
 	    cvt($intrpt/$intSecs), cvt($ctxt/$intSecs), $proc/$intSecs,
 	    $loadQue, $loadRun, $loadAvg1, $loadAvg5, $loadAvg15, $procsRun, $procsBlock);
@@ -5762,8 +5833,8 @@ sub printTerm
     {
       printText("\n")    if !$homeFlag;
       printText("# SINGLE CPU$Hyper STATISTICS$cpuDisabledMsg\n");
-      my $intrptText=($subsys=~/j/i) ? ' INTRPT' : '';
-      printText("#$miniDateTime   Cpu  User Nice  Sys Wait IRQ  Soft Steal Idle$intrptText\n");
+      my $intrptText=($subsys=~/j/i) ? ' Intrpt' : '';
+      printText("#$miniDateTime   Cpu  User Nice  Sys Wait IRQ  Soft Steal Guest NiceG Idle$intrptText\n");
       exit(0)    if $showColFlag;
     }
 
@@ -5774,16 +5845,18 @@ sub printTerm
       {
         # skip idle CPUs if --cpuopts z specified.  I'd rather check for idle==100% but some kernels don't
 	# always increment counts and there are actually idle cpus with values of 0 here.
-        next    if $cpuOpts=~/z/ && $userP[$i]+$niceP[$i]+$sysP[$i]+$waitP[$i]+$irqP[$i]+$softP[$i]+$stealP[$i]==0;
+        next    if $cpuOpts=~/z/ && $userP[$i]+$niceP[$i]+$sysP[$i]+$waitP[$i]+$irqP[$i]+
+		   		    $softP[$i]+$stealP[$i]+$guestP[$i]+$guestNP[$i]==0;
 
 	# apply filters if specified
 	next    if (@cpuFiltKeep && !defined($cpuFiltKeep[$i])) ||
 		   (@cpuFiltIgnore && defined($cpuFiltIgnore[$i]));
 
-        $line=sprintf("$datetime   %4d   %3d  %3d  %3d  %3d  %3d  %3d   %3d  %3d",
+        $line=sprintf("$datetime   %4d   %3d  %3d  %3d  %3d  %3d  %3d   %3d   %3d   %3d  %3d",
            $i, 
-           $userP[$i], $niceP[$i], $sysP[$i],   $waitP[$i], 
-	   $irqP[$i],  $softP[$i], $stealP[$i], $idleP[$i]);
+           $userP[$i],  $niceP[$i],   $sysP[$i],   $waitP[$i], 
+	   $irqP[$i],   $softP[$i],   $stealP[$i], 
+	   $guestP[$i], $guestNP[$i], $idleP[$i]);
         $line.=sprintf(" %6d", $intrptTot[$i]/$intSecs)    if $subsys=~/j/i;
 	printText("$line\n");
       }
@@ -6074,7 +6147,7 @@ sub printTerm
       printText("\n")    if !$homeFlag;
       printText("# INODE SUMMARY\n");
       printText("#${miniFiller}     Dentries       File Handles    Inodes\n");
-      printText("#${miniDateTime}  Number   Unused   Alloc   % Max   Number\n");
+      printText("#${miniDateTime}  Number   Unused   Alloc  MaxPct   Number\n");
       exit(0)    if $showColFlag;
     }
 
@@ -6668,7 +6741,7 @@ sub printTerm
         # we've got the room so let's use an extra column for each and have the same
         # headers for 'R' and because I'm lazy.
         printText("#$miniFiller Node    Total     Used     Free     Slab   Mapped     Anon   Locked    Inact");
-        printText("   Hit%")    if $memOpts!~/R/;
+        printText(" HitPct")    if $memOpts!~/R/;
         printText("\n");
       }
       exit(0)    if $showColFlag;
@@ -7110,20 +7183,23 @@ sub printTerm
   # items come and go, which they can when doing things like disk filtering or displaying
   # processes so clear from the current location to the end of the display and reset $clscr
   # so we never clear the screen more than once but rather just overwrite what's there
+  # also note in --top vertical mode, $clscr and $home are ''
   printText($clr)    if $homeFlag || ($numTop && $playback eq '');
   $clscr=$home;
 }
 
 sub printTermSlab
 {
+  # the use of $topVertFlag should be consistent with that of printTermProc() but the code
+  # is NOT identical so there are differences.
   # Much of the top-slab methodology stolen from printTermProc()
   my %slabSort;
   my $slabCount=0;
   my $eol=sprintf("%c[K", 27);
-  printf "%c[%d;H", 27, $scrollEnd ? $scrollEnd+1 : 0    if $numTop && $playback eq '';
+  printf "%c[%d;H", 27, $scrollEnd ? $scrollEnd+1 : 0    if $numTop && $playback eq '' && !$topVertFlag;
 
   # if someone wants to look at slabs with --home and NOT --top, let them!
-  print "$clscr"   if !$numTop && $homeFlag;
+  print "$clscr"   if !$numTop && $homeFlag && !$topVertFlag;
 
   if (printHeader() || $numTop)
   {
@@ -7197,8 +7273,8 @@ sub printTermSlab
 		cvt($slabObjPerSlab[$i],6), cvt($slabSlabAllTotB[$i],4,0,1), 
 		cvt($slabTotMemChg[$i],4,0,1),$slabTotMemPct[$i], $slabName[$i]);
 
-        $line.=$eol    if $playback eq '' && $numTop;
-        $line.="\n"    if $playback ne '' || !$numTop || $slabCount<$numTop;
+        $line.=$eol    if $playback eq '' && $numTop && !$topVertFlag;
+        $line.="\n"    if $playback ne '' || !$numTop || $slabCount<$numTop || $topVertFlag;
         printText($line);
         next;
       }
@@ -7267,8 +7343,8 @@ sub printTermSlab
                 cvt($slabdata{$slab}->{memchg},4,0,1),
                 $slabdata{$slab}->{mempct}, $first);
 
-        $line.=$eol    if $playback eq '' && $numTop;
-        $line.="\n"    if $playback ne '' || !$numTop || $slabCount<$numTop;
+        $line.=$eol    if $playback eq '' && $numTop && !$topVertFlag;
+        $line.="\n"    if $playback ne '' || !$numTop || $slabCount<$numTop || $topVertFlag;
         printText($line);
         next;
       }
@@ -7302,7 +7378,8 @@ sub printTermProc
 
     # if we get here interactively, our cursor has already been set at home, but if
     # --top and -s also specified ($scrollEnd!=0) we need to move past the scroll area
-    printf "%c[%d;H", 27, $scrollEnd ? $scrollEnd+1 : 0    if $numTop && $playback eq '';
+    # but only if NOT in vertical mode
+    printf "%c[%d;H", 27, $scrollEnd ? $scrollEnd+1 : 0    if $numTop && $playback eq '' && !$topVertFlag;
 
     # Never report timestamps in --top format.
     my $tempFiller=(!$numTop) ? $miniDateTime : '';
@@ -7374,8 +7451,9 @@ sub printTermProc
     my $eol='';
     if ($numTop)
     {
-      # clear from current position to the end of line since there could be junk there
-      $eol=sprintf("%c[K", 27)    if $playback eq '';
+      # only in non-vertical mode, clear from current position to the end of line since
+      # there could be junk there
+      $eol=sprintf("%c[K", 27)    if $playback eq '' && !$topVertFlag;
       foreach my $pid (keys %procIndexes)
       {
         # While I could do this at print time, it's more efficient to not even consider the
@@ -7572,14 +7650,15 @@ sub printTermProc
                 defined($procVmSwap[$i]) ? cvt($procVmSwap[$i],6,1,1)  : 0,
 		cvt($majFlt), cvt($minFlt), $cmd0, $cmd1);
       }
-      $line.=$eol    if $playback eq '' && $numTop;
-      $line.="\n"    if $playback ne '' || !$numTop || $procCount<$numTop;
+      $line.=$eol    if $playback eq '' && $numTop && !$topVertFlag;
+      $line.="\n"    if $playback ne '' || !$numTop || $procCount<$numTop || $topVertFlag;
       printText($line);
     }
 
     # clear to the end of the display in case doing --procopts z, since the process list
     # length changes dynamically
-    print $clr    if $numTop && $playback eq '';
+    print $clr    if $numTop && $playback eq '' && !$topVertFlag;
+
 }
 
 # this routine detects and 'fixes' counters that have wrapped
@@ -7852,12 +7931,15 @@ sub printSeparator
   my $seconds=shift;
   my $usecs=  shift;
 
-  # here's where we decide whether or not we really want the interval headers.  This is also
-  # where all the special cases come in.
-  return    if !$numTop && $sameColsFlag && $subsys!~/[YZ]/ && !$homeFlag;
-  return    if  $numTop && $playback eq '' && !$detailFlag;
-  return    if $subsys eq 'Y' && ($slabFilt ne '' || $slabOpts=~/S/);
-  return    if $subsys eq 'Z' && $procFilt ne '';
+  # here's where we decide whether or not we really want the interval headers, but 
+  # only if not --full.  This is also where all the special cases come in.
+  if (!$fullFlag)
+  {
+    return    if !$numTop && $sameColsFlag && $subsys!~/[YZ]/ && !$homeFlag;
+    return    if  $numTop && $playback eq '' && !$detailFlag;
+    return    if $subsys eq 'Y' && ($slabFilt ne '' || $slabOpts=~/S/);
+    return    if $subsys eq 'Z' && $procFilt ne '';
+  }
 
   my $date=localtime($seconds);
   if ($options=~/m/)
@@ -7868,7 +7950,20 @@ sub printSeparator
 
   # Remember that -A with logging never writes to terminals.
   my $temp=sprintf("%s", $homeFlag ? $clscr : "\n");
-  $temp.=sprintf("### RECORD %4d >>> $HostLC <<< ($seconds) ($date) ###\n", ++$separatorCounter);
+
+  # we want to include the types of data being reported in this interval,
+  # when --full but since $interval2Print hasn't been set yet, we need
+  # to find out this way assume everything will print and then remove
+  # procs, slabs and env if not
+  my $which='';
+  if ($fullFlag)
+  {
+    $which=":$subsys";
+    $which=~s/[YZ]+//g    if $i2DataFlag!=$interval2Print;
+    $which=~s/[E]+//g     if $i3DataFlag!=$interval3Print;
+  }
+
+  $temp.=sprintf("### RECORD %4d >>> $HostLC <<< ($seconds$which) ($date) ###\n", ++$separatorCounter);
   printText($temp);
 }
 
@@ -7989,7 +8084,7 @@ sub printBrief
       my $pre= '-' x $num;
       my $post='-' x $num2;
       $tcp1="<${pre}TCP$post>";
-      $tcp1="<ERR>"    if length($tcp2)==5;
+      $tcp1="<TCP>"    if length($tcp2)==5;
     }
 
     $line.="<--Memory-->"                                 if $subsys!~/m/ && $subsys=~/b/;
@@ -8142,7 +8237,7 @@ sub printBrief
   {
     $i=$NumCpus;
     $sysTot=$sysP[$i]+$irqP[$i]+$softP[$i]+$stealP[$i];
-    $cpuTot=$userP[$i]+$niceP[$i]+$sysTot;
+    $cpuTot=$userP[$i]+$niceP[$i]+$guestP[$i]+$guestNP[$i]+$sysTot;
     $line.=sprintf("%3d %3d %5s %6s ",
         $cpuTot, $sysTot, cvt($intrpt/$intSecs,5), cvt($ctxt/$intSecs,6));
   }
@@ -9331,7 +9426,6 @@ sub ibCheck
     if ($devname=~/mthca|mlx4_|qib/)
     {
       $HCAName[$NumHCAs]=$devname;
-      $HCAPorts[$NumHCAs]=0;  # none active yet
       $HCANames.=" $devname";
       $file=$SysIB;
       $file.="/$devname";

@@ -11,11 +11,16 @@
 
 As with other subsystems that have specific devices, collectl can report disk summary as well as detail data.
 Like other summary data, disk summary data represents the total activity across all disks or to be more precise, those
-enumerated in /proc/diskstats, with a couple of caveats:
+enumerated in /proc/diskstats, with the following caveats:
 <ul>
-<li>Partition data is skipped</li>
-<li>Only those disk names that explicitly match the pattern in DiskFilter (see collectl.conf) are included. But don't
-worry, <i>all</i> major types of disks are included as well as several others as they are identified.</li>
+<li>Partition data is skipped by default for both summary and detail data, noting filters contain a trailing <i>letter-space</i></li>
+<li>Only those disk names that explicitly match the pattern in DiskFilter (see collectl.conf) are collected and subseqently
+included in the results. You can also override this on demand by specifying <i>--rawdskfilt</i>.  Note that in both cases
+any disks not selected will not have any data recorded for them.</li>
+<li>You can force collectl to collect/report partition level details by specifying a disk filter without the trailing space.
+If you do so, the partition data will NOT be included in the summary stats since that would result in double counting.</li>
+<li>If you specify a filter with <i>--diskfilt</i>, these filters are only applied to output and allow you to report on a
+subset of disks for which data has been collected.
 <li>Device mapper disks, while listed in the detail data are <i>NOT</i> included in the summary data to avoid
 double counting</li> 
 </ul>

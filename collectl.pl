@@ -67,6 +67,7 @@ use File::Basename;
 use Time::Local;
 use IO::Socket;
 use IO::Select;
+use Cwd 'abs_path';
 
 $Cat=          '/bin/cat';
 $Grep=         '/bin/grep';
@@ -76,7 +77,6 @@ $Rpm=          '/bin/rpm';
 $Lspci=        '/sbin/lspci';
 $Lctl=         '/usr/sbin/lctl';
 $Dmidecode=    '/usr/sbin/dmidecode';
-$ReqDir=       '/usr/share/collectl';    # may not exist
 
 %TopProcTypes=qw(vsz '' rss '' syst '' usrt '' time '' accum '' rkb '' wkb '' iokb ''
                  rkbc '' wkbc '' iokbc '' ioall '' rsys '' wsys '' iosys  ''
@@ -100,9 +100,8 @@ $boottime=0;
 # only used once here, but set in formatit.ph
 our %netSpeeds;
 
-# Find out ASAP if we're linux or WNT based as well as whether or not XC based
+# Find out ASAP if we're linux or WNT based
 $PcFlag=($Config{"osname"}=~/MSWin32/) ? 1 : 0;
-$XCFlag=(!$PcFlag && -e '/etc/hptc-release') ? 1 : 0;
 
 # If we ever want to write something to /var/log/messages, we need this which
 # may not always be installed
@@ -112,32 +111,13 @@ $syslogFlag=(eval {require "Sys/Syslog.pm" or die}) ? 1 : 0;
 $rootFlag=(!$PcFlag && `whoami`=~/root/) ? 1 : 0;
 $SrcArch= $Config{"archname"};
 
-$Version=  '3.7.3-1';
+$Version=  '3.7.4-1';
 $Copyright='Copyright 2003-2014 Hewlett-Packard Development Company, L.P.';
 $License=  "collectl may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
 
-# get the path to the exe from the program location, noting different handling
-# of path resolution for XC and non-XC, noting if a link and not XC, we
-# need to follow it, possibly multiple times!  Furthermore, if the link is
-# a relative one, we need to prepend with the original program location or
-# $BinDir will be wrong.
-if (!$XCFlag)
-{
-  $link=$0;
-  $ExeName='';
-  until($link eq $ExeName)
-  {
-    $ExeName=$link;    # possible exename
-    $link=(!defined(readlink($link))) ? $link : readlink($link);
-  }
-}
-else
-{
-  $ExeName=(!defined(readlink($0))) ? $0 : readlink($0);
-  $ExeName=dirname($0).'/'.$ExeName    if $ExeName=~/^\.\.\//;
-}
-
+# set up constants to our exe, location and program name root
+$ExeName=abs_path($0);
 $BinDir=dirname($ExeName);
 $Program=basename($ExeName);
 $Program=~s/\.pl$//;    # remove extension for production
@@ -212,7 +192,7 @@ $cmdSwitches=preprocSwitches();
 
 # These are the defaults for interactive and daemon subsystems
 $SubsysDefInt='cdn';
-$SubsysDefDaemon='bcdfijlmnstx';
+$SubsysDefDaemon='bcdfijmnstx';
 
 # We want to load any default settings so that user can selectively 
 # override them.  We're giving these starting values in case not
@@ -282,29 +262,40 @@ $configFile.="/$ConfigFile"    if $configFile ne '' && -d $configFile;;
 loadConfig();
 
 # Very unlikely but I hate programs that silently exit.  We have to figure out
-# where formatit.ph lives, out first choice always being '$BinDir'.
-$BinDir=dirname($ExeName);
-if (!-e "$BinDir/formatit.ph" && !-e "$ReqDir/formatit.ph")
+# where formatit.ph lives, which we're allowing to be in one of 4 places,
+# noting our first choice always being '$BinDir'.
+
+# formatit can exist in 3 places, either in the default location of
+# /usr/share/collectl, the share/collectl directory at the same
+# level as the binary OR if there's a copy in the local directoy
+# that always overrides the default location for development/testing.
+my $oneUp=dirname($BinDir);
+$ReqDir='/usr/share/collectl';
+$ReqDir="$oneUp/share/collectl"    if -e "$oneUp/share/collectl/formatit.ph";
+$ReqDir=$BinDir                    if -e "$BinDir/formatit.ph";
+
+# either $ReqDir reported to a directory where formatit.ph lives OR its still
+# pointing to the default location in which case it better be there.
+if (!-e "$ReqDir/formatit.ph")
 {
-  # Let's not get too carried away for something that probably won't ever happen on a PC,
-  # but there's no point displaying $ReqDir since it in unix format and will never exist!
-  my $msg=sprintf("can't find 'formatit.ph' in '$BinDir'%s.  Corrupted installation!", !$PcFlag ? " OR '$ReqDir'" : '');
+  my $msg="can't find formatit.ph in '$BinDir'";
+  $msg.=" OR '/usr/share/collectl' OR '$oneUp/share/collectl'"     if !$PcFlag;
   print "$msg\n";    # can't call logmsg() before formatit.ph not yet loaded
   logsys($msg,1);    # force it because $filename not yet set
   exit(1);
 }
 
-# Now that we've loaded collectl.conf and have possibly reset '$ReqDir', it's time to
-# load it, changing $ReqDir to $BinDir if we find it there.
-$ReqDir=$BinDir    if -e "$BinDir/formatit.ph";
+# now we can load formatit.ph and any other include files which MUST be
+# in the same directory as formatit.ph
 print "BinDir: $BinDir  ReqDir: $ReqDir\n"    if $debug & 1;
-
-# Load include files and optional PMs if there
 require "$ReqDir/formatit.ph";
-$zlibFlag=     (eval {require "Compress/Zlib.pm" or die}) ? 1 : 0;
-$hiResFlag=    (eval {require "Time/HiRes.pm" or die}) ? 1 : 0;
 $diskRemapFlag=(eval {require "$ReqDir/diskremap.ph" or die}) ? 1 : 0;
 $formatitLoaded=1;
+
+# finally try to load these two, both of which are optional
+# though included in most distros
+$zlibFlag=     (eval {require "Compress/Zlib.pm" or die}) ? 1 : 0;
+$hiResFlag=    (eval {require "Time/HiRes.pm" or die}) ? 1 : 0;
 
 # These can get overridden after loadConfig(). Others can as well but this is 
 # a good place to reset those that don't need any further manipulation
@@ -341,15 +332,15 @@ $count=-1;
 $numTop=0;
 $briefFlag=1;
 $showColFlag=$showMergedFlag=$showHeaderFlag=$showSlabAliasesFlag=$showRootSlabsFlag=0;
-$verboseFlag=$vmstatFlag=$alignFlag=$whatsnewFlag=0;
+$verboseFlag=$fullFlag=$vmstatFlag=$alignFlag=$whatsnewFlag=0;
 $quietFlag=$utcFlag=$statsFlag=0;
 $address=$flush=$fileRoot=$statOpts='';
 $limits=$lustreSvcs=$runTime=$playback=$playbackFile=$rollLog='';
-$groupFlag=$tworawFlag=$msgFlag=$niceFlag=$plotFlag=$nohupFlag=$wideFlag=$rawFlag=$ioSizeFlag=0;
+$tworawFlag=$msgFlag=$niceFlag=$plotFlag=$nohupFlag=$wideFlag=$rawFlag=$ioSizeFlag=0;
 $userOptions=$userInterval=$userSubsys='';
 $import=$export=$expName=$expOpts=$topOpts=$topType='';
 $impNumMods=0;  # also acts as a flag to tell us --import code loaded
-$homeFlag=$rawtooFlag=$tworaw=$tworaw=$autoFlush=$allFlag=0;
+$homeFlag=$rawtooFlag=$tworaw=$tworaw=$autoFlush=$allFlag=$AllFlag=0;
 $procOpts=$procFilt=$procState='';
 $slabOpts=$slabFilt='';
 $procAnalFlag=$procAnalCounter=$slabAnalFlag=$slabAnalCounter=$lastInt2Secs=0;
@@ -397,8 +388,6 @@ GetOptions('align!'     => \$alignFlag,
    	   'filename=s' => \$filename,
            'F=i'        => \$flush,
            'flush=i'    => \$flush,
-           'G!'         => \$groupFlag,
-           'group!'     => \$groupFlag,
 	   'tworaw!'    => \$tworawFlag,
            'home!'      => \$homeFlag,
            'i=s'        => \$userInterval,
@@ -449,6 +438,7 @@ GetOptions('align!'     => \$alignFlag,
 	   'procfilt=s' => \$procFilt,
 
            'all!'          => \$allFlag,
+           'ALL!'          => \$AllFlag,
            'comment=s'     => \$comment,
            'cpuopts=s'     => \$cpuOpts,
            'cpufilt=s'     => \$cpuFilt,
@@ -456,6 +446,7 @@ GetOptions('align!'     => \$alignFlag,
            'dskopts=s'     => \$dskOpts,
            'export=s'      => \$export,
 	   'from=s'        => \$from,
+	   'full!'         => \$fullFlag,
 	   'thru=s'        => \$thru,
 	   'headerrepeat=i'=> \$headerRepeat,
            'hr=i'          => \$headerRepeat,
@@ -639,10 +630,13 @@ setNFSFlags($nfsFilt);
 
 if ($vmstatFlag)
 {
-  error("can't mix --vmstat with --export")    if $vmstatFlag && $export ne '';
-  error("can't mix --vmstat with --all")       if $vmstatFlag && $allFlag;
+  error("can't mix --vmstat with --export")          if $vmstatFlag && $export ne '';
+  error("can't mix --vmstat with --all or --ALL")    if $vmstatFlag && ($allFlag || $AllFlag);
   $export='vmstat';
 }
+
+# --full both forces verbose and ultimately forces RECORD headers as well
+$verboseFlag=1    if $fullFlag;
 
 error("can't use --export with --verbose")    if $verboseFlag && $export ne '';
 error("can't use -P with --verbose")          if $verboseFlag && $plotFlag;
@@ -657,6 +651,13 @@ if ($allFlag)
   error("can't mix -s with -all")    if $userSubsys ne '';
   $userSubsys="$SubsysCore$SubsysExcore";
   $userSubsys=~s/y//;
+}
+elsif ($AllFlag)
+{
+  error("can't mix -s with -ALL")    if $userSubsys ne '';
+  $userSubsys="$SubsysCore$SubsysExcore$SubsysDet";
+  $userSubsys=~s/y//;
+  $userSubsys=~s/T//    if !$plotFlag && $filename eq '';
 }
 
 # As part of the conversion to getopt::long, we need to know the actual switch
@@ -766,8 +767,8 @@ if ($procAnalFlag || $slabAnalFlag)
 # We have to wait for '$subsys' to be defined before handling top and it
 # felt right to keep the code together with --procanalyze/--slabanalyze.
 
-# --top forces $homeFlag if not in playback mode.  if no process interval
-# specified set it to the monitoring one.
+# --top forces $homeFlag if not in playback mode or vert mode.
+# if no process interval  specified set it to the monitoring one.
 $temp=$SubsysDet;
 $temp=~s/YZ//;
 $detailFlag=($subsys=~/[$temp]/) ? 1 : 0;
@@ -802,8 +803,12 @@ if ($topOpts ne '')
     $scrollEnd=$subsysSize+1;
   }
 
-  ($topType, $numTop)=split(/,/, $topOpts);
+  ($topType, $numTop, $topVert)=split(/,/, $topOpts);
   $topType='time'          if $topType eq '';
+  $topVert=''              if !defined($topVert);
+  $topVertFlag=($topVert eq 'v') ? 1 : 0;
+  error("only valid value for 3rd --top parameter is 'v'")   if $topVert ne '' && $topVert ne 'v';
+  error("cannot specify vertical --top output and -s")       if $topVertFlag && $userSubsys ne '';
 
   # enough of these to warrant setting a flag
   $topIOFlag=($topType=~/io|kb|sys$|cncl/) ? 1 : 0;
@@ -827,7 +832,7 @@ if ($topOpts ne '')
 
   if ($playback eq '')
   {
-    $homeFlag=1;
+    $homeFlag=1    if !$topVert;
     $subsys=(defined($TopProcTypes{$topType})) ? "${tempSubsys}Z" : "${tempSubsys}Y";
     $interval.=":$interval"    if $interval!~/:/;
   }
@@ -1375,7 +1380,7 @@ if ($playback ne "")
       my $return;
       $return=open TMP, "<$file"                              if $file!~/gz$/;
       $return=($ZTMP=Compress::Zlib::gzopen($file, 'rb'))     if $file=~/gz$/;
-      logmsg("F", "Couldn't open '$file' for reading")  if !defined($return) || $return<1;
+      logmsg("F", "Couldn't open '$file' for reading")    if !defined($return) || $return<1;
 
       while (1)
       {
@@ -1615,6 +1620,12 @@ if ($playback ne '')
 
     $lastPrefix=$prefix;
     $lastFileDate=$fileDate;
+  }
+
+  if (@playbackList==0)
+  {
+    print "no files found containing -yyyymmdd-hhmmss.raw OR within specified time period\n";
+    exit(0);
   }
 
   $numProcessed=0;
@@ -2521,9 +2532,8 @@ else
   $DefNetSpeed=0;
 }
 
-if ($tworawFlag || $groupFlag)
+if ($tworawFlag)
 {
-  error("-G/--group has been replaced with --tworaw")           if $groupFlag;
   error("--tworaw require BOTH process and non-procss data")    if !$recFlag0 || !$recFlag1;
   error("--tworaw requires data collection to a file")          if  $filename eq '';
 
@@ -2773,7 +2783,7 @@ for (; $count!=0 && !$doneFlag; $count--)
 
   if ($dFlag || $DFlag)
   {
-    getProc(9, "/proc/diskstats", "disk");
+    getProc(9, "/proc/diskstats", "disk", undef, 20000);
   }
 
   if ($cFlag || $CFlag)
@@ -3195,8 +3205,14 @@ record(1, sprintf(">>> %.3f <<<\n", $fullTime), undef, 1)     if $recFlag1;
 closeLogs($subsys);
 unlink $PidFile       if $daemonFlag;
 `stty echo`           if !$PcFlag && $termFlag && !$backFlag;
-printf("%c[r", 27)    if $numTop && $userSubsys ne '';
-printf "%c[%d;H\n", 27, $scrollEnd+$numTop+2    if $numTop;
+
+# clean up when in pure top mode
+if ($numTop && !$topVertFlag)
+{
+  printf("%c[r", 27)    if $userSubsys ne '';
+  printf "%c[%d;H\n", 27, $scrollEnd+$numTop+2;
+}
+
 logmsg("I", "Terminating...");
 logsys("Terminating...");
 
@@ -4730,7 +4746,7 @@ sub setOutputFormat
   # cases (when not doing --import) we switch to verbose automatically
   $verboseFlag=1    if ($subsys ne '' && $subsys!~/^[$BriefSubsys]+$/) || $lustOpts=~/[BDM]/;
   $verboseFlag=1    if $memOpts=~/[psPV]/;
-  $verboseFlag=1    if $tcpFilt eq 'I';
+  $verboseFlag=1    if $tcpFilt=~/I/;
 
   # except as where noted below, columns in verbose mode are assumed different
   $sameColsFlag=($verboseFlag) ? 0 : 1;
@@ -5285,17 +5301,24 @@ sub loadConfig
   my $resizePath='';
   my ($line, $num, $param, $value, $switches, $file, $openedFlag, $lib);
 
-  # If no specified config file, look in /etc and then BinDir and then MyDir
-  # Note - we can't use ':' as a separator because that screws up windows!
+  # if no -C, look first in $BinDir, then 2 the same level as the BIN and
+  # finally in /etc.  if there IS a -C, it must include the path (if not in .)
   if ($configFile eq '')
   {
-    $configFile="/etc/$ConfigFile;$BinDir/$ConfigFile";
-    $configFile.=";$MyDir/$ConfigFile"    if $BinDir ne '.' && $MyDir ne $BinDir;
+    # there may be a collectl.conf file at level above bin/ and in case
+    # it backs up to /, we get leading // so clean it up and make only 1
+    my $etcDir=sprintf("%s/etc", dirname(dirname($BinDir)));
+    $etcDir=~s[//][/];
+
+    # build up the search list being extra neat and leaving
+    # off possible duplicate /etc
+    $configFile="$BinDir/$ConfigFile;$etcDir/$ConfigFile";
+    $configFile.=";/etc/$ConfigFile"    if $etcDir ne '/etc';
   }
-  print "Config File Path: $configFile\n"    if $debug & 1;
+  print "Config File Search Path: $configFile\n"    if $debug & 1;
 
   $openedFlag=0;
-  foreach $file (split(/;/, $configFile))
+  foreach my $file (split(/;/, $configFile))
   {
     if (open CONFIG, "<$file")
     {
@@ -6618,11 +6641,11 @@ Slab Options and Filters
 
 TCP Stack Options - these DO effect data collection as well as printing
    --tcpfilt
-      i - ip stats, no brief stats so selecting it alone will force --verbose
+      i - ip stats
       t - tcp stats
       u - udp stats
       c - Icmp Stats
-      I - ip extended stats
+      I - ip extended stats, no brief stats so including it will force --verbose
       T - tcp extended stats
   
 EOF5
@@ -6634,9 +6657,18 @@ exit(0)    if !defined($_[0]);
 sub showTopopts
 {
   my $subopts=<<EOF5;
+The full format of the --top switch is:
+  --top sort[,num[,v]]
+
+If the 3rd parameter is specified, currently only 'v' is supported,
+top will not display in top format but rather in vertical mode.
+This can be very handy when you want to see output as with --top in
+playback mode.
+
 The following is a list of --top's sort types which apply to either
 process or slab data.  In some cases you may be allowed to sort
-by a field that is not part of the display if you so desire
+by a field that is not part of the display if you so desire.  If not
+specified the default is 'time'.
 
 TOP PROCESS SORT FIELDS
 
@@ -6703,6 +6735,15 @@ sub whatsnew
   my $whatsnew=<<EOF6;
 What's new in collectl in the last year or so?
 
+Version 3.7.4  Jun 2014
+- new: --ALL collect/playback for ALL subsystems both summary and detail
+- new: --full forces --verbose + RECORD separator as parsing aid for others
+       also include subsystems contained withing RECORD separator after UCT:
+- new: 2 new cpu stats, guest and guest_nice
+- new: 3rd --top parameter for vertical (non-home) display, see --showtopopt
+- default native lustre support has been removed.  either add 'l' to -s in
+  collectl.conf OR contact Peter Piela at Terascala for his plugin
+
 Version 3.7.3  Apr 2014
 - support for RHEL7
 
@@ -6722,23 +6763,6 @@ version 3.6.8  Aug 2013
       names and/or numbers
 - always log message types E/F to syslog when in daemon mode
 - exclude openstack/cinder network types of dp, nl and tap from network summary
-
-version 3.6.7  March 2013
-- new switch: --cpuopts z, to disable detail lines for idle CPUs
-- do NOT use vnet speeds, which are hardcoded to 10, in bogus checks
-- a couple of new switches for graphite, e and r
-- fixed a broken lexpr which wasn't handling intervals correctly which
-  was broken in 3.6.5, sorry about that
-- removed checks for disk minor/major numbers changing
-- added additional disk detail counters to lexpr
-
-version 3.6.5  October 2012
-- bugfixes, see RELEASE-collectl for details
-- officially declaring sexpr deprecated as it hasn't been updated in
-  several years and I have no idea if it is being used by anyone
-- -r option to purge .log files, def=12 months
-- new lexpr option, align, will align output to whole minute boundary
-- new graphite switch: f will report hostname field as FQDN
 
 EOF6
 

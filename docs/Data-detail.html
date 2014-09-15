@@ -21,9 +21,8 @@ memory defined by the combination of <i>Node</i> and <i>Zone</i>.
 <p>
 <div class=terminal><pre>
 # SINGLE CPU STATISTICS
-#   CPU  USER NICE  SYS WAIT IRQ  SOFT STEAL IDLE INTRPT
+#   Cpu  User Nice  Sys Wait IRQ  Soft Steal Guest NiceG Idle INTRPT
 </pre></div>
-
 
 These are the same fields as reported for verbose CPU Summary, each preceeded by the 
 CPU number.  If running collectl V2.5.0 or greater AND you request interrupt summary
@@ -59,6 +58,18 @@ of the summary system time reported in "brief" mode.</td></tr>
 <tr valign=top><td><b>Steal</b></td>
 <td>Time spend in involuntary wait state while the hypervisor was servicing
 another virtual processor.</td></tr>
+
+<tr valign=top><td><b>Guest</b></td>
+<td>Time spent running a virtual CPU for guest operating systems under the control of the
+Linux kernel, new since 2.6.24</td></tr>
+
+<tr valign=top><td><b>NiceG</b></td>
+<td>Time spent running a niced guest (virtual CPU for guest operating systems under the 
+control of the Linux kernel), new since 2.6.33</td></tr>
+
+<tr valign=top><td><b>Idle</b></td>
+<td>Time spent idle, nothing that since CPU numbers are rounded off, they may not
+always add up to 100%</td></tr>
 
 <tr valign=top><td><b>Intrpt</b></td>
 <td>If the interrupt summary stats were requested at the same time, this
@@ -160,10 +171,10 @@ interval will be reported</td></tr>
 <tr><td valign=top><b>CPUn...</b></td><td>The CPU for which the interrupt count is being
 reported.  There will be one column/CPU</td></tr>
 
-<tr><td valign=top><b>Type</b></td><td>Interrupt type</td></tr>
+<tr><td valign=top><b>Type</b></td><td>Interrupt type, whitespace removed</td></tr>
 
 <tr><td valign=top><b>Device</b></td><td>The names of the devices which are 
-generating this interrut</td></tr>
+generating this interrut as a comma separated list</td></tr>
 </table>
 
 <h3>Lustre Data, <i>collectl -sL</i></h3>
@@ -334,7 +345,7 @@ data and provides detail information about memory utilization in each numa node.
 <p>
 <div class=terminal-wide14><pre>
 # MEMORY STATISTICS
-# Node    Total     Used     Free     Slab   Mapped     Anon    Locked  Inact Hit%
+# Node    Total     Used     Free     Slab   Mapped     Anon    Locked  Inact HitPct
 </pre></div>
 <table>
 <tr><td><b>Node</b></td>
@@ -835,7 +846,7 @@ with playback mode.
 <tr><td><b>Name</b></td><td>Slab Name</td></tr>
 </table>
 
-<table width=100%><tr><td align=right><i>updated November 9, 2012</i></td></tr></colgroup></table>
+<table width=100%><tr><td align=right><i>updated July 23, 2014</i></td></tr></colgroup></table>
 
 </body>
 </html>

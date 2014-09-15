@@ -1,4 +1,4 @@
-RELEASE NOTES FOR COLLECTL
+dnRELEASE NOTES FOR COLLECTL
 
 INSTALLATION
 
@@ -38,6 +38,55 @@ KNOWN PROBLEMS/RESTRICTIONS
 
 CHANGES
 
+3.6.8-1  Jul 20, 2013
+  - new flag $exportComm must be set in gexpr/ganglia so that they won't
+    generate an error if run without -f or -A [thanks tom]
+  - new switch: --intfilt allows filtering of interrupts
+  - always log messages of type F/E to syslog in daemon mode even if
+    -m is not set [thanks again, tom]
+  - wasn't dealing correctly with missing whitespace after network name in
+    /proc/dev/net in initRecord() [thanks andy]
+  - updated init.d script for suse per the maintainer's instructions [thanks tom]
+  - extra spaces were being printed in plot mode for tpc stats
+  - added entry to envrules.std to deal with intel Phi Co-Processor
+  - debian init.d script now does 'exit 1' if status reports 'not running'
+  - rawnetignore switch wasn't working correctly
+  - found/fixed some subtle problems with --procanalyze as well as some cleanup
+    - need to ignore first sample after initializing summary arrays
+    - need to init summary hashes for thrutime and accumT because get uninit var
+      in print routine is only a single process entry
+    - found a typo in procAnalyze() to a $usecs which wasn't being used!
+    - added error check to make sure --procanalyze with -P requires -s
+  - added a little more debugging output for -d128
+  - discovered dynamic disk/network detail names for interactive mode were not
+    being reported correctly.  sounds a lot worse than it is because this is
+    typically not done very often nor are disks/networks very dynamic except in
+    large, virtualized environments such as clouds
+  - add to list of devices to exlude from network summary data: tap, dp and nl,
+    which are associated with openstack cinder.  remember you can always add
+    more to that list with --netfilt
+  - $lastHour was never referenced and dayInit() called every time a log was
+    created so fix logic to update $lastHour correctly AND call initDay() one
+    time and do it before newLog() called.
+  - closed a couple of file handles that were left open and reportedly
+    causing some defunct processes with -sx.  [thanks brian]
+  - fixed bug in lustre stats recording [thanks roland]
+  - clarified --showsubopts text about disk and network filters in that they
+    apply to both summary and detail data output
+  - fixed problem with --import and --stats
+  - --statsopt a didn't work because when changed some internal logic missed
+    changing a test of $timestampFlag to $timestampCounter[$rawPFlag] and so
+    now $timestampCount can be removed entirely
+  - clear $firstpass after 1st pass during playback
+  - make sure filename initialized before calling loadConfig so if there is
+    an error logsys() doesn't get an undefined var warning
+  - to be safe, remove any quotes on net/dsk filters in case included by
+    mistake in DaemonCommands string
+  - tightened up tests to see if daemonized collectl already running
+  - if no hiRes::Time, fudge the value of $microInterval based on -i [thanks Domi]
+  - new --procOpt k, removes known shells from process listing with -sZ,
+    currently set to /bin.sh, /usr/bin/perl, /usr/bin/python and python
+  - fixed varname in lexpr: $debug should have been $lexDebug
 
 3.6.7-1 Mar 8, 2013
   - set network speed for vnets to '??' so they'll use $DefNetSpeed for

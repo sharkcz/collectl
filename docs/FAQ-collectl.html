@@ -57,8 +57,11 @@
   <li><a href="#ops22">Why do I get an empty file during play back with -sY/sZ and -P -f?</a></li>
   <li><a href="#ops23">Why don't I get slb/prc files with -P, -sY/Z and --rawtoo but witout -rawtoo I do?</a></li>
   <li><a href="#ops24">I'm getting an error from RPM: <i>perl >= 0:5.008000 is needed by collectl...</i></a></li>
-  <li><a href="#ops25">What does this mean: New network device found: xxx?</i></a></li>
-  <li><a href="#ops26">What does this mean: NumNets in header is 'x' but only 'y' listed...?</i></a></li>
+  <li><a href="#ops25">What does this mean: <i>New network device found: xxx?</i></a></li>
+  <li><a href="#ops26">What does this mean: <i>NumNets in header is 'x' but only 'y' listed...?</i></a></li>
+  <li><a href="#ops27">Why is -sC showing CPUs with no load and no idle?</a></li>
+  <li><a href="#ops28">When did playing back a file start taking so long?</a></li>
+  <li><a href="#ops29">What does the message <i>-D requires -f OR -A server</i> mean?</a></li>
 </ul>
 
 <h1>General Questions</h1>
@@ -549,7 +552,31 @@ out that fact and you WILL later see <i> New network device found: xxx</i> messa
 networks are found in the raw file during playback.  This should not occur with raw files created after
 V3.5.1.
 
-<table width=100%><tr><td align=right><i>updated May 10, 2011</i></td></tr></colgroup></table>
+<a name="ops27"></a>
+<h2>Why is -sC showing CPUs with no load and no idle?</h2>
+Somewhere along the kernel started incorrectly updating the CPU usage stats in /proc/stat and if that's
+the case with your kernel, you'll see this behavior.  There is really nothing collectl can do about it
+as it relies on the kernel for accurate stats.  Furthermore, before you run out and try a different tool
+remember that all tools use /proc/stat to report CPU usage and so that won't help.
+
+<a name="ops28"></a>
+<h2>When did playing back a file start taking so long?</h2>
+This problem was first discovered when a user upgraded to RHEL6.2, but it turns out it has nothing to do
+with that distro but rather the underlying compression library that collectl relies on, namely Compress::Zlib.
+It turns out when that compression library went from 1.42 (last rev of the 1.0 architecure) this broke so
+any versions in the 2.0 generation will show this problem.  You can see which version of zlib you're using
+by running 'collectl -v'.  If the playback times are too long for you, just do what I've been doing for 
+years now and run collectl with -P --rawtoo and you're get both a raw file as well as a plot file with 
+not a lot of extra overhead.
+
+<a name="ops29"></a>
+<h2>What does the message -D requires -f OR -A server mean?</h2>
+First of all, this should only be seen by someone who has modified <i>/etc/collectl.conf</i> because it already
+specifies -f.  The point of the message is that when you run collectl as a deamon, it needs to know what 
+to do with its output since there is no terminal available.  That destination must be a file OR collectl
+must be run as a server, sending its output out over a socket.
+
+<table width=100%><tr><td align=right><i>updated July 30, 2013</i></td></tr></colgroup></table>
 
 </body>
 </html>

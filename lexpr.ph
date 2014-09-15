@@ -136,7 +136,7 @@ sub lexprInit
     my $initName="${lexExtBase}Init";
     if (defined($switches))
     { 
-      print "$initName($switches)\n"    if $debug & 16;
+      print "$initName($switches)\n"    if $lexDebug & 16;
       &$initName($switches);
     }
     else

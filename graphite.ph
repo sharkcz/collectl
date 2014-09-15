@@ -22,6 +22,11 @@ my ($graphiteMyHost, $graphiteSocket, $graphiteSockHost, $graphiteSockPort, $gra
 my ($graphiteAlign, $graphiteFqdnFlag, $graphiteMinFlag, $graphiteMaxFlag, $graphiteAvgFlag, $graphiteTotFlag, $graphiteFlags)=(0,0,0,0,0,0,0);
 my $graphiteOutputFlag=1;
 
+# This sets a flag as soon as we 'require' the module and tells collectl this
+# module does socket communications w/o -A and so is ok to run as daemon
+# without requiring -f or -A.
+$exportComm |= 1;
+
 sub graphiteInit
 {
   my $hostport=shift;

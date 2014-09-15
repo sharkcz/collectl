@@ -42,6 +42,18 @@ startup.  Use care in setting this string as incorrect settings may cause collec
 to abnormally exit and if it does, you should examine the <i>log</i> file for 
 messages.
 <p>
+<center>
+<b><i>caution about pipes in DaemonCommands</i></b>
+<p>
+<table width="80%">
+<tr><td>Since some of the filters can include pipes, one might choose the use the perl form of
+<i>"abc|def|xyz"</i> when using them interactively, having to use quotation marks to
+prevent the shell from acting on them.  However if you include the quotes in the
+<i>DaemonCommands</i> line, the filters will not work correctly as collectl will see
+the quotes as part of the filter itself.</td></tr>
+</table>
+</center>
+<p>
 <b>One-time modification of runtime parameters</b>
 <p>
 If you want to change the way collectl runs as a daemon for a specific instance, you can
@@ -78,7 +90,7 @@ sure to include the appropriate arguments because you must use the 2 argument fo
 This syntax was also chosen to assure the user does use additional switches because without them
 you'd essentially be running an identical copy of the default configuration.
 
-<table width=100%><tr><td align=right><i>updated Feb 21, 2011</i></td></tr></colgroup></table>
+<table width=100%><tr><td align=right><i>updated Sep 5, 2013</i></td></tr></colgroup></table>
 
 </body>
 </html>

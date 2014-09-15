@@ -50,8 +50,33 @@ really need to know is these are strings that are compared to each network name.
 This switch works <i>exactly</i> the same way as <i>--dskfilt</i> so for use case examples
 see <a href=Disks.html>Disk Monitoring</a>.
 
+<a name="dynamic"></a>
+<p><b>Dynamic Network Discovery</b>
+<br>
+Network devices typically don't change unless you install a new network card and reboot the machine,
+in which case <i>collectl</i> when the list of known networks is created it's simply correct.
+However, especially when running on a host that creates virtual machines, networks can come and go.
+The way collectl does this is to simply maintain a dynamic list of the active networks and make sure
+the statistics get associated with the correct network.  As a way to preserve network details in plot
+format, collectl further retains a list of all the networks ever seen since system boot and uses that
+list to record the statistics, thereby keeping the columnar data consistent.  In many cases where
+hypervisors reuse the virtual network names, the list of unique names remains relatively low.
+<p>
+However it was recently discovered that the OpenStack Quantum service for handling dynamic networks actually
+uses a new network name every time a VM is created.  If a particular host has dozens of VMs and they come
+and go many times, the result can be a very long list of network names which not only show up in all the
+headers of all the files collectl generates, they will also show up as unique sets of data in the network
+detail file if one is generated.  On one long running host, over 500 unique network names were generated!
+<p>
+The way collectl has chosen to deal with this is with <i>--netopts o</i>, which tells collectl to <i>not</i>
+preserve the ordered list of all the networks that have been seen and will in fact cause collectl to prune
+that list whenever a network is found to have been removed.  While this solves the immediate need to keep
+only the active networks in the headers of the output files it creates a different problem with the detail
+files in that the data will no longer be consistent.  In fact, it is probably best to not even try to
+generate detail files for dynamic network when using this switch.  As of this writing I'm still trying
+to think of ways to improve the situation.
 
-<table width=100%><tr><td align=right><i>updated Sept 15, 2011</i></td></tr></colgroup></table>
+<table width=100%><tr><td align=right><i>updated Sept 4, 2013</i></td></tr></colgroup></table>
 
 </body>
 </html>

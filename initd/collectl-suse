@@ -8,9 +8,9 @@
 #
 ### BEGIN INIT INFO
 # Provides:          collectl
-# Required-Start:    $all
-# Required-Stop:     $all
-# Default-Start:     2 3 4 5
+# Required-Start:    $ALL
+# Required-Stop:     $ALL
+# Default-Start:     2 3 5
 # Default-Stop:      0 1 6
 # Short-Description: Collectl monitors system performance.
 # Description:       Collectl is a light-weight performance monitoring
@@ -94,10 +94,7 @@ case "$1" in
       if [ -f $PIDFILE ]; then
           echo -n "Shutting down $PNAME: "
           killproc -p $PIDFILE collectl
-	  RETVAL=$?
 	  rc_status -v
-          echo
-          [ $RETVAL -eq 0 ] && rm -f /var/lock/subsys/$PNAME
       else
           echo "$PNAME not running"
       fi

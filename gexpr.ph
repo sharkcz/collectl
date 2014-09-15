@@ -27,6 +27,11 @@ my $gexMcastFlag=0;
 my $gexOutputFlag=1;
 my $gexColInt;
 
+# This sets a flag as soon as we 'require' the module and tells collectl this
+# module does socket communications w/o -A and so is ok to run as daemon
+# without requiring -f or -A.
+$exportComm |= 1;
+
 sub gexprInit
 {
   my $hostport=shift;

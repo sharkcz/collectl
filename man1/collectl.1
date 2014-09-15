@@ -371,21 +371,6 @@ by \-P.  Otherwise the time(s) only apply to the first/last dates and any files
 between those dates will have all their data reported. 
 .RE
 
-.B "--passwd filename"
-.RS
-When reporting usernames associated with a UID, use this file for the mapping.
-This is particularly important on systems running NIS where this are no user
-names in /etc/passwd.
-.RE
-
-.B "--pname name"
-.RS
-By default, collectl uses the file /var/run/collectl.pid to indicate the pid of
-the running instance of collectl and prevent multiple copies from being run.  If
-you DO want to run a second copy, this switch will cause collectl to change its
-process name to collectl-name and use that name as the associated pid file as well.
-.RE
-
 .B "--offsettime seconds"
 .RS
 This field originally was used before collectl reported the timezone in the file
@@ -396,6 +381,13 @@ by some number of seconds.  The other case (and this is very rare) is when a clo
 had changed in the middle of a sample and will not be converted correctly.  When
 this happens one may have to play back the samples in pieces and manually set
 the time offset.
+.RE
+
+.B "--passwd filename"
+.RS
+When reporting usernames associated with a UID, use this file for the mapping.
+This is particularly important on systems running NIS where this are no user
+names in /etc/passwd.
 .RE
 
 .B "\-p, --playback Filename"
@@ -415,6 +407,14 @@ the running of this option and don't want to hard code a date, you can
 specify the string YESTERDAY or TODAY and they will be replaced in the
 filename string by the appropriate date.
 .RE
+.RE
+
+.B "--pname name"
+.RS
+By default, collectl uses the file /var/run/collectl.pid to indicate the pid of
+the running instance of collectl and prevent multiple copies from being run.  If
+you DO want to run a second copy, this switch will cause collectl to change its
+process name to collectl-name and use that name as the associated pid file as well.
 .RE
 
 .B --procanalyze
@@ -926,8 +926,8 @@ words all entries are zero except for IDLE.
 .RS
 NOTE \- this does NOT effect data collection,  ALL disk data will always be collected.
 However, only data for disk names that match the pattern(s) will be included in the summary
-totals and displayed displayed when details are requested.  Alternaltively, if you preface the
-first expression with a caret, all names that match that string will be excluded from the summary
+totals and displayed when details are requested.  Alternatively, if you preface the
+first expression with a caret, all names that match all strings will be excluded from the summary
 totals and detail displays rather then included.  If you don't know perl, a partial string will 
 usually work too.
 .RE
@@ -938,6 +938,8 @@ usually work too.
 f \- report some columns as fractions for more precision on detail output
 .br
 i \- display the i/o sizes in brief mode just like with --iosize
+.br
+o \- exclude unused disks from new file headers and plot data
 .br
 z \- only applies to disk details, do not report any lines with values of all zeros.
 .RE
@@ -979,6 +981,20 @@ one to rename the column headers.  This can be most useful when running on heter
 systems and you want consistent column names.
 .RE
 
+.B "--intfilt [^]perl-regx[,perl-regx...]"
+.RS
+NOTE \- this does NOT effect data collection,  ALL interrupt data will always be collected.
+However, only data for interrupts that match the pattern(s) will be included in the summary
+totals and displayed when details are requested.  Alternatively, if you preface the
+first expression with a caret, all names that match all strings will be excluded from the summary
+totals and detail displays rather then included.  If you don't know perl, a partial string will 
+usually work too.
+
+NOTE - these expressions are applied to the entire line one sees in /proc/interrupts, including
+the interrupt number, name and even counters so if you do want to include an interrupt number
+in the pattern be sure to include the trailing colon as well.
+.RE
+
 .B "--lustopts Lustre Options"
 .RS
 .br
@@ -1003,8 +1019,8 @@ values.  One can also show absolute changes between intervals by including \-on.
 .RS
 NOTE \- this does NOT effect data collection,  ALL network data will always be collected.
 However, only data for network names that match the pattern(s) will be included in the summary
-totals and displayed displayed when details are requested.  Alternaltively, if you preface the
-first expression with a caret, all names that match that string will be excluded from the summary
+totals and displayed when details are requested.  Alternatively, if you preface the
+first expression with a caret, all names that match all strings will be excluded from the summary
 totals and detail displays rather then included.  If you don't know perl, a partial string will 
 usually work too.
 .RE
@@ -1016,6 +1032,8 @@ e \- include network error counts in brief and explicit error types elsewhere
 E \- only include lines with network errors in them
 .br
 i \- include i/o sizes in brief mode
+.br
+o \- exclude unused networks from new file headers and plot data
 .br
 w \- set width of network device name
 .RE
@@ -1083,6 +1101,8 @@ i \- show process I/O counters in display instead of default format
 .br
 I \- disable collection of I/O counters, see note below
 .br
+k \- remove known shells from process names, making it possible to see actual command
+.br
 m \- show breakdown of memory utilization instead of default format
 .br
 p \- never look for new pids or threads during data collection
@@ -1096,6 +1116,9 @@ s \- show process start time in hh:mm:ss format
 S \- show process start time in mmmdd-hh:mm:ss format
 .br
 t \- include ALL process threads (increases collection overhead)
+.br
+u \- report username as 12 chars instead of 8, noting uxx will cause column width
+to be xx but cannot be less than 8
 .br
 w \- widen display by including whole argument string, with optional max width
 .br

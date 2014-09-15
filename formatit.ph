@@ -594,6 +594,7 @@ sub initRecord
     $netSpeeds{$netName}=$speed    if $speed!~/Invalid/;    # this can happen on a VM where operstate IS up
     #print "set netSpeeds{$netName}=$speed\n";
   }
+  close FIND;
 
   # Since this routine can get called multiple times during
   # initialization, we need to make sure @netOrder gets clean start.
@@ -605,7 +606,7 @@ sub initRecord
 
     $temp=~/^\s*(\S+)/;    # most names have leading whitespace
     $netName=$1;
-    $netName=~s/://;
+    $netName=~s/:.*//;     # get rid of : AND possible stats if no whitespace
     $NetWidth=length($netName)    if length($netName)>$NetWidth;
     $speed=($netName=~/^ib/) ? $ibSpeed : $netSpeeds{$netName};
     $speed='??'   if !defined($speed);
@@ -1504,7 +1505,7 @@ sub initFormat
 
   #    I n t e r v a l 2    S t u f f
 
-  $interval2Counter=
+  $interval2Counter=0;
 
   #    I n t e r v a l 3    S t u f f
 
@@ -2007,6 +2008,20 @@ sub intervalEnd
 	print "deleted disk $disk with index $index\n"    if $debug & 1;
       }
     }
+
+    # if any disks did go away and --dskopts o, remove them from @dskOrder
+    if ($dskChangeFlag & 2)
+    {
+      print "Update \@dskOrder\n"    if $debug & 1;
+      print "Update Before: @dskOrder\n";
+      @tmpOrder=@dskOrder;
+      undef @dskOrder;
+      foreach my $disk (@tmpOrder)
+      {
+        push @dskOrder, $disk    if defined($disks{$disk});
+      }
+      print "Update After:  @dskOrder\n";
+    }
   }
   $dskSeenLast=$dskSeenCount;
 
@@ -2015,7 +2030,7 @@ sub intervalEnd
   # remove any networks that might have disappeared AND return their index to avail stack
   if ($subsys=~/n/i && ($netSeenCount<$netSeenLast || $netChangeFlag & 1))
   {
-    # examine each network in the set of current network for who is missing this interval
+    # examine each network in the set of current networks for who is missing this interval
     foreach my $network (keys %networks)
     {
       my $seen=0;
@@ -2036,6 +2051,18 @@ sub intervalEnd
         delete $networks{$network};
         push @netIndexAvail, $index;
         print "deleted network $network with index $index\n"    if $debug & 1;
+      }
+    }
+
+    # if any networks did go away and --netopts o, remove them from @netOrder
+    if ($netChangeFlag & 2)
+    {
+      print "Update \@netOrder\n"    if $debug & 1;
+      @tmpOrder=@netOrder;
+      undef @netOrder;
+      foreach my $net (@tmpOrder)
+      {
+        push @netOrder, $net    if defined($networks{$net});
       }
     }
   }
@@ -2458,10 +2485,6 @@ sub dataAnalyze
     $total=100    if $options=~/n/;    # when normalizing, this cancels '100*'
     $total=1      if !$total;          # has seen to be 0 when interval=0;
 
-    # For disk detail QueueLength and Util we need an accurate interval time when
-    # no HiRes timer, and this is a pretty cool way to do it
-    $microInterval=$total/$NumCpus    if !$hiResFlag && $cpuIndex==$NumCpus;
-
     $userP[$cpuIndex]= 100*$user/$total;
     $niceP[$cpuIndex]= 100*$nice/$total;
     $sysP[$cpuIndex]=  100*$sys/$total;
@@ -2507,6 +2530,11 @@ sub dataAnalyze
 
   elsif ($subsys=~/j/i && $type eq 'int')
   {
+    # exclude any interrupt line that doesn't match a specified filter
+    return    if $intFilt ne '' && 
+    	      	 	   ($intFiltKeep ne '' && $data!~/$intFiltKeep/) ||
+	          	   ($intFiltIgnore ne '' &&  $data=~/$intFiltIgnore/);
+
     # Note that leading space(s) were removed when we split line above
     my ($type, @vals)=split(/\s+/, $data, $cpusEnabled+2);
 
@@ -3233,10 +3261,9 @@ sub dataAnalyze
     # needed for compatibility with 2.4 in -P output
     $dskOpsTot=$dskReadTot+$dskWriteTot;
 
-    # though we almost never need these when not doing detail reporting, a plugin might
-    # if doing hires time, we need the interval duration and unfortunately at
-    # this point in time $intSecs has not been set so we can't use it
-    $microInterval=($fullTime-$lastSecs[$rawPFlag])*100    if $hiResFlag;
+    # get interval time in jiffies and if no hires, just fudge it noting
+    # it's pretty rare that hiRes::Time isn't available
+    $microInterval=($hiResFlag) ? ($fullTime-$lastSecs[$rawPFlag])*100 : $interval*100;
 
     $numIOs=$dskRead[$dskIndex]+$dskWrite[$dskIndex];
     $dskRqst[$dskIndex]=   $numIOs ? ($dskReadKB[$dskIndex]+$dskWriteKB[$dskIndex])/$numIOs : 0;
@@ -3844,7 +3871,7 @@ sub dataAnalyze
   #    N e t w o r k    S t a t s
 
   # a few design notes...
-  # - %networks is the name of all the networks
+  # - %networks is the name of all current networks
   # - @netOrder is the discovery order
   # - @netIndexAvail is a stack of available, previously used indexes
   # - $netIndex is the index assigned the current network being processed
@@ -4009,7 +4036,7 @@ sub dataAnalyze
 
     # at least for now, we're only worrying about totals on real network
     # first, always ignore those in ignore list
-    if ($netNameNow!~/^lo|^sit|^bond|^vmnet|^vlan/ && ($netFilt eq '' || $netNameNow!~/$netFiltIgnore/))
+    if ($netNameNow!~/^lo|^sit|^bond|^vmnet|^vlan|^tap|^dp|^nl/ && ($netFilt eq '' || $netNameNow!~/$netFiltIgnore/))
     {
       # if filter specified, only include those we want.
       # NOTE - we >>>never<<< include aliased networks in the summary calculations
@@ -4594,7 +4621,7 @@ sub printPlotHeaders
 
   if ($subsys=~/N/)
   {
-    for (my $i=0; $i<@netOrder; $i++)
+    for (my $i=0; $i<@netOrder; $o++)
     {
       # remember, order include net speed
       $netName=$netOrder[$i];
@@ -5084,12 +5111,12 @@ sub printPlot
     {
       # while tempted to control printing via $tcpFilt, by doing them all, we have a more
       # consistent file that is easier to plot and not much more expensive in size
-      $plot.=sprintf("$SEP%$FS ", $ipErrors/$intSecs);
-      $plot.=sprintf("$SEP%$FS ", $tcpErrors/$intSecs);
-      $plot.=sprintf("$SEP%$FS ", $udpErrors/$intSecs);
-      $plot.=sprintf("$SEP%$FS ", $icmpErrors/$intSecs);
-      $plot.=sprintf("$SEP%$FS ", $tcpData{TcpExt}->{TCPLoss}/$intSecs);
-      $plot.=sprintf("$SEP%$FS ", $tcpData{TcpExt}->{TCPFastRetrans}/$intSecs);
+      $plot.=sprintf("$SEP%$FS", $ipErrors/$intSecs);
+      $plot.=sprintf("$SEP%$FS", $tcpErrors/$intSecs);
+      $plot.=sprintf("$SEP%$FS", $udpErrors/$intSecs);
+      $plot.=sprintf("$SEP%$FS", $icmpErrors/$intSecs);
+      $plot.=sprintf("$SEP%$FS", $tcpData{TcpExt}->{TCPLoss}/$intSecs);
+      $plot.=sprintf("$SEP%$FS", $tcpData{TcpExt}->{TCPFastRetrans}/$intSecs);
     }
 
     # SLAB
@@ -5898,11 +5925,12 @@ sub printTerm
       exit(0)    if $showColFlag;
     }
 
-    for (my $i=0; $i<@dskOrder; $i++)
+    for (my $o=0; $o<@dskOrder; $o++)
     {
       # preserve display order but skip any disks not seen this interval
-      $dskName=$dskOrder[$i];
-      next    if !defined($dskSeen[$i]);
+      $dskName=$dskOrder[$o];
+      $i=$disks{$dskName};
+      next    if !defined($i);
       next    if ($dskFiltKeep eq '' && $dskName=~/$dskFiltIgnore/) || ($dskFiltKeep ne '' && $dskName!~/$dskFiltKeep/);
 
       # Filter out lines of all zeros when requested
@@ -6806,10 +6834,14 @@ sub printTerm
       exit(0)    if $showColFlag;
     }
 
-    for ($i=0; $i<@netOrder; $i++)
+    for ($o=0; $o<@netOrder; $o++)
     {
-      $netName=$netOrder[$i];
-      next    if !defined($netSeen[$i]);
+      # since we want to print in the discovery order, we need to turn the next 
+      # name into the right index  
+      $netName=$netOrder[$o];
+      $i=$networks{$netName};
+      next    if !defined($i);
+
       next    if ($netFiltKeep eq '' && $netName=~/$netFiltIgnore/) || ($netFiltKeep ne '' && $netName!~/$netFiltKeep/);
 
       my $netErrors=$netRxErrs[$i]+$netTxErrs[$i];
@@ -7331,6 +7363,9 @@ sub printTermProc
     my $tempFiller=(!$numTop) ? $miniDateTime : '';
     my $tempTStamp=(!$numTop) ? $datetime : '';
 
+    # shorter name
+    $uw=$procUsrWidth;
+
     # Since printHeader() is used by everyone, we need to force header printing for
     # processes when in top mode since we ALWAYS want them
     if (printHeader() || $numTop)
@@ -7378,6 +7413,13 @@ sub printTermProc
       {
         $tempHdr.="#${tempFiller} PID  User     S VmSize  VmLck  VmRSS VmData  VmStk  VmExe  VmLib  VmSwp MajF MinF Command\n";
       }
+
+      if ($procOpts=~/u/)
+      {
+	$user=sprintf("%-${uw}s", 'User');
+	$tempHdr=~s/User    /$user/;
+      }
+
       printText($tempHdr);
       exit(0)    if $showColFlag;
     }
@@ -7494,27 +7536,44 @@ sub printTermProc
 	$minFlt=$procMinFlt[$i]/$interval2Secs;
       }
 
-      # If wide mode we include the command arguments AND chop trailing spaces
+      # If wide mode OR when removing known shells (in which case we need to look at cmd1),
+      # we include the command arguments AND chop trailing spaces
       ($cmd0, $cmd1)=(defined($procCmd[$i])) ? split(/\s+/,$procCmd[$i],2) : ($procName[$i],'');
       $cmd0=basename($cmd0)    if $procOpts=~/r/ && $cmd0=~/^\//;
-      $cmd1=''                 if $procOpts!~/w/ || !defined($cmd1);
+      $cmd1=''                 if $procOpts!~/[kw]/ || !defined($cmd1);
 
       # Since a program CAN modify its definition in /proc/pid/cmdline, it can
       # end up without a trailing null and ultimately the split below results
       # in an undefined $cmd1, which is why we need to test/init it if need be
-      if ($procOpts=~/w/)
+      if ($cmd1 ne '')
       {
         $cmd1=~s/\s+$//;
         $cmd1=substr($cmd1, 0, $procCmdWidth);
+      }
+
+      # EXPERIMENTAL
+      # if told to do so, remove some of the standard shells from the command string in cmd0;
+      if ($procOpts=~/k/)
+      {
+        if ($cmd0=~m[/bin/sh|/usr/bin/perl|/usr/bin/python|^python])
+	{
+          $cmd1=~s/^-\S+\s+//;   # remove optional switch some shells have
+
+	  # now move 1st field in $cmd2 to $cmd1, which we no longer need, only keeping
+	  # the cmd2 if procopts 'w' is set
+	  $cmd1=~s/^(\S+)\s*//;    # need '*' in case no args following command
+	  $cmd0=$1;
+	}
+        $cmd1=''    if $procOpts!~/w/;
       }
 
       # This is the standard format
       if ($procOpts!~/[im]/)
       {
         # Note we only started fetching Tgid in V3.0.0
-        $line=sprintf("$tempTStamp%5d%s %-8s $prFormat %5d %4d %1s %5s %5s %2d %s %s %s %s ",
+        $line=sprintf("$tempTStamp%5d%s %-${uw}s $prFormat %5d %4d %1s %5s %5s %2d %s %s %s %s ",
 		$procPid[$i],  $procThread[$i] ? '+' : ' ',
-		substr($procUser[$i],0,8), $procPri[$i],
+		substr($procUser[$i],0,$uw), $procPri[$i],
                 defined($procTgid[$i]) && $procTgid[$i]!=$procPid[$i] ? $procTgid[$i] : $procPpid[$i],
 		$procTCount[$i], $procState[$i],
 		defined($procVmSize[$i]) ? cvt($procVmSize[$i],4,1,1) : 0, 
@@ -7535,9 +7594,9 @@ sub printTermProc
       }
       elsif ($procOpts=~/i/)
       {
-        $line=sprintf("%s%5d%s %-8s %5d %1s %s %s %3d %s ",
+        $line=sprintf("%s%5d%s %-${uw}s %5d %1s %s %s %3d %s ",
                 $tempTStamp, $procPid[$i], $procThread[$i] ? '+' : ' ',
-                substr($procUser[$i],0,8),
+                substr($procUser[$i],0,$uw),
                 defined($procTgid[$i]) && $procTgid[$i]!=$procPid[$i] ? $procTgid[$i] : $procPpid[$i],
                 $procState[$i],
                 cvtT1($procSTime[$i]), cvtT1($procUTime[$i]),
@@ -7555,9 +7614,9 @@ sub printTermProc
       }
       elsif ($procOpts=~/m/)
       {
-        $line=sprintf("%s%5d%s %-8s %1s %6s %6s %6s %6s %6s %6s %6s %6s %4s %4s %s %s",
+        $line=sprintf("%s%5d%s %-${uw}s %1s %6s %6s %6s %6s %6s %6s %6s %6s %4s %4s %s %s",
                 $tempTStamp, $procPid[$i], $procThread[$i] ? '+' : ' ',
-                substr($procUser[$i],0,8), $procState[$i],
+                substr($procUser[$i],0,$uw), $procState[$i],
                 defined($procVmSize[$i]) ? cvt($procVmSize[$i],6,1,1) : 0,
                 defined($procVmLck[$i])  ? cvt($procVmLck[$i],6,1,1)  : 0,
                 defined($procVmRSS[$i])  ? cvt($procVmRSS[$i],6,1,1)  : 0,
@@ -8115,8 +8174,6 @@ sub printBrief
   # First part always the same...
   $line.=sprintf("%s ", $datetime)    if $miniDateFlag || $miniTimeFlag;
 
-  my $preambleLength=length($line);    # save for later...
-
   if ($subsys=~/c/)
   {
     $i=$NumCpus;
@@ -8362,12 +8419,12 @@ statsSummary:
   countBriefCounters();
   $miniInstances++;
 
-  # The only time we don't print the line is if it doesn't contain any data, wich can only happen
+  # The only time we don't print the line is if it doesn't contain any data, which should only happen
   # when data was imported at a different interval and played back with -s-all, OR we're only 
   # doing network error reporting and this interval is clean.  In that cast reset '$totalCounter'
   # so header printing works correctly.
   $empty=0;
-  $empty=1            if ($import ne '' && $subsys eq '' && (substr($line, $preambleLength) eq "\n"));
+  $empty=1            if $import ne '' && $subsys eq '' && length($line) == length($datetime)+1;
   printText($line)    if !$empty && ($netOpts!~/E/ || $netErrors);
   $totalCounter--     if $netOpts=~/E/ && !$netErrors
 }
@@ -8910,7 +8967,7 @@ sub printPlotProc
 sub procAnalyze
 {
   my $seconds=shift;
-  my $usevs=  shift;
+  my $usecs=  shift;
 
   my ($vmSize, $vmLck, $vmRSS, $vmData, $vmStk, $vmLib, $vmExe);
   my ($rkb, $wkb, $rkbc, $wkbc, $rsys, $wsys, $cncl, $threads);
@@ -8978,12 +9035,15 @@ sub procAnalyze
             vmRSSMin=>$vmRSS,   vmRSSMax=>$vmRSS,   vmDataMin=>$vmData, vmDataMax=>$vmData, 
             vmStkMin=>$vmStk,   vmStkMax=>$vmStk,   vmLibMin=>$vmLib,   vmLibMax=>$vmLib,
             sysT=>0,  usrT=>0,  majF=>0,  minF=>0,  RKB=>0,  WKB=>0,  RKBC=>0,
-            WKBC=>0,  RSYS=>0,  WSYS=>0,  CNCL=>0,  command=>$command
+            WKBC=>0,  RSYS=>0,  WSYS=>0,  CNCL=>0,  command=>$command,
+            timethru=>$seconds, accumT=>0
       }
     }
+    next    if $procAnalCounter==1;
 
     #    U p d a t e    S u m m a r y
 
+    # note - we also initialized timethru above in case only a single sample
     $summary[$pid]->{timethru}=$seconds;
  
     # thread counts  not necessarily included in raw file

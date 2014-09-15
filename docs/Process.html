@@ -438,13 +438,12 @@ you experiment to better understand the many capabilities of <i>proctree</i>.
 <p>
 <h3>Process Analysis</h3>
 If you've run collectl as a daemon and collected process data, you now have a huge pile of
-data and up until version 2.6.5 it wasn't entirely clear what you could do with is short of
-writing some scripts to try and interpret it.  Now you have an alternative and that's to
-playback one or more data files with the <i>--procanalyze</i> switch.  When this switch is
-passed to collectl, it generates a <i>process summary file</i> with the extension of 
-<i>prcs</i> in the same direcory as specified with the -f switch.  This file will contain
-one line for each unique process and the fields will be separated by collectl's field separator
-which by default is a space but something you can also change with the <i>--sep</i> switch.
+data and it's not entirely clear what you could do with.  However, when that data is
+played back with <i>collectl --procanalyze</i>, it generates a <i>process summary file</i>
+with the extension of  <i>prcs</i> in the same direcory as specified with the -f switch.
+This file will contain one line for each unique process and the fields will be separated
+by collectl's field separator which by default is a space but something you can also change
+with the <i>--sep</i> switch.
 <p>
 The fields themselves summarize all the key data elements associated with each process making
 it possible to see the process start/end times, cpu consumption, I/O (if the kernel supports
@@ -455,7 +454,7 @@ friendly as written).
 <p>
 It is also important to remember a couple of things:
 <ul>
-<li>Not all processes show up in the output if they were created and exited between samples</li>
+<li>Not all processes show up in the output if they were created and exited between a single pair of samples</li>
 <li>You can control the time frame that is analyzed by using the <i>--from</i> and 
 <i>-thru</i> switches which can be a
 useful thing to do when you're interesed in a specific time period and don't want this file

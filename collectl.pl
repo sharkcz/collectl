@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 
-# Copyright 2003-2012 Hewlett-Packard Development Company, L.P. 
+# Copyright 2003-2013Hewlett-Packard Development Company, L.P. 
 #
 # collectl may be copied only under the terms of either the Artistic License
 # or the GNU General Public License, which may be found in the source kit
@@ -111,8 +111,8 @@ require "Sys/Syslog.pm"    if !$PcFlag;
 $rootFlag=(!$PcFlag && `whoami`=~/root/) ? 1 : 0;
 $SrcArch= $Config{"archname"};
 
-$Version=  '3.6.7-1';
-$Copyright='Copyright 2003-2012 Hewlett-Packard Development Company, L.P.';
+$Version=  '3.6.8-1';
+$Copyright='Copyright 2003-2013 Hewlett-Packard Development Company, L.P.';
 $License=  "collectl may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
 
@@ -272,12 +272,12 @@ GetOptions('C=s'      => \$configFile,
 
 # if config file specified and a directory, prepend to default name otherwise
 # use the whole thing as the name.
+$filename='';
 $configFile.="/$ConfigFile"    if $configFile ne '' && -d $configFile;;
 loadConfig();
 
 # Very unlikely but I hate programs that silently exit.  We have to figure out
 # where formatit.ph lives, out first choice always being '$BinDir'.
-$filename='';
 $BinDir=dirname($ExeName);
 if (!-e "$BinDir/formatit.ph" && !-e "$ReqDir/formatit.ph")
 {
@@ -289,7 +289,7 @@ if (!-e "$BinDir/formatit.ph" && !-e "$ReqDir/formatit.ph")
   exit(1);
 }
 
-# Now that we've loaded collectl.conD and have possibly reset '$ReqDir', it's time to
+# Now that we've loaded collectl.conf and have possibly reset '$ReqDir', it's time to
 # load it, changing $ReqDir to $BinDir if we find it there.
 $ReqDir=$BinDir    if -e "$BinDir/formatit.ph";
 print "BinDir: $BinDir  ReqDir: $ReqDir\n"    if $debug & 1;
@@ -351,7 +351,7 @@ $procAnalFlag=$procAnalCounter=$slabAnalFlag=$slabAnalCounter=$lastInt2Secs=0;
 $lastLogPrefix=$passwdFile='';
 $memOpts=$nfsOpts=$nfsFilt=$lustOpts=$userEnvOpts='';
 $grepPattern=$pname='';
-$dskFilt=$netFilt=$tcpFilt='';
+$dskFilt=$intFilt=$netFilt=$tcpFilt='';
 $cpuOpts=$dskOpts=$netOpts=$xOpts='';
 $utimeMask=0;
 $comment=$runas='';
@@ -454,6 +454,7 @@ GetOptions('align!'     => \$alignFlag,
 	   'headerrepeat=i'=> \$headerRepeat,
            'hr=i'          => \$headerRepeat,
 	   'import=s'      => \$import,
+	   'intfilt=s'     => \$intFilt,
            'lustopts=s'    => \$lustOpts,
 	   'memopts=s'     => \$memOpts,
            'netfilt=s'     => \$netFilt,
@@ -740,6 +741,7 @@ if ($procAnalFlag || $slabAnalFlag)
   error("--procanalyze/--slabanalyze require -p")              if $playback eq '';
   error("--procanalyze/--slabanalyze require -f")              if $filename eq '';
   error("--procanalyze/--slabanalyze do not support --utc")    if $utcFlag;
+  error("--procanalyze/--slabanalyze with -P requires -s")     if $plotFlag && $userSubsys eq '';
   error("sorry, but no + or - with -s and analyze mode")       if $userSubsys=~/[+-]/;
 
   # No default from playback file in this mode, so go by whatever user 
@@ -916,6 +918,13 @@ if ($import ne '')
 # switches, we need to load/initialize things early.  We may also need a
 # call to a pre-execution init module later...
 
+# This one needs more explanation.  Most export modules expect to either log
+# to a file or send their output over a socket and so collectl will generate
+# an error if you try to do so without -f or -A.  BUT modules like ganglia
+# or graphite do their own communications and so need to set this flag to
+# defeat that message in case they don't want to locally log data.
+$exportComm=0;
+
 if ($export ne '')
 {
   # By design, if you specify --export and -f and have a socket open, the exported
@@ -998,6 +1007,13 @@ $allThreadFlag=($procOpts=~/t/) ? 1 : 0;
 $SEP=' '                    if !defined($SEP);
 $SEP=sprintf("%c", $SEP)    if $SEP=~/\d+/;
 
+# Even though users warning about this in docs, it's too easy to forget
+# at least for me, so make sure no quotes in filters
+$netFilt=~s/['"]//g;
+$dskFilt=~s/['"]//g;
+$rawNetFilter=~s/['"]//g;
+$rawDskFilter=~s/['"]//g;
+
 # Both kinds of DISK and NETWORK filtering
 # Remember, this filter overrides the one in collectl.conf
 if ($rawDskFilter ne '')
@@ -1034,17 +1050,28 @@ $netFiltKeep=~s/^\|//;
 $netFiltIgnore=~s/^\|//;
 print "NetFilt - Ignore: $netFiltIgnore  Keep: $netFiltKeep\n"    if $debug & 1;
 
+# raw net/dsk filters are different in that they're applied at data collection time
+# and so will never even make it to the raw file.  for ease of use, one can separate
+# multiple entries by commas or pipe, but to make them work in the regx, convert the
+# commas to pipes
+$rawDskFilter=~s/,/|/g;
+$rawDskIgnore=~s/,/|/g;
+$rawNetFilter=~s/,/|/g;
+$rawNetIgnore=~s/,/|/g;
+print "RawDsk - Ignore: $rawDskIgnore  Keep: $rawDskFilter\n"    if $debug & 1;
+print "RawNet - Ignore: $rawNetIgnore  Keep: $rawNetFilter\n"    if $debug & 1;
+
 error("--dskopts f only applies to -sD")              if $dskOpts=~/f/  && $subsys!~/D/;
 error("--dskopts z only applies to -sD")              if $dskOpts=~/z/  && $subsys!~/D/;
 error("only valid value for --cpuopts is 'z'")        if $cpuOpts ne '' && $cpuOpts!~/^[z]+$/;
-error("only valid values for --dskopts are 'fiz'")    if $dskOpts ne '' && $dskOpts!~/^[fiz]+$/;
+error("only valid values for --dskopts are 'fioz'")   if $dskOpts ne '' && $dskOpts!~/^[fioz]+$/;
 error("only valid value for --xopts is 'i'")          if $xOpts ne '' && $xOpts!~/^[i]+$/;
 
 $netOptsW=5;    # minumum width
 if ($netOpts ne '')
 {
   error("--netopts only applies to -sn or -sN")       if $subsys!~/n/i;
-  error("only valid --netopts values are 'eEiw'")     if $netOpts ne '' && $netOpts!~/^[eEiw0-9]+$/;
+  error("only valid --netopts values are 'eEiow'")    if $netOpts ne '' && $netOpts!~/^[eEiow0-9]+$/;
   if ($netOpts=~/w/)
   {
     error("--netopts -w only applies to -sN")         if $subsys!~/N/;
@@ -1053,6 +1080,19 @@ if ($netOpts ne '')
     error("--netopts width must be at least 5")       if $netOptsW<5;
   }
 }
+
+# This is applied AFTER the interrupt records are read and possibly filtered
+$intFiltKeep='';
+$intFiltIgnore='';
+$ignoreFlag=($intFilt=~s/^\^//) ? 1 : 0;
+foreach my $int (split(/,/, $intFilt))
+{
+  $intFiltIgnore.="|$int"    if $ignoreFlag;
+  $intFiltKeep.=  "|$int"    if !$ignoreFlag;
+}
+$intFiltKeep=~s/^\|//;
+$intFiltIgnore=~s/^\|//;
+print "IntFilt - Ignore: $intFiltIgnore  Keep: $intFiltKeep\n"    if $debug & 1 && $intFilt ne '';
 
 #    L i n u x    S p e c i f i c
 
@@ -1153,11 +1193,11 @@ if ($SrcArch!~/linux/)
   error("-N only works on linux")            if $niceFlag;
 }
 
-# daemon mode
+# daemon
 if ($daemonFlag)
 {
   error("no debugging allowed with -D")      if $debug;
-  error("-D requires -f OR -A server")       if $filename eq '' && !$serverFlag;
+  error("-D requires -f OR -A server")       if $filename eq '' && !$serverFlag && !$exportComm;
   error("-p not allowed with -D")            if $playback ne "";
 
   if (-e $PidFile)
@@ -1165,9 +1205,17 @@ if ($daemonFlag)
     # see if this pid matches a version of collectl.  If not, we'll overwrite
     # it further on so not to worry, but at least record a warning.
     $pid=`$Cat $PidFile`;
-    $command="ps -eo pid,command | $Grep -v grep | $Grep collectl | $Grep $pid";
-    $ps=`$command`;
-    error("a daemonized collectl already running")    if $ps!~/^\s*$/;
+    chomp $pid;
+    @ps=`ps axo pid,command`;
+    foreach my $line (@ps)
+    {
+      $line=~s/^\s+//;    # trim leading whitespace for short pids
+      ($procPid, $procCommand)=split(/\s+/, $line, 2);
+      if ($procPid eq $pid && $procCommand=~/collectl/)
+      {
+        error("a daemonized collectl already running");
+      }
+    }
   }
 }
 
@@ -1386,7 +1434,7 @@ if ($rollLog ne '')
 
   # Step 2 - step through each increment (note in most cases there is only 1!)
   #          looking for each one > now
-  my ($timeToRoll, $lastHour);
+  my $timeToRoll;
   $expectedHour=$rollHour;
   foreach ($rollSecs=$rollToday;; $rollSecs+=$rollIncr*60)
   {
@@ -1419,7 +1467,6 @@ if ($rollLog ne '')
       $expectedHour%=24;
     }
     last    if $timeToRoll gt $timeNow;
-    $lastHour=$hour;
   }
   ($sec, $min, $hour, $day, $mon, $year)=localtime($rollSecs);
   $rollFirst=sprintf "%d%02d%02d %02d:%02d:%02d", $year+1900, $mon+1, $day, $hour, $min, $sec;
@@ -1984,23 +2031,24 @@ if ($playback ne '')
       # which was seen one time before flush error handling was put in.  Don't
       # know if that was the problem or not so we'll keep this extra test.
       $timestampFlag=0;
-      $timestampCount=0;
       if ($line=~/^>>>/)
       {
+	# after we've processed the data for the interval that DOESN'T print, we
+        # need to clear the flag that indicates all intervals need to be processed
+        $firstPass=0    if $timestampCounter[$rawPFlag]==1;
+
         # we need to make sure both $lastSeconds and $newSeconds track BOTH the
         # raw and rawp files, if both exist.
 
 	# we need to know later on if we're processing a timestamp AND how many we've seen
         # because if we hit EOF and only 1 seen, we have not processed a single, full interval.
         $timestampFlag=1;
-	$timestampCount++;
         if ($line!~/^>>> (\d+\.\d+) <<</)
         {
  	  logmsg("E", "Corrupted file do to invalid time marker in '$file'\n".
   		      "Ignoring the rest of file.  Last valid marker: $newSeconds[$rawPFlag]");
 	  next;
         }
-        #printf ">>> $1 <<<  Count: $timestampCount From: %s Stamp: %s\n", getDateTime($fromSecs), getDateTime($1);
 
         # At this point and if defined $newSeconds is actually pointing to the last interval
         # and be sure to convert to local time so --from/--thru checks work.
@@ -2133,7 +2181,7 @@ if ($playback ne '')
     # if we reported data from this file (we may have skipped it entirely if --from
     # used with multiple files), calculate how many seconds reported on in for 
     # stats reporting with -oA, but only if at least 1 full interval processed
-    if (!$skip && !$rawPFlag && !$extractMode && $timestampCount>1)
+    if (!$skip && !$rawPFlag && !$extractMode && $timestampCounter[$rawPFlag]>1)
     {
       # Note that by default we never include first interval data, but if this was a
       # consecitive file we need to include that interval to so add it back in
@@ -2533,6 +2581,8 @@ printf "%c[3;%dr", 27, $scrollEnd    if $scrollEnd;
 #    M a i n    P r o c e s s i n g    L o o p
 
 # This is where efficiency really counts
+# $lastHour lets us figure out when it's a new day
+my $lastHour=(localtime($rollSecs))[2];
 my $lastFirstPid=0;
 for (; $count!=0 && !$doneFlag; $count--)
 {
@@ -2593,6 +2643,11 @@ for (; $count!=0 && !$doneFlag; $count--)
     # if time to roll, do so and recalculate next roll time.
     if ($intSeconds ge $rollSecs)
     {
+      # if new day, do day-level inits of which there aren't all that many
+      ($sec, $min, $hour, $day, $mon, $year)=localtime($rollSecs);
+      initDay()    if $hour<$lastHour;
+      $lastHour=$hour;
+
       # We need to make sure each logfile has headers.  Since this flag is used interactively
       # as well we can't just clear it here.
       $zlibErrors=$headersPrinted=0;
@@ -2603,8 +2658,6 @@ for (; $count!=0 && !$doneFlag; $count--)
       # need to see if we're going to cross a time change boundary
       if ($rollIncr>60)
       {
-        ($sec, $min, $hour, $day, $mon, $year)=localtime($rollSecs);
-
 	#print "EXP: $expectedHour  HOUR: $hour\n";
         my $diff=($expectedHour-$hour);
         $diff=1    if $diff==-23;
@@ -2614,7 +2667,6 @@ for (; $count!=0 && !$doneFlag; $count--)
         logmsg("I", "Time change!  Did you remember to change your watch?")    if $diff!=0;
       }
       logmsg("I", "Logs rolled");
-      initDay();
     }
   }
 
@@ -2799,7 +2851,7 @@ for (; $count!=0 && !$doneFlag; $count--)
 
   if ($nFlag || $NFlag)
   {
-    if ($rawNetFilter eq '')
+    if ($rawNetFilter eq '' && $rawNetIgnore eq '')
     { getProc(0, "/proc/net/dev", "Net", 2); }
     else
     { getProc(7, "/proc/net/dev", "Net", 2); }
@@ -3464,10 +3516,13 @@ sub checkSubsysOpts
   error("invalid slab option in '$slabOpts'")    if $slabOpts ne '' && $slabOpts!~/^[sS]+$/;
   error("invalid env option in '$envOpts'")      if $envOpts ne ''  && $envOpts!~/^[fptCFMT\d]+$/;
 
+  $procUsrWidth=8;
   if ($procOpts ne '')
   {
+    $procUsrWidth=($procOpts=~s/u(\d+)/u/) ? $1 : 12              if $procOpts=~/u/;
     $procCmdWidth=($procOpts=~s/w(\d+)/w/) ? $1 : 1000;
-    error("invalid process option '$procOpts'")                   if $procOpts!~/^[cfiImprRsStwxz]+$/;
+    error("minumum username width is 8")                          if $procUsrWidth<8;
+    error("invalid process option '$procOpts'")                   if $procOpts!~/^[cfiIkmprRsStuwxz]+$/;
     error("process options i and m are mutually exclusive")       if $procOpts=~/i/ && $procOpts=~/m/;
     error("your kernel doesn't support process extended info")    if $procOpts=~/x/ && !$processCtxFlag;
     error("--procopts z can only be used with --top")             if !$numTop && $procOpts=~/z/;
@@ -3738,9 +3793,11 @@ sub getProc
 
     elsif ($type==7)
     {
-      next    if $rawNetIgnore ne '' && $line=~/$rawNetIgnore/;
+      next    if ($rawNetIgnore ne '' && $line=~/$rawNetIgnore/) ||
+	         ($rawNetFilter ne '' && $line!~/$rawNetFilter/);
 
-      if ($line=~/$rawNetFilter/)        { record(2, "$tag $line"); next; }
+      record(2, "$tag $line");
+      next;
     }
 
     # NFS
@@ -3783,7 +3840,7 @@ sub getProc
     elsif ($type==11)
     {
       if ($line=~/^dirty/)      { record(2, "$tag $line"); next; }
-      if ($line=~/^read/)       { record(2, "$tag $line"); next; }
+      if ($line=~/^read_/)      { record(2, "$tag $line"); next; }
       if ($line=~/^write_/)     { record(2, "$tag $line"); next; }
       if ($line=~/^open/)       { record(2, "$tag $line"); next; }
       if ($line=~/^close/)      { record(2, "$tag $line"); next; }
@@ -3974,6 +4031,7 @@ sub getExec
     {  $count++; }
     record(2, "$tag: $count\n");
   }
+  close CMD;
 }
 
 # This guy is in charge of reading single valued entries, which are
@@ -4904,7 +4962,13 @@ sub logmsg
   # Also, not that we ONLY write to the log when writing to a file and -m
   $text="$time $text"      if $debug & 1;
   print STDERR "$text\n"   if $termFlag && !$daemonFlag && ($msgFlag || ($severity eq 'W' && !$quietFlag) || $severity=~/[EF]/ || $debug & 1);
-  exit(1)                  if !$msgFlag && $severity eq "F";
+
+  # if we're not writing to a message log always send F/E errors to syslog AND get out if fatal
+  if (!$msgFlag)
+  {
+    logsys($msg, 1)          if $severity=~/[EF]/;
+    exit(1)                  if $severity eq "F";
+  }
 
   # Remember: if running as a daemon and NOT -m, we'll never see any messages
   # in collectl log OR syslog.
@@ -5267,7 +5331,7 @@ sub loadConfig
         if ($param=~/^-/)
         {
           # If new switch, time to write out old one (and arg), but note we're pushing them
-          # onto a stack so recan retrieve them in the reverse order
+          # onto a stack so we can retrieve them in the reverse order
 	  if ($switch ne '')
           {
 	    push @temp, $switch;
@@ -5295,7 +5359,8 @@ sub loadConfig
       # now put them back, preserving the order
       while (my $arg=pop(@temp))
       {	unshift(@ARGV, $arg); }
-      #foreach my $arg (@ARGV) { print "$arg "; } print "\n"; exit;
+      if ($debug & 128)
+      { foreach my $arg (@ARGV) { print " $arg "; } print "\n"; }
     }   
 
     #    L i b r a r i e s    A r e    S p e c i a l    T o o
@@ -6339,12 +6404,15 @@ CPU
 
 Disk
   --dskfilt perl-regx[,perl-regx...]
-      this ONLY applies to disk detail output and not data collection
-      only data for disk names that match the pattern(s) will be displayed
+      this ONLY applies to disk stats output and not data collection
+      only data for disk names that match the pattern(s) will be
+      included in summary stats or displayed when details requested
       if you don't know perl, a partial string will usually work too
   --dskopts
       f - include fractions for some of the detail output columns
       i - include average i/o size in brief mode (as with --iosize)
+      o - exclude unused devices from new headers and plot data
+          see docs on disk monitoring for more detail
       z - do not show any detail lines which are ALL 0     
   --rawdskfilt
       this works like dskfilt except rather than being applied to the
@@ -6379,6 +6447,16 @@ Environmental
   --envdebug               show processing of ipmi data
   --envtest   filename     file containing extract of 'ipmitool -c sdr'
 
+Interconnect
+  --xopts
+      i - include i/o sizes in brief mode
+      
+Interrupts
+  --intfilt perl-regx
+    like other filters, this filter only applies to display output
+    and all interrupts will always be collected and available for
+    playback
+
 Lustre
   --lustopts
       B - only for OST's and clients, collect buffer/rpc stats
@@ -6395,10 +6473,6 @@ Lustre
     case other tools might care.  see the collectl documentation on lustre
     for details
 
-Interconnect
-  --xopts
-      i - include i/o sizes in brief mode
-      
 Memory
   --memopts
       P - display physical portion of verbose display
@@ -6414,14 +6488,17 @@ Memory
 
 Network
   --netfilt perl-regx[,perl-regx...]
-      this ONLY applies to network detail output and not data collection
-      only data for network interface names that match the pattern(s) 
-      will be displayed
+      this ONLY applies to network stats output and not data collection
+      only data for network names that match the pattern(s) will be
+      included in summary stats or displayed when details requested
+      if you don't know perl, a partial string will usually work too
   --netopts eEw99
       e - include errors in brief mode and explicit error types in
           verbose and detail formats
       E - only display intervals which have network errors in them
       i - include i/o sizes in brief mode
+      o - exclude unused devices from new headers and plot data
+          see docs on network monitoring for more detail
       w - sets minimal network name width in network stats output which 
           can be useful for aligning output from multiple systems
   --rawnetfilt
@@ -6451,6 +6528,7 @@ Processes
       i - show io counters in display
       I - disable collection/display of I/O stats.  saves over 25% in data
           collection overhead
+      k - remove known shells from process names
       m - show memory breakdown and faults in display
       p - never look for new pids or threads to match processing criteria
             This also improves performance!
@@ -6459,6 +6537,8 @@ Processes
       s - include process start times in hh:mm:ss format
       S - include process start times in mmmdd-hh:mm:ss format
       t - include ALL threads (can be a lot of overhead if many active threads)
+      u - make username format 12 chars wide.  you can also set any arbitrary
+          width of at least 8, eg u10
       w - make format wider by including entire process argument string
           you can also set a max number of chars, eg w32
       x - include extended process attributes (currently only for context switches)
@@ -6587,6 +6667,17 @@ sub whatsnew
   my $whatsnew=<<EOF6;
 What's new in collectl in the last year or so?
 
+version 3.6.8  AUg 2013
+- new --procopt u[width] specifies different username width in proc display
+      --procopt k, removes known shells from process listing with -sZ,
+          currently set to /bin.sh, /usr/bin/perl, /usr/bin/python & python
+- new --dskopt/--netopt o will exclude unused devices from plot order, see
+      disk/network monitoring docs on sourceforge for more detail
+- new --intfilt, works like other filters except this one's for interrupt
+      names and/or numbers
+- always log message types E/F to syslog when in daemon mode
+- exclude openstack/cinder network types of dp, nl and tap from network summary
+
 version 3.6.7  March 2013
 - new switch: --cpuopts z, to disable detail lines for idle CPUs
 - do NOT use vnet speeds, which are hardcoded to 10, in bogus checks
@@ -6603,26 +6694,6 @@ version 3.6.5  October 2012
 - -r option to purge .log files, def=12 months
 - new lexpr option, align, will align output to whole minute boundary
 - new graphite switch: f will report hostname field as FQDN
-
-version 3.6.4  June 2012
-- no longer need to be root to get network speed because ethtool no longer required
-- support for dynamic disk/networks (vital for virtual host monitoring)
-- merged experimental snmp stats with tcp stack stats and dropped snmp from the kit
-- deprecated:   -G and -group will be removed in approximately 6 months.  use --tworaw
-- new switch    --tcpfilt controls what is collected AND reported
-- new switch:   --rawdskignore tells collectl to ignore specific disks during collection
-- new switch:   --rawnetfilter tells collectl to ignore specific nets during collection
-- new procopt:  s/S for showing process starting times
-- new dskopt:   f reports fractional disk details
-- new graphite switch: b=str will cause output to be prefaced by 'str'
-
-version 3.6.3  May 2012
-- new switch:   --rawdskfilt overrides DskFilter in collectl.conf
-- new switch:   --rawnetfilt does for networks what DiskFilter does for disks
-- fixed problem during process owner filtering
-
-version 3.6.2  March 2012
-- changed behavior of how to use --runas for non-root daemons
 
 EOF6
 

@@ -90,6 +90,7 @@
 /PCI 2/PTemp/
 /PS Board/uTemp/
 /Sys Ex.*/STemp/
+/Coprocessor (\d)/GTemp$1/
 [post]
 /^STemp/STempE/
 /^cTemp/HTempC/

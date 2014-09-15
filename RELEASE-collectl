@@ -38,6 +38,10 @@ KNOWN PROBLEMS/RESTRICTIONS
 
 CHANGES
 
+3.6.9-1  Oct 18, 2013
+  - typo in network plot header loop resulted in infinite loop [thanks andy]
+  - remove $int/secs from numa hit rate calc AND add more precision to its output [thanks stig]
+
 3.6.8-1  Jul 20, 2013
   - new flag $exportComm must be set in gexpr/ganglia so that they won't
     generate an error if run without -f or -A [thanks tom]

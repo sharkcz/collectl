@@ -4621,7 +4621,7 @@ sub printPlotHeaders
 
   if ($subsys=~/N/)
   {
-    for (my $i=0; $i<@netOrder; $o++)
+    for (my $i=0; $i<@netOrder; $i++)
     {
       # remember, order include net speed
       $netName=$netOrder[$i];
@@ -5357,9 +5357,9 @@ sub printPlot
     {
         # don't see how total can ever be 0, but let's be careful anyways
         my $misses=$numaStat[$i]->{for}+$numaStat[$i]->{miss};
-        my $hitrate=($misses) ? $numaStat[$i]->{hits}/($numaStat[$i]->{hits}+$misses)*100/$intSecs : 100;
+        my $hitrate=($misses) ? $numaStat[$i]->{hits}/($numaStat[$i]->{hits}+$misses)*100 : 100;
 
-	$numaPlot.=sprintf("$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%4.1f",
+	$numaPlot.=sprintf("$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%.2f",
 	                $numaMem[$i]->{used}, $numaMem[$i]->{free}, $numaMem[$i]->{slab},
         	        $numaMem[$i]->{map},  $numaMem[$i]->{anon},
                 	$numaMem[$i]->{inact}, $hitrate);
@@ -6684,7 +6684,7 @@ sub printTerm
         # we've got the room so let's use an extra column for each and have the same
         # headers for 'R' and because I'm lazy.
         printText("#$miniFiller Node    Total     Used     Free     Slab   Mapped     Anon   Locked    Inact");
-        printText(" Hit%")    if $memOpts!~/R/;
+        printText("   Hit%")    if $memOpts!~/R/;
         printText("\n");
       }
       exit(0)    if $showColFlag;
@@ -6697,8 +6697,8 @@ sub printTerm
       {
         # total hits can be 0 if no data collected
         my $misses=$numaStat[$i]->{for}+$numaStat[$i]->{miss};
-        my $hitrate=($misses) ? $numaStat[$i]->{hits}/($numaStat[$i]->{hits}+$misses)*100/$intSecs : 0;
-        $line.=sprintf("$datetime  %4d %8s %8s %8s %8s %8s %8s %8s %8s %4d\n", $i,
+        my $hitrate=($misses) ? $numaStat[$i]->{hits}/($numaStat[$i]->{hits}+$misses)*100 : 100;
+        $line.=sprintf("$datetime  %4d %8s %8s %8s %8s %8s %8s %8s %8s %6.2f\n", $i,
                 cvt($numaMem[$i]->{used}+$numaMem[$i]->{free},7,1,1),
                 cvt($numaMem[$i]->{used},7,1,1),  cvt($numaMem[$i]->{free},7,1,1),
                 cvt($numaMem[$i]->{slab},7,1,1),  cvt($numaMem[$i]->{map},7,1,1),
@@ -7552,7 +7552,7 @@ sub printTermProc
       }
 
       # EXPERIMENTAL
-      # if told to do so, remove some of the standard shells from the command string in cmd0;
+      # if told to do so, remove some of the known/standard shells from the command string in cmd0;
       if ($procOpts=~/k/)
       {
         if ($cmd0=~m[/bin/sh|/usr/bin/perl|/usr/bin/python|^python])

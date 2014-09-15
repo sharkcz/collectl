@@ -29,12 +29,13 @@ data using <i>--verbose</i>.
 One should note that these formats are not just for interactive use and can also applied
 to playback mode as well.
 <p>
-An additional feature of <i>brief</i> output is <i>subtotal</i> mode.  If one enters a <CR> at
+An additional feature of <i>brief</i> output is <i>subtotal</i> mode.  If one hits the 
+<i>enter</i> key at
 any time, the next line of ouput will be the subtotals (or averages on non-counters)
 of all columns since
 the start of collectl OR the last time the counters were zeroed.  To zero the
 counters enter <i>Z</i> followed by a <i>carriage return</i>.  
-Furthermore, if you type <i>A</i> followed by a <i>carriage return</i>, the averages
+Furthermore, if you type <i>A</i> followed by the <i>enter</i> key, the averages
 will be reported.  The averages/totals can also be displayed during playback
 in brief mode by specifying <i>-oA</i>.
 <p>
@@ -49,18 +50,22 @@ to <i>--verbose</i> as described above.  They are:
 <li>--home moves the cursor to the home position before displaying verbose output at the start
 of each interval.  Only available in interactive mode, this results in a look-and-feel similar
 to the <i>top</i> command.
-<li>--top is very similar to the <i>top</i> command in that it shows a small subset of processes
-sorted by the top consumers of the cpu, I/O or even page faults.  You can even use -s to add 
-subsystems to the display in brief or verbose mode as well.
-<li>--procfilt and --slabfilt effect the output format in that these typically
-cause a much smaller number of processes or slabs (if used in conjunction with --slabopts S)
-to be displayed, sometimes as little as a line
+<li>--procfilt and --slabfilt effect the output format for those respective output formats
+in that these typically cause a much smaller number of processes or slabs (if used in 
+conjunction with --slabopts S) to be displayed, sometimes as little as a line
 or two and it was felt repeating the interval header when only processes or slabs are the only data
 being reporting, was too distracting and so it left off.  Be sure to try it with -oT for better
 clarity.
+<li>--top is very similar to the linux <i>top</i> command in that it shows a small subset of processes
+sorted by the top consumers of the cpu, I/O or even page faults.  You can even use -s to add 
+subsystems to the display in brief or verbose mode as well.  By default this format sorts by
+the top CPU users but you can choose virtually field.  If you choose one of the <i>slab</i> field
+names it will show the top slabs sorted by that field name.
 </ul>
 The best way to really understand how these work in conjunction with each other is to try them
 out.  And don't forget you can use <i>--top</i> with playback too!
+
+<table width=100%><tr><td align=right><i>updated Feb 21, 2011</i></td></tr></colgroup></table>
 
 </body>
 </html>

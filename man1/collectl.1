@@ -143,18 +143,6 @@ lines prefaced with time stamps.  You can optionally change the time format
 with the usual -o options and can even select the timeframe with --from and --thru.
 .RE
 
-.B -G, --group
-.RS
-Treat process data as an entirely separate group of data, writing it into its own raw file, named
-"rawp".  These separate process files can be played back and processed just like any other 
-collectl raw files and in fact one can even play back both at the same time if that is what is
-desired.  The only real purpose of this switch is that on some systems with many processes, it is
-possible to generate huge raw files (some have been observerd to be >250MB!) and while collectl
-will happily play back/process these files it can take a long time.  By using the -G switch one
-still gets a hugh rawp file, but the raw file is a much more manageable size and as a result much
-faster to process.
-.RE
-
 .B --home
 .RS
 Always start the display for the current interval at the top of the screen
@@ -234,13 +222,27 @@ character to a colon and "--sep 9" sets it to a horizontal tab.  "--sep 58" woul
 set it to a colon.
 .RE
 
-.B -S, --ssh
+.B --ssh
 .RS
 This is typically used when starting collectl on another system via ssh or
 rsh.  It causes collectl to "watch" for its parent (who started it locally) to
 exit at which point it will exit as well.  The reason for this switch is that
 when the remote command that started collectl exists, collectl's parent will exit
-as well but NOT collectl, unless -S is specified.
+as well but NOT collectl, unless --s is specified.
+.RE
+
+.B --tworaw
+.RS
+The switches -G and --group have been replaced by --rawtoo, which is more rescriptive of
+its function.  When specified, it tells collectl to treat process and slab data as an 
+entirely separate of raw files, named with the extention "rawp".  These separate files 
+can be played back and processed just like any other collectl raw files and in fact one 
+can even play back both at the same time if that is what is
+desired.  The only real purpose of this switch is that on some systems with many processes, it is
+possible to generate huge raw files (some have been observerd to be >250MB!) and while collectl
+will happily play back/process these files it can take a long time.  By using the --tworaw switch one
+still gets a huge rawp file, but the normal raw file is a much more manageable size and as 
+a result will faster to process then when all data is combined into the same file.
 .RE
 
 Playback Mode
@@ -502,7 +504,9 @@ to the time.
 Where appropriate, data such as disk KBs or transfers are normalized to units per 
 second by taking the change in a counter and dividing by the number of seconds in 
 that interval.  Normalization can be disabled via this option, the result being 
-the reported values are not divided by the duration of the interval.
+the reported values are not divided by the duration of the interval.  This can be
+particulary useful for reporting values that are < 1/2 the sampling, which will be
+rounded to 0.
 .RE
 
 .B T
@@ -589,6 +593,9 @@ defaults while adding network detail.
 
 The default is "cdn", which stands for CPU, Disk and Network data.
 
+Refer to data definitions on the sourceforge website OR in 
+/usr/share/collectl/doc/collectl-xxx to see complete descriptions of the data returned.
+
 SUMMARY SUBSYSTEMS
 
 .br
@@ -672,6 +679,14 @@ This command shows only the portion of the help text that desribes the -o and --
 to save the time of wading through the entire help screen.
 .RE
 
+.B --showcolheaders
+.RS
+This command shows the first set of headers that will be printed by collectl and exits.  Doesn't
+really make sense for multi-section output like several sets of verbose or detail data.  Also 
+note that since it requires one monitoring interval to build up some headers which may be dynamic,
+it also forces the interval to 0.
+.RE
+
 .B --showsubopts
 .RS
 List all the subsystem specifice options
@@ -726,11 +741,22 @@ resulting in a display similar to the "top" utility.  In playback more the scree
 cannot use this switch in "record" mode.
 .RE
 
-
 .B "--umask mask"
 .RS
 Sets collectl's umask to control output file permissions.  Only root can set
 the umask.  See "man umask" for details.
+.RE
+
+.B "--utime mask"
+.RS
+Write periodic micro-timestamps into raw file at different points in time for 
+fine grained measurements of operation times.
+.br
+1 - write timestamps when entering major sections
+.br
+2 - write timestamps for all /proc accesses except for process data
+.br
+4 - write timestamps for /proc data for all processes including threads
 .RE
 
 .B -v
@@ -781,9 +807,9 @@ work too.
 The default is to display ALL data but the following will cause a subset to be displayed
 
 .br
-c - display current (power) data
-.br
 f - display fan data
+.br
+p - display current (power) data
 .br
 t - display temperature data
 .br
@@ -792,6 +818,9 @@ C - convert temperature to Celcius if in Farenheit
 F - convert temperature to Farenheit if in Celcius
 .br
 M - display each type of data on separate line
+.br
+T - display data truncated to whole integers (some implemenations
+displayed them with fractional components)
 .br
 9 - any number, will tell ipmitool to read on this device number
 .RE
@@ -831,6 +860,15 @@ This ONLY applies to network detail output and not data collection.
 Only data for network interface names that match the pattern(s) will
 be displayed.  If you don't know perl, a partial string will usually 
 work too.
+.RE
+
+.B "--netopts"
+.RS
+e - include network error counts in brief and explicit error types elsewhere
+.br
+E - only include lines with network errors in them
+.br
+w - set width of network device name
 .RE
 
 .B "--nfsfilt NFS Filters"
@@ -888,6 +926,8 @@ m - show breakdown of memory utilization instead of default format
 p - never look for new pids or threads during data collection
 .br
 r - show root command name only (no directory) for narrower display
+.br
+R - show ALL process priorities ('RT' currently displayed if realtime)
 .br
 t - include ALL process threads (increases collection overhead)
 .br
@@ -979,7 +1019,7 @@ collect tool, which collectl is based on.
 .SH AUTHOR
 This program was written by Mark Seger (mjseger@gmail.com).
 .br
-Copyright 2003-2010 Hewlett-Packard Development Company, LP
+Copyright 2003-2011 Hewlett-Packard Development Company, LP
 .br
 collectl may be copied only under the terms of either the Artistic License
 or the GNU General Public License, which may be found in the source kit

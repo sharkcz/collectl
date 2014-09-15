@@ -9,9 +9,9 @@
 <p>
 <h3>The Basics</h3>
 At first glance, the way collectl calculates its numbers is pretty straight forward.  It
-looks at successive intervals of counters, calculates their differences and divides by
-the interval, the result of which is the counter's rate.  If -on is specified collectl
-does not divide by the interval and simply reports the difference.
+looks at successive intervals of counters, calculates their differences and <i>normalizes</i>
+the result by dividing by the interval, the result of which is the counter's rate/second.
+If -on is specified collectl does not divide by the interval and simply reports the difference.
 However, one occasionally may see numbers that don't make sense, such as a 1Gb network
 reporting rates almost <a href=NetworkStats.html>double</a> what it is capable of or 
 other anomolous numbers.  
@@ -72,17 +72,35 @@ This is a problem that is very real and worth understanding even it if you never
 personally see it.  If the rate at which a counter is updated is too coarse, 
 especially if it is close to the monitoring interval, the reported numbers will
 be off.  For most of the data collectl reports on, this is not a problem because these
-counters ARE updated frequently.  However, it turns out that the network data is only 
+counters ARE updated frequently.  However, it turns out that some network drivers only 
 updated about once a second and in early versions of the 2.6 kernel (and may the one
 you're currently running on), you may see some very strange anomolies in the output if
 you look at 1-second data samples.
 See <a href=NetworkStats.html>this page<a> for more details.
+<p>
+<h3>Normalization</h3>
+As described elsewhere, collectl divides counter values by the interval between 
+samples and then rounds off the results.  When run interactively with a
+default interval of 1 second, this is not an issue.  However, for data collected in deamon
+mode this can actually be of significance.  Consider a network that has 1-4 errors over a 10
+second period.  This will normalize to a value of <5 and be rounded off to 0!  The same is
+true for values reported for process/slab statistics, where these are typically measured
+over 60 seconds.  Normalization in these cases can be even more dramatic.
+<p>
+One other thing to consider is that when selecting only non-zero values be reported, one
+might be occasionally be surprised by see values of 0 being reported.  This will occur
+if there is a non-zero value that is then nomalized to 0.
+<p>
+If you think you might need to see these <i>close to 0</i> values, you should include <i>-on</i>
+which tells collectl <i>not</i> to normalize its output before reporting.
 <p>
 <h3>In conclusion</h3>
 As they say, <a href=http://en.wikipedia.org/wiki/Garbage_in,_garbage_out>
 <i>garbage in, garbage out</i></a> and so if the number you're seeing look wrong, it's
 worth trying to understand why and you shouldn't necessary take them as face
 value.
+
+<table width=100%><tr><td align=right><i>updated Feb 21, 2011</i></td></tr></colgroup></table>
 
 </body>
 </html>

@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 
-# Copyright 2003-2010 Hewlett-Packard Development Company, L.P. 
+# Copyright 2003-2011 Hewlett-Packard Development Company, L.P. 
 #
 # collectl may be copied only under the terms of either the Artistic License
 # or the GNU General Public License, which may be found in the source kit
@@ -79,7 +79,7 @@ $ReqDir=       '/usr/share/collectl';    # may not exist
 
 %TopProcTypes=qw(vsz '' rss '' syst '' usrt '' time '' rkb '' wkb '' iokb ''
                  rkbc '' wkbc '' iokbc '' ioall '' rsys '' wsys '' iosys  ''
-                 iocncl '' majf '' minf '' flt '' pid '' cpu '');
+                 iocncl '' majf '' minf '' flt '' pid '' cpu '' thread '');
 %TopSlabTypes=qw(numobj '' name '' actobj '' objsize '' numslab '' objslab '' totsize '' totchg '' totpct '');
 
 # Constants and removing -w warnings
@@ -107,8 +107,8 @@ require "Sys/Syslog.pm"    if !$PcFlag;
 $rootFlag=(!$PcFlag && `whoami`=~/root/) ? 1 : 0;
 $SrcArch= $Config{"archname"};
 
-$Version=  '3.4.3-3';
-$Copyright='Copyright 2003-2010 Hewlett-Packard Development Company, L.P.';
+$Version=  '3.5.0-3';
+$Copyright='Copyright 2003-2011 Hewlett-Packard Development Company, L.P.';
 $License=  "collectl may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
 
@@ -138,13 +138,14 @@ $Program=basename($ExeName);
 $Program=~s/\.pl$//;    # remove extension for production
 
 # Note that if someone redirects stdin or runs it out of a script it will look like 
-# we're in the background
+# we're in the background.  We also need to know if STDOUT connected to a terminal.
 if (!$PcFlag)
 {
   $MyDir=`pwd`;
   $Cat=  'cat';
   $Sep=  '/';
   $backFlag=(getpgrp()!=tcgetpgrp(0)) ? 1 : 0;
+  $termFlag= (-t STDOUT) ? 1 : 0;
 }
 else
 {
@@ -152,6 +153,7 @@ else
   $Cat=  'type';
   $Sep=  '\\';
   $backFlag=0;
+  $termFlag=0;
 }
 chomp $MyDir;
 
@@ -240,7 +242,7 @@ $SubsysExcore='y';
 $BriefSubsys="bcdfijlmnstx";
 
 # And the default environmentals
-$envOpts='cft';
+$envOpts='fpt';
 $envRules='';
 $envDebug=0;
 $envTestFile='';
@@ -299,7 +301,7 @@ $termHeight=$TermHeight;
 
 # On LINUX and only if associated with a terminal in the foreground and we can find 'resize',
 # use the value of LINES to set the terminal height
-if (!$PcFlag && !$daemonFlag && !$backFlag && $Resize ne '' && defined($ENV{TERM}) && $ENV{TERM}=~/xterm/)
+if (!$PcFlag && !$daemonFlag && !$backFlag && $Resize ne '' && $termFlag && defined($ENV{TERM}) && $ENV{TERM}=~/xterm/)
 {
   # IF the user typed a CR after collectl started but before it started, flush input buffer
   my $selTemp=new IO::Select(STDIN);
@@ -322,7 +324,7 @@ close TMP;
 $count=-1;
 $numTop=0;
 $briefFlag=1;
-$showPHeaderFlag=$showMergedFlag=$showHeaderFlag=$showSlabAliasesFlag=$showRootSlabsFlag=0;
+$showColFlag=$showMergedFlag=$showHeaderFlag=$showSlabAliasesFlag=$showRootSlabsFlag=0;
 $verboseFlag=$vmstatFlag=$alignFlag=$whatsnewFlag=0;
 $quietFlag=$utcFlag=0;
 $address=$flush=$fileRoot='';
@@ -331,7 +333,7 @@ $groupFlag=$msgFlag=$niceFlag=$plotFlag=$sshFlag=$wideFlag=$rawFlag=$ioSizeFlag=
 $userOptions=$userInterval=$userSubsys='';
 $import=$export=$expName=$expOpts=$topOpts=$topType='';
 $impNumMods=0;  # also acts as a flag to tell us --import code loaded
-$homeFlag=$rawtooFlag=$autoFlush=$allFlag=0;
+$homeFlag=$rawtooFlag=$tworaw=$tworaw=$autoFlush=$allFlag=0;
 $procOpts=$procFilt=$procState='';
 $slabOpts=$slabFilt='';
 $procAnalFlag=$procAnalCounter=$slabAnalFlag=$slabAnalCounter=$lastInt2Secs=0;
@@ -339,6 +341,8 @@ $lastLogPrefix=$passwdFile='';
 $nfsOpts=$nfsFilt=$lustOpts=$userEnvOpts='';
 $grepPattern=$pname='';
 $dskFilt=$netFilt='';
+$netOpts='';
+$utimeMask=0;
 
 # Since --top has optionals arguments, we need to see if it was specified without
 # one and stick in the defaults noting -1 means to use the window size for size
@@ -374,6 +378,7 @@ GetOptions('align!'     => \$alignFlag,
            'flush=i'    => \$flush,
            'G!'         => \$groupFlag,
            'group!'     => \$groupFlag,
+	   'tworaw!'    => \$groupFlag,
            'home!'      => \$homeFlag,
            'i=s'        => \$userInterval,
            'interval=s' => \$userInterval,
@@ -403,11 +408,11 @@ GetOptions('align!'     => \$alignFlag,
            's=s'        => \$userSubsys,
            'sep=s'      => \$SEP,
            'subsys=s'   => \$userSubsys,
-	   'S!'         => \$sshFlag,
            'ssh!'       => \$sshFlag,
 	   'top=s'      => \$topOpts,
            'utc!'       => \$utcFlag,
            'umask=s'    => \$umask,
+           'utime=i'    => \$utimeMask,
 	   'v!'         => \$vSwitch,
            'version!'   => \$vSwitch,
 	   'V!'         => \$VSwitch,
@@ -430,6 +435,7 @@ GetOptions('align!'     => \$alignFlag,
 	   'import=s'      => \$import,
            'lustopts=s'    => \$lustOpts,
            'netfilt=s'     => \$netFilt,
+	   'netopts=s'     => \$netOpts,
            'nfsopts=s'     => \$nfsOpts,
            'nfsfilt=s'     => \$nfsFilt,
            'envopts=s'     => \$userEnvOpts,
@@ -450,7 +456,7 @@ GetOptions('align!'     => \$alignFlag,
            'showsubopts!'  => \$showSuboptsFlag,
            'showtopopts!'  => \$showTopoptsFlag,
 	   'showheader!'   => \$showHeaderFlag,
-           'showplotheader!'  =>\$showPHeaderFlag,
+           'showcolheaders!'  =>\$showColFlag,
 	   'showslabaliases!' =>\$showSlabAliasesFlag,
 	   'showrootslabs!'   =>\$showRootSlabsFlag,
            'slabanalyze!'  => \$slabAnalFlag,
@@ -580,6 +586,9 @@ if ($vmstatFlag)
 error("can't use --export with --verbose")    if $verboseFlag && $export ne '';
 error("can't use -P with --verbose")          if $verboseFlag && $plotFlag;
 error("can't use -f with --verbose")          if $verboseFlag && $filename ne '';
+error("--utime requires HiRes timer")         if $utimeMask && !$hiResFlag;
+error("--utime requires -f")                  if $utimeMask && $filename eq '';
+error("max value for --utime is 7")           if $utimeMask>7;
 
 # --all is shortcut for all summary data
 if ($allFlag)
@@ -597,7 +606,7 @@ $interval=($userInterval ne '') ? $userInterval : $Interval;
 $subsys=  ($userSubsys ne '')   ? $userSubsys   : $SubsysCore;
 
 # ultimately we only use when doing process data
-error("'$passwdFile' doesn't exist")    if $passwdFile ne '' && !-e $passwdFile;
+error("password file '$passwdFile' doesn't exist")    if $passwdFile ne '' && !-e $passwdFile;
 $passwdFile=$PasswdFile    if $passwdFile eq '';
 
 #    S u b s y s  /  I n t e r v a l    R e s o l u t i o n
@@ -610,7 +619,17 @@ $passwdFile=$PasswdFile    if $passwdFile eq '';
 # keep the secondary
 if (!$daemonFlag)
 {
-  $interval=$Interval=1    if $userInterval eq '';
+  $interval=$Interval=1    if $userInterval eq '' && !$showColFlag;
+  if ($showColFlag)
+  {
+    error('-c conflicts with --showcolheaders')     if $count!=-1;
+    error('-i conflicts with --showcolheaders')     if $userInterval ne '';
+    $interval=0;
+    $interval='0:0'     if $subsys=~/[YZ]/;
+    $interval='0:0:0'   if $subsys=~/E/;
+    $quietFlag=1;    # suppress 'waiting...' startup message
+  }
+
   if ($userInterval ne '' && $userInterval=~/^(:.*)/)
   {
     $interval="1$userInterval";
@@ -622,10 +641,12 @@ if (!$daemonFlag)
 }
 
 # subsystems  - must preceed +
-error("+/- must start -s arguments if used")
-                    if $subsys=~/[+-]/ && $subsys!~/^[+-]/;
-error("invalid subsystem '$subsys'")
-                    if $subsys!~/^[-+$SubsysCore$SubsysExcore$SubsysDet]+$/;
+# special option -s-all disables ALL subsystems which is basically the only way to
+# disable all subsystems when you want to play back one or more explicit imports
+# so we need to to allow if the ONLY thing that follows -s
+error("+/- must start -s arguments if used")    if $subsys=~/[+-]/ && $subsys!~/^[+-]/;
+error("-s-all only allowed with -p")            if $subsys eq '-all' && $playback eq '';
+error("invalid subsystem '$subsys'")            if $userSubsys ne '-all' && $subsys!~/^[-+$SubsysCore$SubsysExcore$SubsysDet]+$/;
 $subsys=mergeSubsys($SubsysDef);
 
 # note that -p, --procanalyze, --slabanalyze and --top can change $subsys
@@ -635,23 +656,6 @@ setOutputFormat();
 
 # switch validations once we know whether brief or verbose
 error("-oA not allowed in verbose mode")   if $verboseFlag && $options=~/A/;
-
-# This is tricky as the main logic for checking intervals lives further
-# down the code and says it needs to be there!  So, let's do a very 
-# minimal/temporary thing here, noting '$interval' is always defined but
-# not yet validated so it can still contain a ':'.  '$interval2' not
-# yet defined so we either use default or what's in '$interval'.
-if ($briefFlag)
-{
-  $temp1=$interval;
-  $temp2=$Interval2;    # default
-  if ($interval=~/:/)
-  {
-    @temp=split(/:/, $interval);
-    $temp1=($temp[0] eq '') ? $Interval : $temp[0];
-    $temp2=$temp[1]    if $temp[1] ne '';
-  }
-}
 
 #    S p e c i a l    F o r m a t s
 
@@ -750,14 +754,6 @@ if ($import ne '')
   # All must be explicitly defined
   $subsys=''    if !$daemonFlag && $userSubsys eq '';
 
-  # Don't really need to do this but gets rid of uninit var warnings
-  undef @impKey;
-  undef @impInitInterval;
-  undef @impAnalyze;
-  undef @impPrintBrief;
-  undef @impPrintVerbose;
-  undef @impPrintPlot;
-  undef $impPrintExport;
   foreach my $imp (split(/:/, $import))
   {
     $impString=$imp;
@@ -786,6 +782,7 @@ if ($import ne '')
     push @impOpts,         $impOpts;
     push @impInit,         "${impName}Init";
     push @impGetData,      "${impName}GetData";
+    push @impGetHeader,    "${impName}GetHeader";
     push @impInitInterval, "${impName}InitInterval";
     push @impAnalyze,      "${impName}Analyze";
     push @impUpdateHeader, "${impName}UpdateHeader";
@@ -795,11 +792,29 @@ if ($import ne '')
     push @impPrintExport,  "${impName}PrintExport";
   }
 
-  # Call REQUIRED initialization routines
+  # Call REQUIRED initialization routines in reverse so if we have to
+  # delete anything we won't have to deal with overlap
   $impSummaryFlag=$impDetailFlag=0;
-  for (my $i=0; $i<$impNumMods; $i++)
-  { 
-    &{$impInit[$i]}(\$impOpts[$i], \$impKey[$i]);
+  for (my $i=($impNumMods-1); $i>=0; $i--)
+  {
+    my $status=&{$impInit[$i]}(\$impOpts[$i], \$impKey[$i]);
+    if ($status==-1)
+    {
+      splice(@impOpts,         $i, 1);
+      splice(@impKey,          $i, 1);
+      splice(@impInit,         $i, 1);
+      splice(@impGetData,      $i, 1);
+      splice(@impGetHeader,    $i, 1);
+      splice(@impInitInterval, $i, 1);
+      splice(@impAnalyze,      $i, 1);
+      splice(@impUpdateHeader, $i, 1);
+      splice(@impPrintBrief,   $i, 1);
+      splice(@impPrintVerbose, $i, 1);
+      splice(@impPrintPlot,    $i, 1);
+      splice(@impPrintExport,  $i, 1);
+      $impNumMods--;
+      next;
+    }
 
     # We need to know if any module has summary or data in case one one else does
     # and we're in plot format so newlog() will know to open tab file.  This also
@@ -857,10 +872,9 @@ error("--home and -sY doesn't make sense.  use --top")     if $homeFlag && $subs
 error("--home and -sZ doesn't make sense.  use --top")     if $homeFlag && $subsys=~/Z/ && $topOpts eq '';
 error('--procopts only makes sense with --top or -sZ')     if $procOpts ne '' && $subsys!~/Z/ && !$topType;
 error("--envopts does not apply to -P")                    if $userEnvOpts ne '' && $plotFlag;
+error("--envopts are only fptCFMT and/or a number")        if $userEnvOpts ne '' && $userEnvOpts!~/^[fptCFMT0-9]+$/;
 error("--envrules does not exist")                         if $envRules ne '' && !-e $envRules;
-
 error("--grep only applies to -p")                         if $grepPattern ne '' && $playback eq '';
-
 error('--headerrepeat must be an integer')                 if $headerRepeat!~/^[\-]?\d+$/;
 error('--headerrepeat must be >= -1')                      if $headerRepeat<-1;
 
@@ -880,15 +894,16 @@ error('--showheader not allowed with -f')                  if $filename ne '' &&
 error("--showheader in collection mode only supported on linux")
                                                            if $PcFlag && $playback eq '' && $showHeaderFlag;
 error('--showmergedheader not allowed with -f')            if $filename ne '' && $showMergedFlag;
-error('--showplotheader not allowed with -f')              if $filename ne '' && $showPHeaderFlag;
+error('--showcolheaders not allowed with -f')              if $filename ne '' && $showColFlag;
 
 error("--align require HiRes time module")                 if $alignFlag && !$hiResFlag;
 error('--umask can only be set by root')                   if $umask ne '' && !$rootFlag;
 
+error('-sT can only be used with -f or -P')                if $subsys=~/T/ && !$plotFlag && $filename eq '';
+
 # if user enters --envOpts that don't conflict with defaults, we need to add it to theh
 # otherwise override them
-$envOpts=($userEnvOpts=~/(^[CFM\d]+$')/) ? "$1$envOpts" : $userEnvOpts    if $userEnvOpts ne '';
-
+$envOpts=($userEnvOpts=~/(^[CFMT\d]+$')/) ? "$1$envOpts" : $userEnvOpts    if $userEnvOpts ne '';
 $allThreadFlag=($procOpts=~/t/) ? 1 : 0;
 
 # The separator is either a space if not defined or the character supplied if 
@@ -902,6 +917,20 @@ error("--dskfilt only applies to -sD")    if $dskFilt ne '' && $subsys!~/D/;
 error("--netfilt only applies to -sN")    if $netFilt ne '' && $subsys!~/N/;
 $dskFilt=~s/,/|/g;
 $netFilt=~s/,/|/g;
+
+$netOptsW=5;    # minumum width
+if ($netOpts ne '')
+{
+  error("--netopts only applies to -sn or -sN")       if $subsys!~/n/i;
+  error("only valid --netopts values are 'eEw'")      if $netOpts ne '' && $netOpts!~/^[eEw0-9]+$/;
+  if ($netOpts=~/w/)
+  {
+    error("--netopts -w only applies to -sN")         if $subsys!~/N/;
+    error("--netopts w must be followed by width")    if $netOpts!~/w(\d+)/;
+    $netOptsW=$1;
+    error("--netopts width must be at least 5")       if $netOptsW<5;
+  }
+}
 
 #    L i n u x    S p e c i f i c
 
@@ -968,7 +997,7 @@ if ($filename ne '')
 printf "RawFlag: %d PlotFlag: %d Repeat: %d Log2Flag: %d Export: %s\n", 
     $rawFlag, $plotFlag, $headerRepeat, $logToFileFlag, $export    if $debug & 1;
 
-error("-G requires data collection to a file") 
+error("--tworaw requires data collection to a file") 
     if $groupFlag && ($playback ne '' || $filename eq '');
 
 ($lustreSvcs, $lustreConfigInt)=split(/:/, $lustreSvcs);
@@ -1309,8 +1338,8 @@ error("-sT only works with -P for now (too much data)")
 
 if ($sshFlag)
 {
-  error("-S doesn't apply to daemon mode")      if $daemonFlag;
-  error("-S doesn't apply to playback mode")    if $playback ne '';
+  error("--ssh doesn't apply to daemon mode")      if $daemonFlag;
+  error("--ssh doesn't apply to playback mode")    if $playback ne '';
   $stat=`cat /proc/$$/stat`;
   $myPpid=(split(/\s+/, $stat))[3];
   logmsg('I', "Started by PID: $myPpid");
@@ -1358,14 +1387,16 @@ if ($playback ne '')
 
     if ($file!~/$pushed/ && ($lastFileDate!=0) && ($fileTime<$fromTime) && ($prefix eq $lastPrefix))
     {
-      $popped=pop(@playbackList)
-	  if ($fromDate!=0 && $fileDate==$fromDate) ||
-             ($fromDate==0 && $thruDate!=0 && $fileDate==$firstFileDate) ||
-	     ($fromDate==0 && $thruDate==0 && $fileDate==$lastFileDate);
-      $popped=quotemeta((split(/\./, $popped))[0]);
+      if (($fromDate!=0 && $fileDate==$fromDate) ||
+          ($fromDate==0 && $thruDate!=0 && $fileDate==$firstFileDate) ||
+	  ($fromDate==0 && $thruDate==0 && $fileDate==$lastFileDate))
+      {
+	my $popped=pop(@playbackList);
+	$popped=quotemeta((split(/\./, $popped))[0]);
 
-      # get rid of companion file if there is one.
-      pop(@playbackList)    if scalar(@playbackList) && $playbackList[0]=~/$popped/;
+        # get rid of companion file if there is one.
+        pop(@playbackList)    if scalar(@playbackList) && $playbackList[0]=~/$popped/;
+      }
     }
 
     push @playbackList, $file;
@@ -1379,7 +1410,7 @@ if ($playback ne '')
   $elapsedSecs=0;
   preprocessPlayback(\@playbackList);
 
-  $lastPrefix=$prefixPrinted=$lastSubsys='';
+  $lastPrefix=$lastHost=$prefixPrinted=$lastSubsys='';
   foreach $file (@playbackList)
   {
     # Unfortunately we need a more unique global name for the file we're doing
@@ -1411,7 +1442,15 @@ if ($playback ne '')
     $newPrefixFlag=0;
     if ($prefix ne $lastPrefix)
     {
+      # Remember - prefix includes the date
       $newPrefixFlag=1;
+      $file=~/(.*)-\d{8}-\d{6}\.raw[p]*/;
+      $fileHost=$1;
+      $newHostFlag=($fileHost ne $lastHost) ? 1 : 0;
+      $lastHost=$fileHost;
+      print "NewPrefix: $newPrefixFlag  NewHost: $newHostFlag\n"    if $debug & 1;
+
+      undef $newSeconds[$rawPFlag]    if $newHostFlag;    # indicates we start anew
 
       # For each day's set of files, we need to reset this variable so interval
       # lengths are calculared correctly.  Since int3 doesn't contain any rate
@@ -1466,10 +1505,23 @@ if ($playback ne '')
               $recVersion, $recDate, $recTime, $recInterval
 		  if $debug & 1;
 
-    # Make sure at least 1 requested subsys is actually recorded
+    # Make sure at least 1 requested subsys is actually recorded OR if -s-all clear them all
+    # also note an empty $subsys had been set to ' ' so regx below will work.  Now set it back!
+    $subsys=''    if $userSubsys eq '-all';
     my $tempSys=$subsys;           # this is what we want to report
-    $tempSys=~s/[$recSubsys]//g;   # remove ANY that are recorded
-    error("none of the requested subsystems are recorded in selected file")    if $subsys eq $tempSys;
+    $tempSys=~s/[$recSubsys]//gi;  # remove ANY that are recorded, whether summary OR detail
+    $subsys=''    if $subsys eq ' ';
+    print "recSubsys: $recSubsys subsys: $subsys  tempSys: $tempSys\n"    if $debug & 1;
+
+    # When processing a batch of files, it's possible none of them have any of the selected subsystems,
+    # the best example being playing back  *.gz files which have been collected with --tworaw and only
+    # requestion data in one typw.  In those cases both files will be processed and we need to skip
+    # the ones w/o data.  The logmsg() below only reports the message when -m included.
+    if (!$impNumMods && $subsys eq $tempSys)
+    {
+      logmsg("w", "none of the requested subsystems are recorded in selected file");
+      next;
+    }
 
     loadUids($passwdFile)      if $recSubsys=~/Z/;
     #print "SUBSYS: $subsys  RECSUBSYS: $recSubsys  FLAGS: $playback{$prefix}->{flags}\n";
@@ -1477,6 +1529,13 @@ if ($playback ne '')
     # if --top but user didn't specify -s too, ignore anything in header(s)
     $subsys=~s/[^YZ]*//g       if $topFlag && $userSubsys eq '';
     $subsysAll=~s/[^YZ]*//g    if $topFlag && $userSubsys eq '';
+
+    # Now that we know the subsystem it's safe to initialize a custom --export module if using one.
+    if ($expName ne '')
+    {
+      my $initName="${expName}Init";
+      &$initName(@expOpts);
+    }
 
     # I wanted these 'in your face' rather than buried in 'initFormat()'.
     if ($playback{$prefix}->{flags} & 1)
@@ -1794,7 +1853,8 @@ if ($playback ne '')
           # $newSeconds will be defined.
           # If NOT consecutive (or first file for a host), init 'last' variables, noting
           # we also need to init if there was a disk configuration change.
-          $consecutiveFlag=(!$newPrefixFlag && defined($newSeconds[$rawPFlag]) && $thisSeconds==$newSeconds[$rawPFlag] && !$diskChangeFlag) ? 1 : 0;
+          $consecutiveFlag=(!$newHostFlag && defined($newSeconds[$rawPFlag]) && 
+                             $thisSeconds==$newSeconds[$rawPFlag] && !$diskChangeFlag) ? 1 : 0;
           $newSeconds[$rawPFlag]=$thisSeconds;
           if (!$consecutiveFlag)
           {
@@ -1907,7 +1967,7 @@ if ($playback ne '')
     printBriefCounters('T');
   }
 
-  `stty echo`    if !$PcFlag && $termFlag && !$backFlag;   # in -M1, we turned it off
+  `stty echo`    if !$PcFlag && $termFlag && !$backFlag;   # in brief mode, we turned it off
   print "No files processed\n"    if !$numProcessed;
   exit;
 }
@@ -2105,7 +2165,7 @@ else
 # because that points the LOG, DSK, etc filehandles at STDOUT
 # Also, note that in somecase we set non-compressed files to autoflush
 $autoFlush=1    if $flush ne '' && $flush<=$interval && !$zFlag;
-newLog($filename, "", "", "", "", "")    if ($filename ne '' || $plotFlag || $showPHeaderFlag);
+newLog($filename, "", "", "", "", "")    if ($filename ne '' || $plotFlag);
 
 # We want all final runtime parameters defined before doing this
 if ($showHeaderFlag && $playback eq '')
@@ -2113,13 +2173,6 @@ if ($showHeaderFlag && $playback eq '')
   initRecord();
   my $temp=buildCommonHeader(0, undef);
   printText($temp);
-  exit;
-}
-
-# Alas, we need a lot of stuff set up before this including the call to newLog()
-if ($showPHeaderFlag)
-{
-  printPlotHeaders();
   exit;
 }
 
@@ -2547,8 +2600,11 @@ for (; $count!=0 && !$doneFlag; $count--)
     }
   }
 
-  # Custom data import  
+  # Custom data import
+  logdiag("begin import data")      if ($utimeMask & 1) && $impNumMods;
   for (my $i=0; $i<$impNumMods; $i++) { &{$impGetData[$i]}(); }
+
+  logdiag("interval1 done")   if $utimeMask & 1;
 
   #############################################
   #    I n t e r v a l 2    P r o c e s s i n g
@@ -2630,7 +2686,7 @@ for (; $count!=0 && !$doneFlag; $count--)
 	      if $pidSeen{$pid}==1;
 	  $pidSeen{$pid}=getProc(17, "/proc/$taskio/$pid/io", "proc:$pid io")
 	      if $pidSeen{$pid}==1 && $processIOFlag;
-	  findThreads($pid)    if $allThreadFlag || ($oneThreadFlag && $procOpts!~/p/ && $pidThreads{$pid});
+	  findThreads($pid)     if $allThreadFlag || ($oneThreadFlag && $procOpts!~/p/ && $pidThreads{$pid});
         }
       }
       else
@@ -2655,7 +2711,7 @@ for (; $count!=0 && !$doneFlag; $count--)
 	      if $pidSeen{$pid}==1;
 	  $pidSeen{$pid}=getProc(17, "/proc/$taskio/$pid/io", "proc:$pid io")
 	      if $pidSeen{$pid}==1 && $processIOFlag;
-	  findThreads($pid)    if $allThreadFlag || ($oneThreadFlag && $procOpts!~/p/ && $pidThreads{$pid});
+	  findThreads($pid)     if $allThreadFlag || ($oneThreadFlag && $procOpts!~/p/ && $pidThreads{$pid});
         }
       }
 
@@ -2682,6 +2738,7 @@ for (; $count!=0 && !$doneFlag; $count--)
       cleanStalePids();
     }
     $counted2=0;
+    logdiag("interval2 done")    if $utimeMask & 1;
   }
 
   #############################################
@@ -2702,6 +2759,7 @@ for (; $count!=0 && !$doneFlag; $count--)
     # About the same overhead to invoke ipmitool twice but much less elapsed time.
     getExec(3, "$Ipmitool -c -S $IpmiCache exec $ipmiExec", 'ipmi');
     $counted3=0;
+    logdiag("interval3 done")    if $utimeMask & 1;
   }
 
   ###########################################################
@@ -2713,7 +2771,8 @@ for (; $count!=0 && !$doneFlag; $count--)
   if (!$logToFileFlag || $plotFlag || $export ne '')
   {
     $fullTime=sprintf("%d.%06d", $intSeconds, $intUsecs);
-    intervalEnd(sprintf("%.3f", $fullTime))
+    intervalEnd(sprintf("%.3f", $fullTime));
+    logdiag('interval processed')    if $utimeMask & 1;
   }
 
   # If there was a disk configuration change and writing to plot files (changes
@@ -3126,12 +3185,12 @@ sub checkSubsysOpts
 {
   error("you cannot mix --slabopts with --top")  if $slabOpts ne '' && $topSlabFlag;
   error("invalid slab option in '$slabOpts'")    if $slabOpts ne '' && $slabOpts!~/^[sS]+$/;
-  error("invalid env option in '$envOpts'")      if $envOpts ne ''  && $envOpts!~/^[cftCFM\d]+$/;
+  error("invalid env option in '$envOpts'")      if $envOpts ne ''  && $envOpts!~/^[fptCFM\d]+$/;
 
   if ($procOpts ne '')
   {
     $procCmdWidth=($procOpts=~s/w(\d+)/w/) ? $1 : 1000;
-    error("invalid process option '$procOpts'")                if $procOpts!~/^[cfimprtwz]+$/;
+    error("invalid process option '$procOpts'")                if $procOpts!~/^[cfimprRtwz]+$/;
     error("process options i and m are mutually exclusive")    if $procOpts=~/i/ && $procOpts=~/m/;
     error("--procopts z can only be used with --top")          if !$numTop && $procOpts=~/z/;
   }
@@ -3328,6 +3387,9 @@ sub getProc
   my $quit=  shift;
   my $last=  shift;
   my ($index, $line, $ignoreString);
+
+  # matches one or 2 consective //s for pids because when no threads there are 2 of them
+  logdiag("$proc")   if ($utimeMask & 2) && ($proc!~/^\/proc\/?\/\d/) || ($utimeMask & 4) && ($proc=~/^\/proc\/?\/\d/);
 
   if (!open PROC, "<$proc")
   {
@@ -3548,9 +3610,16 @@ sub getExec
     return;
   }
 
-  # Open Fabric
+  # Return complete contents of command
   my $oneline='';
-  if ($type==1)
+  if ($type==0)
+  {
+    foreach my $line (<CMD>)
+    { record(2, "$tag: $line"); }
+  }
+
+  # Open Fabric
+  elsif ($type==1)
   {
     my $lineNum=0;
     foreach my $line (<CMD>)
@@ -3774,7 +3843,7 @@ sub newLog
   # If generating plot data on terminal, just open everything on STDOUT
   # but be SURE set the buffers to flush in case anyone runs as part
   # of a script and needs the output immediately.
-  if ($filename eq "" && ($plotFlag || $showPHeaderFlag))
+  if ($filename eq "" && $plotFlag)
   {
     # sigh...
     error("Cannot use -P for terminal output of process and 'other' data at the same time")
@@ -4248,14 +4317,6 @@ sub setOutputFormat
   # output and if more than 1 clear the flag.
   $sameColsFlag=0    if length($lustOpts)>1;
 
-  # time doesn't print when not all columns the same AND not something that
-  # was exported since they's on their own for formatting
-  if (!$sameColsFlag && $export eq '')
-  {
-    $miniDateFlag=$miniTimeFlag=0;
-    $miniDateTime=$miniFiller='';
-  }
-
   # Finally, if --import modules we've been called at least a second time
   if ($impNumMods)
   {
@@ -4274,6 +4335,14 @@ sub setOutputFormat
     # and finally if processing any standard detail data we know we have at least 2 fields, at least
     # one of which is our custom import, and so we can't have same columns in effect.
     $sameColsFlag=0    if $subsys=~/[A-Z]/;    # detail for single -s would have set flag
+  }
+
+  # time doesn't print when not all columns the same AND not something that
+  # was exported since they's on their own for formatting
+  if (!$sameColsFlag && $export eq '')
+  {
+    $miniDateFlag=$miniTimeFlag=0;
+    $miniDateTime=$miniFiller='';
   }
 
   $briefFlag=($verboseFlag) ? 0 : 1;
@@ -4357,6 +4426,7 @@ sub flushBuffers
   # Remember, when $rawFlag set we flush everything including process/slab data.  But if
   # just $rawtooFlag set we those 2 other files aren't open and so we don't flush them.
   $flushTime=time+$flush     if $flushTime;
+  logdiag("begin flush")     if $utimeMask & 1;
 
   if ($zFlag)
   {
@@ -4365,9 +4435,13 @@ sub flushBuffers
       # if in raw mode, may be up to 2 buffers to flush
       $ZRAW-> gzflush(2)<0 and flushError('raw', $ZRAW)     if $recFlag0;
       $ZRAWP->gzflush(2)<0 and flushError('raw', $ZRAWP)    if $recFlag1;
-      return    if !$plotFlag;
+      if (!$plotFlag)
+      {
+        logdiag("end flush")     if $utimeMask & 1;
+        return;
+      }
     }
-    print "FLUSH\n";
+
     $ZLOG-> gzflush(2)<0 and flushError('log', $ZLOG)     if $subsys=~/[a-z]/;
     $ZBLK-> gzflush(2)<0 and flushError('blk', $ZBLK)     if $LFlag && $lustOpts=~/D/;
     $ZBUD-> gzflush(2)<0 and flushError('bud', $ZBUD)     if $BFlag;
@@ -4390,11 +4464,15 @@ sub flushBuffers
     {
       $impGz[$i]-> gzflush(2)<0 and flushError('$impKey[$i]', $impGz)    if defined($impGz[$i]);
     }
-
   }
   else
   {
     if (defined($LOG)) { select $LOG;  $|=1; print $LOG ""; $|=0;  select STDOUT; }
+    if (!$plotFlag)
+    {
+      logdiag("end flush")     if $utimeMask & 1;
+      return;
+    }
     return    if !$plotFlag;
 
     if ($BFlag)   { select BUD;  $|=1; print BUD ""; $|=0; }
@@ -4424,6 +4502,7 @@ sub flushBuffers
     }
     select STDOUT;
   }
+  logdiag("end flush")     if $utimeMask & 1;
 }
 
 sub writeError
@@ -4452,6 +4531,14 @@ sub flushError
   logmsg("F", "Max Zlib error count exceeded")    if $zlibErrors>$MaxZlibErrors;
   $headersPrinted=0;
   newLog($filename, "", "", "", "", "");
+}
+
+# write diagnostic record into raw file
+sub logdiag
+{
+  my ($intSeconds, $intUsecs)=Time::HiRes::gettimeofday();
+  my $fullTime=sprintf("%d.%06d",  $intSeconds, $intUsecs);
+  record(1, "### $fullTime $_[0]\n");
 }
 
 # Note - ALL errors (both E and F) will be written to syslog.  If you want
@@ -4487,7 +4574,7 @@ sub logmsg
   print MSG "$date $time $msg\n";
   close MSG;
 
-  logsys($msg)     if $severity=~/EF/;
+  logsys($msg)     if $severity=~/[EF]/;
   exit(1)          if $severity=~/F/;
 }
 
@@ -5283,7 +5370,7 @@ sub pidNew
   # if no filter, by defition this is a match
   $match=($procFilt ne '') ? 0 : $pid;
 
-  # if selectnig by uid (either as a range or explict match), try to read this procs
+  # if selecting by uid (either as a range or explict match), try to read this procs
   # UID and if not there, no match!
   if ($uidSelFlag)
   {
@@ -5321,7 +5408,7 @@ sub pidNew
       $temp=<PROC>;
       ($cmd, $ppid)=(split(/ /, $temp))[1,3];
       if (($type eq 'P' && $param==$ppid)      ||
-          ($type eq 'C' && $cmd eq "($param)") ||
+          ($type eq 'C' && $cmd=~/^\($param/) ||
           ($type eq 'c' && $cmd=~/$param/))
       {
         $match=$pid;
@@ -5601,7 +5688,7 @@ Various types of help
   --showtopopts               show --top options
 
   --showheader                show file header that 'would be' generated
-  --showplotheader            show plot headers that 'would be' generated
+  --showcolheaders            show column headers that 'would be' generated
   --showslabaliases           for SLUB allocator, show non-root aliases
   --showrootslabs             same as --showslabaliases but use 'root' names
 
@@ -5648,8 +5735,6 @@ This is the complete list of switches, more details in man page
   -o, --options                 misc formatting options, --showoptions for all
   -p, --playback   file         playback results from 'file'
       --passwd     file         use this instead if /etc/passwd for UID->name
-      --pidfile    file         use this instead of /var/run/collectl.pid BUT
-                                requires the same name in init.d/collectl
       --pname      name         set process name to 'collectl-pname'
   -P, --plot                    generate output in 'plot' format
       --procanalyze             analyze process data, generating prcs file
@@ -5666,7 +5751,9 @@ This is the complete list of switches, more details in man page
       --thru       time         time thru which to playback data (see --from)
       --top        [type][,num] show top 'num' processes sorted by type
                                   --showtopopts for details
+      --tworaw                  synonym for -G and -group, which are now deprecated
       --umask      mask         set output file permissions mask (see man umask)
+      --utime      mask         write diagnostic micro timestamps into raw file
       --verbose                 display output in verbose format (automatically
                                 selected when brief doesn't make sense)
   -w, --wide                    print wide field contents (don't use K/M/G)
@@ -5694,7 +5781,7 @@ Various types of help
   --showtopopts               show --top options
 
   --showheader                show file header that 'would be' generated
-  --showplotheader            show plot headers that 'would be' generated
+  --showcolheaders            show column headers that 'would be' generated
   --showslabaliases           for SLUB allocator, show non-root aliases
   --showrootslabs             same as --showslabaliases but use 'root' names
   --whatsnew                  show summary of recent version new features
@@ -5811,11 +5898,15 @@ Disk
       if you don't know perl, a partial string will usually work too
 
 Environmental
-  --envopts [def=cft]
-      c - display current data
+  --envopts [def=fpt]  NOTE: these do not filter data on collection
       f - display fan data
+      p - display power data
       t - display temperature data
-      M - display data on multiple lines (useful when too much data)
+      C - display temperature in celcius
+      F - display temperature in fahrenheit
+      M - display data on multiple lines (useful when too much data)  
+      T - display all env data truncated to whole integers
+    0-9 - use as ipmi device number
 
   --envfilt perl-regx
       during collection, this filter is applied to the data returned by
@@ -5852,6 +5943,12 @@ Network
       this ONLY applies to network detail output and not data collection
       only data for network interface names that match the pattern(s) 
       will be displayed
+  --netopts eEw99
+      e - include errors in brief mode and explicit error types in
+          verbose and detail formats
+      E - only display intervals which have network errors in them
+      w - sets minimal network name width in network stats output which 
+          can be useful for aligning output from multiple systems
 
 NFS
   --nfsfilt  TypeVer,...
@@ -5874,6 +5971,7 @@ Processes
       p - never look for new pids or threads to match processing criteria
             This also improves performance!
       r - show root command name for a narrower display, can be combined with w
+      R - show ALL process priorities ('RT' currently displayed if realtime)
       t - include ALL threads (can be a lot of overhead if many active threads)
       w - make format wider by including entire process argument string
           you can also set a max number of chars, eg w32
@@ -5960,6 +6058,11 @@ Page Faults
   minf   minor page faults
   flt    total page faults
 
+Miscellaneous (best when used with --procfilt)
+  cpu    cpu number
+  pid    process pid
+  thread total process threads (not counting main)
+
 TOP SLAB SORT FIELDS
 
   numobj    total number of slab objects
@@ -5983,9 +6086,30 @@ sub whatsnew
   my $whatsnew=<<EOF6;
 What's new in collectl?
 
+Version 3.5.0
+- new switches
+  - netopts
+    e: new -sn/-sN format showing each error type
+       also adds 'Error' column to brief format
+    E: only report intervals which had network errors
+  - envopts
+    I:  truncate data and display as integer
+  - procopts
+    R:  display real-time process priorities instead of RT
+  --utime: diagnostic mask for writting microtimes into raw file
+  --tworaw: synonym for -G/--group
+- new import module: nvidia for GPU monitoring
+- new top sort options: cpu, pid and thread
+- added option for ganglia default variable names to gexpr
+- thread count now included in standard output and with procanalyze
+- added number of active CPUs to -sc --verbose output
+- changed --showplotheader to --showcolheaders, which now shows first
+  header line (doesn't work for multiple sets of headers)
+
 Version 3.4.3
 - new switches
   -- netfilt filters network detail data on output
+  -- netopts allows you to manually set minimal network name width
 - new functionality
   - only set umask if 'root' AND --umask explicitly specified
   - 2 new top process sort fields: pid & cpu number

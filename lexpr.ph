@@ -106,6 +106,7 @@ sub lexpr
     {
       # CPU utilization is a % and we don't want to report fractions
       my $i=$NumCpus;
+      $cpuSumString.=sendData("cputotals.num",       $i);
       $cpuSumString.=sendData("cputotals.user",  $userP[$i]);
       $cpuSumString.=sendData("cputotals.nice",  $niceP[$i]);
       $cpuSumString.=sendData("cputotals.sys",   $sysP[$i]);
@@ -118,6 +119,7 @@ sub lexpr
       # These 2 are redundant, but also handy
       $cpuSumString.=sendData("cputotals.systot",  $sysP[$i]+$irqP[$i]+$softP[$i]+$stealP[$i]);
       $cpuSumString.=sendData("cputotals.usertot", $userP[$i]+$niceP[$i]);
+      $cpuSumString.=sendData("cputotals.total",   $sysP[$i]+$irqP[$i]+$softP[$i]+$stealP[$i]+$userP[$i]+$niceP[$i]);
 
       $cpuSumString.=sendData("ctxint.ctx",  $ctxt/$intSecs);
       $cpuSumString.=sendData("ctxint.int",  $intrpt/$intSecs);

@@ -14,7 +14,7 @@
 use strict;
 
 # Allow reference to collectl variables, but be CAREFUL as these should be treated as readonly
-our ($miniFiller, $rate, $SEP, $datetime, $miniInstances, $interval);
+our ($miniFiller, $rate, $SEP, $datetime, $miniInstances, $interval, $showColFlag);
 
 my (%miscNotOpened, $miscUptime, $miscMHz, $miscMounts, $miscLogins);
 my ($miscUptimeTOT, $miscMHzTOT, $miscMountsTOT, $miscLoginsTOT);
@@ -25,8 +25,10 @@ sub miscInit
   my $impKeyref= shift;
 
   # If we ever run with a ':' in the inteval, we need to be sure we're
-  # only looking at the main one.
+  # only looking at the main one.  NOTE - if --showcolflag, collectl
+  # sets $interval to 0 and we need to make sure out division doesn't bomb
   my $miscInterval1=(split(/:/, $interval))[0];
+  $miscInterval1=1    if $showColFlag;
 
   # For now, only options are a, 'i=' and s
   $miscInterval=60;
@@ -52,6 +54,7 @@ sub miscInit
 
   $miscSampleCounter=-1;
   $miscLogins=0;
+  return(1);
 }
 
 # Nothing to add to header
@@ -152,7 +155,9 @@ sub miscPrintVerbose
     $line.="# MISC STATISTICS\n";
     $line.="#$miniFiller UpTime  CPU-MHz Mounts Logins\n";
   }
-  $$lineref=$line;
+  $$lineref.=$line;
+  return    if $showColFlag;
+
   $$lineref.=sprintf("$datetime  %6s   %6d %6d %6d \n", 
 	cvt($miscUptime/86400), $miscMHz, $miscMounts, $miscLogins);
 }

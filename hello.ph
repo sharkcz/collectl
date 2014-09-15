@@ -7,7 +7,7 @@
 use strict;
 
 # Allow reference to collectl variables, but be CAREFUL as these should be treated as readonly
-our ($miniFiller, $rate, $SEP, $datetime, $intSecs);
+our ($miniFiller, $rate, $SEP, $datetime, $intSecs, $showColFlag);
 
 # Global to this module
 my $counter=0;
@@ -28,6 +28,7 @@ sub helloInit
 
   $$impOptsref=$hwOpts;
   $$impKeyref='hw';
+  return(1);
 }
 
 # Anything you might want to add to collectl's header.  
@@ -125,10 +126,13 @@ sub helloPrintVerbose
       $line.="# HELLO STATISTICS ($rate)\n";
       $line.="#$miniFiller   Total\n";
     }
+    $$lineref.=$line;
+    return    if $showColFlag;
 
-    $line.=sprintf("$datetime  %7s\n", cvt($hwTot/$intSecs,7));
+    $$lineref.=sprintf("$datetime  %7s\n", cvt($hwTot/$intSecs,7));
   }
 
+  $line='';
   if ($hwOpts=~/d/)
   {
     if ($printHeader)
@@ -137,13 +141,16 @@ sub helloPrintVerbose
       $line.="# HELLO DETAIL ($rate)\n";
       $line.="#$miniFiller HW    Value\n";
     }
+    $$lineref.=$line;
+    return    if $showColFlag;
 
+    $line='';
     for (my $i=0; $i<3; $i++)
     {
       $line.=sprintf("$datetime  %2d  %7s\n", $i, cvt($hwNow[$i],7));
     }
   }
-  $$lineref=$line
+  $$lineref.=$line;
 }
 
 # Just be sure to use $SEP in the right places.  A simple trick to make sure you've done it

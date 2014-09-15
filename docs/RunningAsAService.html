@@ -27,17 +27,17 @@ the command <i>service collectl start</i>) and examine the <i>log</i> file in /v
 for the startup (and hopefully no termination) messages as well as the appearance 
 of either a <i>raw</i> or <i>raw.gz</i> data file in that same directory.  
 Note that since the output is buffered, the data file will probably have a length of 
-0 until the flush interval, which is currently set to 60 seconds, passed or the
-command <i>/etc/init.d/collectl flush</i> is executed.
+0 until the buffer fills or the flush interval passes, which is currently set to 60 seconds,
+which ever comes first.  Or the command <i>/etc/init.d/collectl flush</i> is executed.
 <p>
 In order to write its output as a compressed file, the perl <i>Compress</i> module 
-must be present as it is with newer perl distributions.  If it is not already there
+must be present as it is with newer perl distributions.  If not present
 you should install it, otherwise you will get messages warning you that compression is not
 installed.
 <p>
 To change any behaviors of the daemon such as the flush interval, output file
-location, etc., simply change the <i>DaemonCommand</i> parameter in 
-<i>/etc/collectl.conf</i> which specifies the actual command string collectl is passed at 
+location, etc., simply change the <i>DaemonCommands</i> line in 
+<i>/etc/collectl.conf</i>, which specifies the actual command string collectl is passed at 
 startup.  Use care in setting this string as incorrect settings may cause collectl
 to abnormally exit and if it does, you should examine the <i>log</i> file for 
 messages.
@@ -77,6 +77,8 @@ add the <i>test</i> qualifier to the command.  If you want to restart one of the
 sure to include the appropriate arguments because you must use the 2 argument form of the command.
 This syntax was also chosen to assure the user does use additional switches because without them
 you'd essentially be running an identical copy of the default configuration.
+
+<table width=100%><tr><td align=right><i>updated Feb 21, 2011</i></td></tr></colgroup></table>
 
 </body>
 </html>

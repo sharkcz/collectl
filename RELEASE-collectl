@@ -1,4 +1,4 @@
-RELEASE NOTES FOR COLLECTL
+	RELEASE NOTES FOR COLLECTL
 
 INSTALLATION
 
@@ -42,6 +42,90 @@ CHANGES
 
 next
   - in INSTALL, change cp to mv for default distro case
+
+3.5.0-3 Feb 12, 2011
+  - expanded interrupt details to include non-numeric interrupts
+  - new import module added for GPUs: nvidia.ph
+  - added getExec type 0 to support new import
+  - updated version of gexpr, with new switches to control using default ganglia
+    variable names
+  - bug fix: wasn't sending E and F types messages to syslog
+  - wasn't initializing enough 'last' vars for latest nfs V4
+  - only allow -sT with -P or -f
+  - added new switch --tworaw as a synonym for --group which makes more sense
+  - if an imported module returned -1 in its init routine, disable it.  return
+    1 for success
+  - new --procopt: R causes real-time priorities to be displayed rather than RT,
+    at the cost of 2 extra columns in the display [thanks lee]
+  - added optional callback GetHeader to --import API, if not defined not called
+  - change error handling when playing back files with no selected subsystems to be
+    non-fatal, skip the file and continue processing
+  - added dl585-g7 to envrules.txt
+
+3.5.0-2 Jan 09, 2011
+  - turned utime into a mask, so we can control the granularity of micro-logging
+    to include /proc time with/without process accesses
+
+3.5.0-1 Jan 09, 2011
+  - renamed --showplotheaders to --showcolheader since it now applies to ALL headers
+    for single header line output (will only show cpu for -scd --verbose)
+  - fixed ALL verbose and detail output formats to include date/time headers
+  - newer kernels added additional files to /sys/devices/system/cpu/ which messed
+    up the way total CPUs were being calculated
+  - added 2 new variableS to lexpr: cputotals.num and cputotals.total [thanks chris]
+  - removed unused switch --pidfile from collectl -x
+  - file processing push/pop code wasn't handling data change correctly
+  - added new flag to show host changed since THAT was what was needed in 'consecutive'
+    file identification processing
+  - found problem with playing back multiple files with --thru for different hosts!
+    needed to 'undef $newSeconds[$rawPFlag]' whenever hostname changed
+  - new netopts values
+    e - show errors in brief mode and explicit types everywhere else
+    E - only print lines that have non-zero network errors in them
+  - new diagnistic switch --utime, causes periodic micro-timestamps to be written into
+    raw file at different points in time for finer grained measurements of operation times
+
+3.4.4-3 Dec 9, 2010
+  - if -s during playback, at least ONE requested subsys must be in recorded file.
+    if c recorded, C would cause error message because pattern match didn't have 'i'
+  - add requirement for STDOUT to be connected to a terminal as a condition to call resize
+  - change to collectl.conf - roll logs at exactly midnight, not 1 minute past
+  - new --envopts value of T to truncate values to integers
+  - ignore 'Fan Redundant' in env data for dl160g6
+  - if impi data field is blank, ignore it
+  - fixed filtering of ipmi data AND renames 'c' option to 'p', for power
+  - include THRD in -P format for processes
+  - only turn off echo when in brief mode AND not playing back a file
+  - if data collectl w/o HIRES and display request msec, set default to '000' instead of 0
+  - discovered only --ssh in help so removed -S
+
+3.4.4-2 Nov 10, 2010
+  - base36() needs to do an int() on values <10 so their fraction not
+    included in output string
+  - reduced printing of headers for -sf --verbose to one call to printText()
+    per line.  otherwise one hostname prepended to each line of socket call.
+  - fixed a problem with --procfilt C: it was trying to match whole process
+    name rather than just the beginning of it [thanks gary]
+
+3.4.4-1 Nov 09, 2010
+  - vmstat not handling date/time correctly, needed $dateTime[0]
+  - need to call export module's init routine in playback mode
+  - lustre 1.8.4 module location moved, check expanded [thanks Frederik]
+  - new top sort options, pid and cpu, which don't make a lot of sense
+    unless used with filters
+  - do NOT include hostname in RECORD printing routine with -A
+  - CPU verbose output should not right shift 1st header line with -oT
+  - removed printing of extra '$line' at end of NFS DETAIL header
+  - incorrectly setting recSubsys to [YZ] if user specifies --top even
+    if -s specified too!  They should be merged  [thanks mats]
+  - don't write to a socket if shutting down in which case $doneFlag set
+  - don't report socket errors if not in server mode
+  - added 'ProLiant DL160se G6' to envrules.std
+  - disableSubsys should ONLY remove subsystems from export option 's='
+    was also clearing KFlag rather than LFlag     [thanks chris]
+  - new process sort option 'thread', sorts by thread count
+  - changed start/stop in initd scripts from "$network +openibd" to "$all"
+    so collectl will start after everyting else
 
 3.4.3-3 August 19, 2010
   - added --netfilt

@@ -10,20 +10,21 @@
 <h3>Playing back one or more files</h3>
 There are actually 2 reasons for playing back a file, one being to generate
 <a href=Plotfiles.html>plottable files</a> and the other is to simply examine
-the data in the same format as you would see if running collectl intertively.
+the data in the same format as you would see if running collectl interactively.
 The following discussion applies to both cases, the only real difference is that to
 generate plot files you include the switches <i>-P</i> and <i>-f</i>.
 <p>
 You tell collectl to play back one or more files using <i>-p</i> followed by any
 combination of one or more files separated with commas or whitespace, noting you 
-may need to quote the string.  They may also contain wild-card characters, 
+may need to quote the string, especially if the name(s) contain wild-card characters.
 The files will be played back as if a single file, with monotonically
 increasing sample numbers for each unique source system.  It should be noted
 that if these files contain samples of different subsystems the resultant
 stream will contain data elements for all, zero filling as appropriate.  When
 this occurs, a message will be displayed if -m has been specified.
-Collectl can also convert them to plot format, writing them to multiple output files 
-as appropriate.
+<p>
+As already mentioned, collectl will generate plot format if requested with -P, 
+writing the output to multiple output files  as appropriate.
 Filtering options such as <i>--from</i> and <i>--thru</i> to specify beginning and 
 ending dates/times can also be used.
 <p>
@@ -56,6 +57,7 @@ the first record of the second file</li>
 If you have 2 non-contiguous files you will see the same results whether you process them one
 at a time or together using a wild card, that is no first record for either.
 <p>
+<center><i><b>Important Tip</b></i></center>
 Perhaps the most important thing to keep in mind is that when you play back a file,
 collectl will use the same switches as were specified during collection.  In other
 words if you collect cpu, disk and network data using <i>-scdn</i>, when you play
@@ -65,6 +67,8 @@ different subsystem specification such as <i>-scND</i> in which case you'd still
 CPU summary data but now you'd get network and disk detail data.  This feature can
 be extremely useful especially when combined with different output formatting switches
 such as <i>-o</i> and/or <i>--verbose</i>.
+
+<table width=100%><tr><td align=right><i>updated Feb 21, 2011</i></td></tr></colgroup></table>
 
 </body>
 </html>

@@ -19,7 +19,7 @@ sub vmstat
   $datetime='';
   if ($options=~/[dDTm]/)
   {
-    ($ss, $mm, $hh, $mday, $mon, $year)=localtime($lastSecs);
+    ($ss, $mm, $hh, $mday, $mon, $year)=localtime($lastSecs[0]);
     $datetime=sprintf("%02d:%02d:%02d", $hh, $mm, $ss);
     $datetime=sprintf("%02d/%02d %s", $mon+1, $mday, $datetime)                   if $options=~/d/;
     $datetime=sprintf("%04d%02d%02d %s", $year+1900, $mon+1, $mday, $datetime)    if $options=~/D/;

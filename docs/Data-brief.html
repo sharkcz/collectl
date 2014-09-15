@@ -246,10 +246,15 @@ cache as buffered I/O uses this memory to cache the data.</td></tr>
 
 <p><h3>Network, <i>collectl -sn</i></h3>
 
+Be sure to keep in mind that like all other data, network counters are always normalized
+to /sec rates.  This means that something like errors, which themselves might be really
+small, could be reported as 0 if less than 1/2 the sampling interval.  To see unnormalized
+values use <i>-on</i>.
+
 <div class=terminal>
 <pre>
-#<---------------Network--------------->
-#  KBIn  PktIn Size KBOut  PktOut  Size
+#<------------------Network------------------>
+#  KBIn  PktIn Size  KBOut  PktOut Size Error
 </pre>
 </div>
 
@@ -263,6 +268,8 @@ if <i>--iosize</i> specified</td></tr>
 <tr><td><b>PktOut</b></td><td>Packets sent/sec over all real network interfaces.</td></tr>
 <tr><td><b>Size</b></td><td>Average outgoing packet size in bytes.  This field is only included
 if <i>--iosize</i> specified</td></tr>
+<tr valign=top><td><b>Error</b></td><td>Total incoming/outgoing errors/sec.  To see individual error counts, use <i>--verbose</i>.
+This field is only included if <i>--netopts e</i> specified</td></tr>
 </table>
 
 <p><h3>NFS</b>, <i>collectl -sf</i></h3>
@@ -333,6 +340,8 @@ not all types of nfs version report all as V3 clients/servers do.</td></tr>
 <tr><td><b>Loss</b></td><td>Packets/sec TCP thinks have been lost coming in.</td></tr>
 <tr><td><b>FTrans</b></td><td>Fast retransmissions/sec.</td></tr>
 </table>
+
+<table width=100%><tr><td align=right><i>updated Feb 21, 2011</i></td></tr></colgroup></table>
 
 </body>
 </html>

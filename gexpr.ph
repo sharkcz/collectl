@@ -7,6 +7,10 @@
 #    8 - do not open/use socket (typically used with other flags)
 #   16 - print socket open/close info
 
+#  the 'magic' g/G flag
+#   -g   ONLY report well-known gangia variables
+#   -G   report ALL variables but replace those known by ganglia with their ganglia names
+
 my ($gexSubsys, $gexInterval, $gexDebug, $gexCOFlag, $gexTTL, $gexSocket, $gexPaddr);
 my ($gexHost, $gexPort, $gexDataIndex, @gexDataLast, @gexTTL);
 my ($gexMinFlag, $gexMaxFlag, $gexAvgFlag)=(0,0,0);
@@ -14,6 +18,7 @@ my $gexPktSize=1024;
 my $gexOneTB=1024*1024*1024*1024;
 my $gexCounter=0;
 my $gexFlags;
+my $gexGFlag=0;
 my $gexMcast;
 my $gexMcastFlag=0;
 sub gexprInit
@@ -32,11 +37,13 @@ sub gexprInit
   foreach my $option (@_)
   {
     my ($name, $value)=split(/=/, $option);
-    error("invalid gexpr option '$name'")    if $name!~/^[dis]?$|^co$|^ttl$|^min$|^max$|^avg$/;
+    error("invalid gexpr option '$name'")    if $name!~/^[dgGis]?$|^co$|^ttl$|^min$|^max$|^avg$/;
 
     $gexCOFlag=1           if $name eq 'co';
     $gexDebug=$value       if $name eq 'd';
     $gexInterval=$value    if $name eq 'i';
+    $gexGFlag+=1           if $name eq 'g';
+    $gexGFlag+=2           if $name eq 'G';
     $gexSubsys=$value      if $name eq 's';
     $gexTTL=$value         if $name eq 'ttl';
     $gexMinFlag=1          if $name eq 'min';
@@ -44,6 +51,7 @@ sub gexprInit
     $gexAvgFlag=1          if $name eq 'avg';
   }
 
+  error("only 1 of 'g' or 'G' with 'gexpr'")                            if $gexGFlag>2;
   error("gexpr does not support standard collectl socket I/O via -A")   if $sockFlag;
   error("host:port must be specified as first parameter")               if !defined($hostport) || $hostport eq '';
   ($gexHost, $gexPort)=split(/:/, $hostport);
@@ -55,7 +63,7 @@ sub gexprInit
 
   # convert to the number of samples we want to send
   $gexSendCount=int($gexInterval/$gexInterval1);
-  error("gexpr interval option not a multiple of '$lexInterval1' seconds")
+  error("gexpr interval option not a multiple of '$gexInterval1' seconds")
 	if $gexInterval1*$gexSendCount != $gexInterval;
 
   $gexFlags=$gexMinFlag+$gexMaxFlag+$gexAvgFlag;
@@ -91,25 +99,57 @@ sub gexpr
   # so we can use a global index to point to the one we're currently using.
   $gexDataIndex=0;
 
+
   if ($gexSubsys=~/c/i)
   {
     if ($gexSubsys=~/c/)
     {
       # CPU utilization is a % and we don't want to report fractions
       my $i=$NumCpus;
-      sendData('cputotals.user', 'percent', $userP[$i]);
-      sendData('cputotals.nice', 'percent', $niceP[$i]);
-      sendData('cputotals.sys',  'percent', $sysP[$i]);
-      sendData('cputotals.wait', 'percent', $waitP[$i]);
-      sendData('cputotals.irq',  'percent', $irqP[$i]);
-      sendData('cputotals.soft', 'percent', $softP[$i]);
-      sendData('cputotals.steal','percent', $stealP[$i]);
-      sendData('cputotals.idle', 'percent', $idleP[$i]);
 
-      sendData('ctxint.ctx',  'switches/sec', $ctxt/$intSecs);
-      sendData('ctxint.int',  'intrpts/sec',  $intrpt/$intSecs);
-      sendData('ctxint.proc', 'pcreates/sec', $proc/$intSecs);
-      sendData('ctxint.runq', 'runqSize',     $loadQue);
+      if ($gexGFlag)    # for both 'g' OR 'G'
+      {
+        sendData('cpu_user',   'percent', $userP[$i]);
+        sendData('cpu_nice',   'percent', $niceP[$i]);
+        sendData('cpu_system', 'percent', $sysP[$i]);
+        sendData('cpu_wio',    'percent', $waitP[$i]);
+        sendData('cpu_idle',   'percent', $idleP[$i]);
+
+        sendData('cpu_num',      'CPUs',       $NumCpus);
+        sendData('proc_total',   'Load/Procs', $loadQue);
+        sendData('proc_run',     'Load/Procs', $loadRun);
+        sendData('load_one',     'Load/Procs', $loadAvg1);
+        sendData('load_five',    'Load/Procs', $loadAvg5);
+        sendData('load_fifteen', 'Load/Procs', $loadAvg15);
+      }
+
+      if (!$gexGFlag)      # if not 'g' use standard collectl names
+      {
+        sendData('cputotals.user', 'percent', $userP[$i]);
+        sendData('cputotals.nice', 'percent', $niceP[$i]);
+        sendData('cputotals.sys',  'percent', $sysP[$i]);
+        sendData('cputotals.wait', 'percent', $waitP[$i]);
+        sendData('cputotals.idle', 'percent', $idleP[$i]);
+      }
+
+      if ($gexGFlag!=1)    # 'G' or nothing
+      {
+        sendData('cputotals.irq',  'percent', $irqP[$i]);
+        sendData('cputotals.soft', 'percent', $softP[$i]);
+        sendData('cputotals.steal','percent', $stealP[$i]);
+
+        sendData('ctxint.ctx',  'switches/sec', $ctxt/$intSecs);
+        sendData('ctxint.int',  'intrpts/sec',  $intrpt/$intSecs);
+        sendData('ctxint.proc', 'pcreates/sec', $proc/$intSecs);
+        sendData('ctxint.runq', 'runqSize',     $loadQue);
+      }
+
+      if (!$gexGFlag)       # do it again so that we report ALL cpu %s together
+      {
+        sendData('cpuload.avg1',   'loadAvg1',  $loadAvg1);
+        sendData('cpuload.avg5',   'loadAvg5',  $loadAvg5);
+        sendData('cpuload.avg15',  'loadAvg15', $loadAvg15);
+      }
     }
 
     if ($gexSubsys=~/C/)
@@ -129,7 +169,7 @@ sub gexpr
     }
   }
 
-  if ($gexSubsys=~/d/i)
+  if ($gexSubsys=~/d/i && $gexGFlag!=1)
   {
     if ($gexSubsys=~/d/)
     {
@@ -151,7 +191,7 @@ sub gexpr
     }
   }
 
-  if ($gexSubsys=~/f/)
+  if ($gexSubsys=~/f/ && $gexGFlag!=1)
   {
     if ($nfsSFlag)
     {
@@ -169,7 +209,7 @@ sub gexpr
     }
   }
 
-  if ($gexSubsys=~/i/)
+  if ($gexSubsys=~/i/ && $gexGFlag!=1)
   {
     sendData('inodeinfo.dentnum',    'dentrynum',    $dentryNum);
     sendData('inodeinfo.dentunused', 'dentryunused', $dentryUnused);
@@ -178,7 +218,7 @@ sub gexpr
     sendData('inodeinfo.inodenum',   'inodeused',    $inodeUsed);
   }
 
-  if ($gexSubsys=~/l/)
+  if ($gexSubsys=~/l/ && $gexGFlag!=1)
   {
     if ($CltFlag)
     {
@@ -211,7 +251,7 @@ sub gexpr
     }
   }
 
-  if ($gexSubsys=~/L/)
+  if ($gexSubsys=~/L/ && $gexGFlag!=1)
   {
     if ($CltFlag)
     {
@@ -252,36 +292,64 @@ sub gexpr
 
   if ($gexSubsys=~/m/)
   {
-    sendData('meminfo.tot',       'kb',         $memTot);
-    sendData('meminfo.used',      'kb',         $memUsed);
-    sendData('meminfo.free',      'kb',         $memFree);
-    sendData('meminfo.shared',    'kb',         $memShared);
-    sendData('meminfo.buf',       'kb',         $memBuf);
-    sendData('meminfo.cached',    'kb',         $memCached);
-    sendData('meminfo.slab',      'kb',         $memSlab);
-    sendData('meminfo.map',       'kb',         $memMap);
-    sendData('meminfo.hugetot',   'kb',         $memHugeTot);
-    sendData('meminfo.hugefree',  'kb',         $memHugeFree);
-    sendData('meminfo.hugersvd',  'kb',         $memHugeRsvd);
-    sendData('swapinfo.total',    'kb',         $swapTotal);
-    sendData('swapinfo.free',     'kb',         $swapFree);
-    sendData('swapinfo.used',     'kb',         $swapUsed);
-    sendData('swapinfo.in',       'swaps/sec',  $swapin/$intSecs);
-    sendData('swapinfo.out',      'swaps/sec',  $swapout/$intSecs);
-    sendData('pageinfo.fault',    'faults/sec', $pagefault/$intSecs);
-    sendData('pageinfo.majfault', 'majflt/sec', $pagemajfault/$intSecs);
-    sendData('pageinfo.in',       'pages/sec',  $pagein/$intSecs);
-    sendData('pageinfo.out',      'pages/sec',  $pageout/$intSecs);
+    if ($gexGFlag)       # 'g' or 'G'
+    {
+      sendData('mem_total',     'Bytes',         $memTot);
+      sendData('mem_free',      'Bytes',         $memFree);
+      sendData('mem_shared',    'Bytes',         $memShared);
+      sendData('mem_buffers',  'Bytes',          $memBuf);
+      sendData('mem_cached',    'Bytes',         $memCached);
+      sendData('swap_total',    'Bytes',         $swapTotal);
+      sendData('swap_free',     'Bytes',         $swapFree);
+    }
+
+    if (!$gexGFlag)       # neither
+    {
+      sendData('meminfo.tot',       'kb',         $memTot);
+      sendData('meminfo.free',      'kb',         $memFree);
+      sendData('meminfo.shared',    'kb',         $memShared);
+      sendData('meminfo.buf',       'kb',         $memBuf);
+      sendData('meminfo.cached',    'kb',         $memCached);
+      sendData('swapinfo.total',    'kb',         $swapTotal);
+      sendData('swapinfo.free',     'kb',         $swapFree);
+    }
+
+    if ($gexGFlag!=1)     # nothing or 'G'
+    {
+      sendData('meminfo.used',      'kb',         $memUsed);
+      sendData('meminfo.slab',      'kb',         $memSlab);
+      sendData('meminfo.map',       'kb',         $memMap);
+      sendData('meminfo.hugetot',   'kb',         $memHugeTot);
+      sendData('meminfo.hugefree',  'kb',         $memHugeFree);
+      sendData('meminfo.hugersvd',  'kb',         $memHugeRsvd);
+      sendData('swapinfo.used',     'kb',         $swapUsed);
+      sendData('swapinfo.in',       'swaps/sec',  $swapin/$intSecs);
+      sendData('swapinfo.out',      'swaps/sec',  $swapout/$intSecs);
+      sendData('pageinfo.fault',    'faults/sec', $pagefault/$intSecs);
+      sendData('pageinfo.majfault', 'majflt/sec', $pagemajfault/$intSecs);
+      sendData('pageinfo.in',       'pages/sec',  $pagein/$intSecs);
+      sendData('pageinfo.out',      'pages/sec',  $pageout/$intSecs);
+    }
   }
 
   if ($gexSubsys=~/n/i)
   {
     if ($gexSubsys=~/n/)
     {
-      sendData('nettotals.kbin',   'kb/sec', $netRxKBTot/$intSecs);
-      sendData('nettotals.pktin',  'kb/sec', $netRxPktTot/$intSecs);
-      sendData('nettotals.kbout',  'kb/sec', $netTxKBTot/$intSecs);
-      sendData('nettotals.pktout', 'kb/sec', $netTxPktTot/$intSecs);
+      if ($gexGFlag)       # 'g' or 'G'
+      {
+        sendData('bytes_in',   'Bytes/sec', $netRxKBTot/$intSecs);
+        sendData('bytes_out',  'Bytes/sec', $netTxKBTot/$intSecs);
+        sendData('pkts_in',  'Bytes/sec', $netRxPktTot/$intSecs);
+        sendData('pkts_out', 'Bytes/sec', $netTxPktTot/$intSecs);
+      }
+      else                 # neither
+      {
+        sendData('nettotals.kbin',   'kb/sec', $netRxKBTot/$intSecs);
+        sendData('nettotals.pktin',  'kb/sec', $netRxPktTot/$intSecs);
+        sendData('nettotals.kbout',  'kb/sec', $netTxKBTot/$intSecs);
+        sendData('nettotals.pktout', 'kb/sec', $netTxPktTot/$intSecs);
+      }
     }
 
     if ($gexSubsys=~/N/)
@@ -298,7 +366,7 @@ sub gexpr
     }
   }
 
-  if ($gexSubsys=~/s/)
+  if ($gexSubsys=~/s/ && $gexGFlag!=1)
   {
     sendData("sockinfo.used",  'sockets', $sockUsed);
     sendData("sockinfo.tcp",   'sockets', $sockTcp);
@@ -312,7 +380,7 @@ sub gexpr
     sendData("sockinfo.fragm", 'sockets', $sockFragM);
   }
 
-  if ($gexSubsys=~/t/)
+  if ($gexSubsys=~/t/ && $gexGFlag!=1)
   {
     sendData("tcpinfo.pureack", 'num/sec', $tcpValue[27]/$intSecs);
     sendData("tcpinfo.hpack",   'num/sec', $tcpValue[28]/$intSecs);
@@ -320,7 +388,7 @@ sub gexpr
     sendData("tcpinfo.ftrans",  'num/sec', $tcpValue[45]/$intSecs);
   }
 
-  if ($gexSubsys=~/x/i)
+  if ($gexSubsys=~/x/i && $gexGFlag!=1)
   {
     if ($NumXRails)
     {
@@ -344,7 +412,7 @@ sub gexpr
     sendData("iconnect.pktout", 'pkt/sec', $pktOutT/$intSecs);
   }
 
-  if ($gexSubsys=~/E/i)
+  if ($gexSubsys=~/E/i && $gexGFlag!=1)
   {
     foreach $key (sort keys %$ipmiData)
     {
@@ -360,11 +428,16 @@ sub gexpr
 
   # if any imported data, it may want to include gexpr output.  However this means getting a list of
   # 3-tuples to call OUR formatting routines with so the import module doesn't have to.
-  my (@names, @units, @vals);
-  for (my $i=0; $i<$impNumMods; $i++) { &{$impPrintExport[$i]}('g', \@names, \@units, \@vals); }
-  foreach (my $i=0; $i<scalar(@names); $i++)
+  # NOTE - the assumption is no ganglia specific counters.  If there ever are, we'll need to remove
+  #        restriction and ALL imports will have to deal with $gexFlag if called from here
+  if ($gexGFlag!=1)
   {
-    sendData($names[$i], $units[$i], $vals[$i]);
+    my (@names, @units, @vals);
+    for (my $i=0; $i<$impNumMods; $i++) { &{$impPrintExport[$i]}('g', \@names, \@units, \@vals); }
+    foreach (my $i=0; $i<scalar(@names); $i++)
+    {
+      sendData($names[$i], $units[$i], $vals[$i]);
+    }
   }
   $gexCounter=0    if $gexCounter==$gexSendCount;
 }

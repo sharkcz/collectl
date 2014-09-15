@@ -5,7 +5,7 @@
 >ProLiant BL685c G1,ProLiant BL2x220c G5<
 >ProLiant DL145 G2<
 >ProLiant DL360 G3,ProLiant DL380 G3,ProLiant DL380 G5<
->ProLiant DL385 G5,ProLiant DL585 G5<
+>ProLiant DL385 G5,ProLiant DL585 G5,ProLiant DL585 G7<
 >ProLiant ML370 G6<
 
 # These are the real rules and the headers much EXACTLY match everything to the
@@ -51,7 +51,7 @@
 /^PCIE l/L/
 
 # This on also has a lot of remapping
->ProLiant DL160 G6<
+>ProLiant DL160 G6,ProLiant DL160se G6<
 [pre]
 /_INLET/I/
 /_OUTLET/O/
@@ -67,3 +67,5 @@
 [post]
 /^BTemp/BTempF/
 /^xTemp/BTempR/
+[ignore]
+/^Fan Redundant/

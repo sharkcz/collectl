@@ -8,17 +8,22 @@
 <center><h1>Exporting Custom Output</h1></center>
 <p>
 <h3>Introduction</h3>
-With Version 2.6.0 comes a redesign of the mechanism for producing custom
-output through the use of <i>--export</i>.  In fact enough flexibility has 
-been added that code for producing <i>s-expressions</i> as well as 
-<i>vmstat</i> output have now been moved to 2 external files named 
-<i>sexpr.ph</i> and <i>vmstat.ph</i> both of which can now be found in
-<i>/usr/share/collectl</i> along with a new format called <i>list-oriented</i> 
-which can be delivered via <i>lexpr.ph</i>.  The reason anyone should care 
-is that now if you want to produce your own exportable form of output and 
-be able to print it locally, make it available to another program over a
-socket or even write to a local file and still be able to log to <i>raw</i>
-and/or <i>plot</i> formats, you get that all that functionality for free.
+As with <i>--import</i>, the <i>--export</i> option allows one to build
+custom modules, but in this case for generating output.  Unlike <i>--import</i>, which
+allows multiple modules to be specified, you only <i>--export</i>
+using a single module, which in turn overrides all of collectl's output
+formatting routines.
+<p>
+These modules all end in the extention <i>.ph</i> and are searched for first 
+in the directory collectl is being executed from and then <i>/usr/share/collectl</i>.
+If the module name is prepended with a directory name, collectl will search only
+there.
+<p>
+The reason you might care about this is that now if you want to produce your 
+own exportable form of output and be able to print it locally, make it 
+available to another program over a socket or even write to a local file 
+while still being able to log to <i>raw</i> and/or <i>plot</i> formats, 
+you get that all that functionality for free.
 <p>
 <h3>How It Works</h3>
 The interface to all this is really quite simple.  At the command line the user
@@ -54,7 +59,7 @@ of options as described in the following table:
 <table border=1 width=85%>
 <tr><td align=center colspan=2><b>These apply to gexpr, lexpr and sexpr</b></td></tr>
 <tr><td><b>d</b></td><td>debugging value, see beginning of the actual export file for details</td></tr>
-<tr><td><b>f</b></td><td>output snapshot file name for lexp and sexpr.  If this option is
+<tr><td><b>f</b></td><td>output snapshot file name for lexpr and sexpr.  If this option is
                 not used, -f must be and the snapshot file names are then set to the single character
                 <i>L</i> and <i>S</i>
                 respectively and written into the directory associated with -f</td></tr>
@@ -77,7 +82,7 @@ of options as described in the following table:
                 used, the values the the more recent monitoring interval will be sent.</td></tr>
 <tr><td width=10%><b>min</b></d><td>used in conjunction with <i>i=</i>, send the minimum data value over
                 the associated set of intervals. If neither <i>avg, min</i> or <i>max</i> is
-                used, the values the the more recent monitoring interval will be sent.</td></tr>
+                used, the values the the most recent monitoring interval will be sent.</td></tr>
 <tr><td><b>ttl</b></td><td> is the <i>time to live</i> in intervals for each piece of performance data.  If
                 more than this number of intervals passes data will be sent regardless of whether it changed
                 or not and the ttl countdown timer reset.  The default is 5.  This actually has a second use
@@ -101,8 +106,9 @@ file is created in the directory specified by -f.  If <i>-P</i> is used, a plot 
 instead and if <i>-P</i> and <i>--rawtoo</i> are used, both types of files are created.
 <li>To create the snapshot file in a directory other then the one specified with -f, use the
 <i>f=</i> option with <i>--export</i></li>
-<li>If one tries an invalid combination of switches, it up to the export itself to determine 
-that since by design collectl has no knowledge of those module's inner workings.</li>
+<li>If one tries an invalid combination of switches or something not supported, it up to 
+the export itself to determine that since by design collectl has no knowledge of those 
+module's inner workings.</li>
 </ul>
 
 <h3>Example</h3>
@@ -113,7 +119,7 @@ can also refer to the others as well.
 This first section gets called almost immediately by collectl after reading
 in the various user switches.  This is the place to catch switch errors
 and since this routine always requires <i>-scm</i> we'll just hardcode it 
-to that and reject any user entered ones.  This initialization subrouting
+to that and reject any user entered ones.  This initialization subroutine
 <i>must</i> be named for our module followed by <i>Init</i>.
 <div class=terminal-wide14>
 <pre>
@@ -131,7 +137,7 @@ of our included file.
 <p>
 The <i>if statement</i> uses collectl's standard idiom for printing headers
 based on the number of lines printed and whether or not the user wants only a
-singleheader, no header or even to clear the screen between headers.  If you
+single header, no header or even to clear the screen between headers.  If you
 do not want/need all these features it's perfectly fine to use a more simplifed
 header printing mechanism, such as the one is <i>sexpr.ph</i>.
 
@@ -148,7 +154,7 @@ sub vmstat
 </pre></div>
 
 Next comes the handling of optional date/time prefixes that I stole from
-printTerm() in formatit.ph which can be controlled
+printTerm() in formatit.ph and which can be controlled
 by various switch options.  Again, if you have no intent of supporting these
 you can even put in error handling in your <i>initialization routine</i>
 or simply ignore the switches.
@@ -186,9 +192,9 @@ that we will print in one shot.
 
 Finally comes the output.  There is actually a lot of latitude here and in this case
 we're caling <i>printText()</i> which will send the output to the terminal or over a
-socket.  It will not write to a local file as does <i>sexpr or lexpr</i>, but if you
+socket.  It will not write to a local file as do <i>sexpr or lexpr</i>, but if you
 want to see how to do that, refer to them.  As with all perl require files, they must
-return <i>true</i> and therefore the final statement that consists of the digit 1.
+return <i>true</i> and therefore the final line is the digit 1.
 <div class=terminal-wide14>
 <pre>
   printText($line);
@@ -198,6 +204,8 @@ return <i>true</i> and therefore the final statement that consists of the digit 
 
 Try running it and you'll see all the pagination and time formats work just as they
 do with standard output formats.
+
+<table width=100%><tr><td align=right><i>updated Feb 21, 2011</i></td></tr></colgroup></table>
 
 </body>
 </html>

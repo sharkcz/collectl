@@ -408,16 +408,16 @@ and laundry pages.</td></tr>
 
 <p><h3>Network, <i>collectl -sn</i></h3>
 <p>
-The entries for error counts are actually the total of several types of errors.
-To get individual error counts, you must report details on individual 
-interfaces in plot format by specifying -P.  Transmission errors are categorized 
-by errors, dropped, fifo, collisions and carrier.
-Receive errors are broken out for errors, dropped, fifo and fragments.
+The entries for error counts in the following are actually the total of several
+types of errors.  To get individual error counts, you must either include <i>--netopts e</i>
+or report details on individual interfaces in plot format by specifying -P.  
+Transmission errors are categorized by errors, dropped, fifo, collisions and carrier.
+Receive errors are broken out for errors, dropped, fifo and framing errors.
 
 <div class=terminal>
 <pre>
 # NETWORK SUMMARY (/sec)
-# KBIn  PktIn SizeIn  MultI   CmpI  ErrIn  KBOut PktOut  SizeO   CmpO ErrOut
+# KBIn  PktIn SizeIn  MultI   CmpI  ErrsI  KBOut PktOut  SizeO   CmpO  ErrsO
 </pre></div>
 
 <table>
@@ -436,8 +436,9 @@ Receive errors are broken out for errors, dropped, fifo and fragments.
 <tr><td><b>CmpI</b></td>
 <td>Incoming compressed packets/sec</td></tr>
 
-<tr><td><b>ErrIn</b></td>
-<td>Incoming errors/sec</td></tr>
+<tr valign=top><td><b>ErrsI</b></td>
+<td>Total incoming errors/sec.  This is an aggregation of incoming error counters.  To see explicit
+error counters use <i>--netopts e</i></td></tr>
 
 <tr><td><b>KBOut</b></td>
 <td>Outgoing KB/sec</td></tr>
@@ -451,8 +452,41 @@ Receive errors are broken out for errors, dropped, fifo and fragments.
 <tr><td><b>CmpO</b></td>
 <td>Outgoing compressed packets/sec</td></tr>
 
+<tr valign=top><td><b>ErrsO</b></td>
+<td>Total outgoing errors/sec.  This is an aggregation of outgoing error counters.  To see explicit
+error counters use <i>--netopts e</i> </td></tr>
+</table>
+
+<p><h3>Network, <i>collectl -sn --netopts e</i></h3>
+<p>
+This alternative format, which is displayed when you specify <i>--netopts e</i> enumerates
+the individual error types.  You cannot see both output formats at the same time.
+
+<div class=terminal>
+<pre>
+# NETWORK ERRORS SUMMARY (/sec)
+#  ErrIn  DropIn  FifoIn FrameIn    ErrOut DropOut FifoOut CollOut CarrOut
+</pre></div>
+
+<table>
+<tr><td><b>ErrIn</b></td>
+<td>Receive errors/sec detected by the device driver</td></tr>
+<tr><td><b>DropIn</b></td>
+<td>Receive packets dropped/sec</td></tr>
+<tr><td><b>FifoIn</b></td>
+<td>Receive packet FIFO buffer errors/sec</td></tr>
+<tr><td><b>FrameIn</b></td>
+<td>Receive packet framing errors/sec</td></tr>
 <tr><td><b>ErrOut</b></td>
-<td>Outgoing errors/sec</td></tr>
+<td>Transmit errors/sec detected by the device driver</td></tr>
+<tr><td><b>DropOut</b></td>
+<td>Transmit packets dropped/sec</td></tr>
+<tr><td><b>FifoOut</b></td>
+<td>Transmit packet FIFO buffer errors/sec</td></tr>
+<tr><td><b>CollOut</b></td>
+<td>Transmit collisions/sec detected on the interface</td></tr>
+<tr><td><b>CarrOut</b></td>
+<td>Transmit packet carrier loss errors detected/sec</td></tr>
 </table>
 
 <p><h3>NFS, <i>collectl -sf</i></h3>
@@ -640,6 +674,8 @@ in effect, this number will be equal to the Slabs field reported by -sm.</td></t
 <tr><td><b>Loss</b></td><td>Packets/sec TCP thinks have been lost coming in.</td></tr>
 <tr><td><b>FTrans</b></td><td>Fast retransmissions/sec.</td></tr>
 </table>
+
+<table width=100%><tr><td align=right><i>updated Feb 21, 2011</i></td></tr></colgroup></table>
 
 </body>
 </html>

@@ -16,9 +16,11 @@ One should also note that you can simultaneously record the data locally in a <i
 file, a file in <i>plot format</i> or even <i>both</i> depending on your needs.
 <p>
 <h3>Short-lived communications</h3>
-The model for this type of communications is one in which some other tool starts
-collectl on one or more remotes system, instructing it to send its output back
-until the initiator terminates the connection at which time collectl will 
+The model for this type of communications is one in which some other tool such as
+<a href=collectl-utils/colmux.html>colmux</a> starts
+collectl on one or more remote systems, instructing it to send its output back
+to the initiator until the initiator terminates the connection.  
+At this time collectl will 
 permanently exist.  Using this style the initiator of the communications opens
 the socket and then typically starts collectl using ssh and includes its 
 address/port in the command string using collectl's -A switch.  The key things 
@@ -27,7 +29,7 @@ to note when using this style are:
 <ul>
 <li>This mechanism will never survive a reboot without extra work on the initiator's
 part which must include restarting collectl</li>
-<li>Collectl will open a socket to the specified address and immediately start sending 
+<li>As soon as it starts, collectl will open a socket to the specified address and immediately start sending 
 its output back to it</li>
 <li>If the other end of the socket goes away, collectl will exit</li>
 <li>If collectl is unexpectedly terminated (such as sigint or reboot), it will
@@ -38,21 +40,28 @@ other end of the communication path must be prepared to deal with it</li>
 <h3>Long-lived communications</h3>
 This mechanism has collectl create the initial socket and listen for a remote connection.
 In this mode, collectl continues to collect data and at the beginning of each monitoring
-interval looks for a new socket connection request.  If it receives a request, it creates a
-connection back and immediately starts sending data to it.  If that connection terminates
+interval looks for a new socket connection request.  
+If it receives a request, collectl then creates a
+connection back to the requestor and immediately starts sending data to it.
+If that connection terminates
 collectl closes down its side and then goes back to listening for a new connection.
 
 The key points about this style are:
 <ul>
-<li>This style of communications will survice a reboot if configured in <i>collectl.conf</i></li>
-<li>The switch to put collectl into this mode is also -A but rather than supplying as address
-as the argument use the text <i>server</i>
+<li>This style of communications will survive a reboot if configured in <i>collectl.conf</i></li>
+<li>The switch to put collectl into this mode is also -A but rather than supplying an
+address as the argument use the text <i>server</i>
 <li>The other end of the connection needs to periodically try to connect and if it fails
-must try again.  If that connection exists, it must clean up its end and go back to
+must try again.  If that connection exits, it must clean up its end and go back to
 trying to reconnect again.
 <li>If you want collectl to terminate you much manually do so, noting after a reboot it
 will restart.
+<li>To verify collectl is functioning as expected, run the utility 
+<i>/usr/share/collectl/util/client.pl</i> passing it the address of the system collectl is
+running on.  It will display anything collectl sends to it over the socket.
 </ul>
+
+<table width=100%><tr><td align=right><i>updated Feb 21, 2011</i></td></tr></colgroup></table>
 
 </body>
 </html>

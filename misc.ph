@@ -193,11 +193,6 @@ sub miscPrintExport
      push @$ref1, "misc.cpuMHz";   push @$ref2, sprintf("%d", $miscMHz);
      push @$ref1, "misc.mounts";   push @$ref2, sprintf("%d", $miscMounts);
   }
-  elsif ($type eq 's')
-  {
-    $$ref1.=sprintf("  (misctotals (uptime %d) (cpuMHz %d) (mounts %d) (logins %d))\n",
-	$miscUptime/86400, $miscMHz, $miscMounts, $miscLogins);
-  }
   elsif ($type eq 'g')
   {
      push @$ref2, 'num', 'num', 'num', 'num', 'num';

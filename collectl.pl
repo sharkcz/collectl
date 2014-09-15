@@ -6,22 +6,23 @@
 # or the GNU General Public License, which may be found in the source kit
 
 # debug
-#    1 - print interesting stuff
-#    2 - print Interconnect specific checks (mostly Infiniband)
-#    4 - show each line processed by record(), replaces -H
-#    8 - print lustre specific checks
-#   16 - print headers of each file processed
-#   32 - skip call to dataAnalyze during interactive processing
-#   64 - socket processing
-#  128 - show collectl.conf processing
-#  256 - show detailed pid processing (this generates a LOT of output)
-#  512 - show more pid details, specifically hash contents
-#        NOTE - output from 256/512 are prefaced with %%% if from collectl.pl
-#               and ### if from formatit.ph
-# 1024 - show list of SLABS to be monitored
-# 2048 - playback preprocessing 
-# 4096 - report pidNew() management of pidSkip{}
-# 8192 - show creation of RAW, PLOT and files
+#     1 - print interesting stuff
+#     2 - print Interconnect specific checks (mostly Infiniband)
+#     4 - show each line processed by record(), replaces -H
+#     8 - print lustre specific checks
+#    16 - print headers of each file processed
+#    32 - skip call to dataAnalyze during interactive processing
+#    64 - socket processing
+#   128 - show collectl.conf processing
+#   256 - show detailed pid processing (this generates a LOT of output)
+#   512 - show more pid details, specifically hash contents
+#         NOTE - output from 256/512 are prefaced with %%% if from collectl.pl
+#                and ### if from formatit.ph
+#  1024 - show list of SLABS to be monitored
+#  2048 - playback preprocessing 
+#  4096 - report pidNew() management of pidSkip{}
+#  8192 - show creation of RAW, PLOT and files
+# 16384 - for use of perfquery for 32 bit counters
 
 # debug tricks
 # - use '-d36' to see each line of raw data as it would be logged but not 
@@ -88,7 +89,7 @@ $PageSize=0;
 $Memory=$Swap=$Hyper=$Distro=$ProductName='';
 $CpuVendor=$CpuMHz=$CpuCores=$CpuSiblings=$CpuNodes='';
 $PidFile='/var/run/collectl.pid';    # default, unless --pname
-$PQuery=$PCounter=$VStat=$VoltaireStats=$IBVersion=$HCALids=$OfedInfo='';
+$PQuery=$PQopt=$PCounter=$VStat=$IBVersion=$HCALids=$OfedInfo='';
 $numBrwBuckets=$cfsVersion=$sfsVersion='';
 $Resize=$IpmiCache=$IpmiTypes=$ipmiExec='';
 $i1DataFlag=$i2DataFlag=$i3DataFlag=0;
@@ -104,15 +105,15 @@ $PcFlag=($Config{"osname"}=~/MSWin32/) ? 1 : 0;
 $XCFlag=(!$PcFlag && -e '/etc/hptc-release') ? 1 : 0;
 
 # If we ever want to write something to /var/log/messages, we need this which
-# we obviously can't include on a pc.
-require "Sys/Syslog.pm"    if !$PcFlag;
+# may not always be installed
+$syslogFlag=(eval {require "Sys/Syslog.pm" or die}) ? 1 : 0;
 
 # Always nice to know if we're root
 $rootFlag=(!$PcFlag && `whoami`=~/root/) ? 1 : 0;
 $SrcArch= $Config{"archname"};
 
-$Version=  '3.6.9-1';
-$Copyright='Copyright 2003-2013 Hewlett-Packard Development Company, L.P.';
+$Version=  '3.7.3-1';
+$Copyright='Copyright 2003-2014 Hewlett-Packard Development Company, L.P.';
 $License=  "collectl may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
 
@@ -176,8 +177,12 @@ $Host=$myHost;
 $zlibErrors=0;
 
 # These variables only used once in this module and hence generate warnings
-undef @dskOrder;
-undef @netOrder;
+undef %disks;
+undef @HCAName;
+undef @HCAPorts;
+undef %networks;
+undef @dskIndexAvail;
+undef @netIndexAvail;
 undef @lustreCltDirs;
 undef @lustreCltOstDirs;
 undef @lustreOstSubdirs;
@@ -191,10 +196,11 @@ $totalCounter=$separatorCounter=0;
 $NumCpus=$HZ='';
 $NumOst=$NumBud=0;
 $FS=$ScsiInfo=$HCAPortStates='';
-$SlabVersion=$XType=$XVersion='';
+$SlabVersion='';
 $dentryFlag=$inodeFlag=$filenrFlag=$allThreadFlag=$procCmdWidth=0;
 $clr=$clscr=$cleol=$home='';
-$dskIndexNext=$netIndexNext=0;
+$netIndexNext=$dskSeenCount=$dskSeenLast=0;
+$netIndexNext=$netSeenCount=$netSeenLast=0;
 
 # This tells us we have not yet made our first pass through the data
 # collection loop and gets reset to 0 at the bottom.
@@ -229,7 +235,6 @@ $LustreConfigInt=1;
 $InterConnectInt=900;
 $TermHeight=24;
 $DefNetSpeed=10000;
-$IbDupCheckFlag=1;
 $TimeHiResCheck=1;
 $PasswdFile='/etc/passwd';
 $umask='';
@@ -351,7 +356,7 @@ $procAnalFlag=$procAnalCounter=$slabAnalFlag=$slabAnalCounter=$lastInt2Secs=0;
 $lastLogPrefix=$passwdFile='';
 $memOpts=$nfsOpts=$nfsFilt=$lustOpts=$userEnvOpts='';
 $grepPattern=$pname='';
-$dskFilt=$intFilt=$netFilt=$tcpFilt='';
+$cpuFilt=$dskFilt=$intFilt=$netFilt=$tcpFilt='';
 $cpuOpts=$dskOpts=$netOpts=$xOpts='';
 $utimeMask=0;
 $comment=$runas='';
@@ -446,6 +451,7 @@ GetOptions('align!'     => \$alignFlag,
            'all!'          => \$allFlag,
            'comment=s'     => \$comment,
            'cpuopts=s'     => \$cpuOpts,
+           'cpufilt=s'     => \$cpuFilt,
            'dskfilt=s'     => \$dskFilt,
            'dskopts=s'     => \$dskOpts,
            'export=s'      => \$export,
@@ -510,12 +516,12 @@ if ($runas ne '')
 
   if ($runasUser!~/^\d+$/)
   {
-    $runasUid=(split(/:/, `grep $runasUser /etc/passwd`))[2];
+    $runasUid=(split(/:/, `grep ^$runasUser: /etc/passwd`))[2];
     error("can't find '$runasUser' in /etc/passwd.  Consider UID.")    if !defined($runasUid);
   }
   if (defined($runasGroup) && $runasGroup!~/^\d+$/)
   {
-    $runasGid=(split(/:/, `grep $runasGroup /etc/group`))[2];
+    $runasGid=(split(/:/, `grep ^$runasGroup: /etc/group`))[2];
     error("can't find '$runasGroup' in /etc/group.  Consider GID.")    if !defined($runasGid);
   }
   $runasUid=$runasUser     if $runasUser=~/^\d+/;
@@ -1009,10 +1015,14 @@ $SEP=sprintf("%c", $SEP)    if $SEP=~/\d+/;
 
 # Even though users warning about this in docs, it's too easy to forget
 # at least for me, so make sure no quotes in filters
+$cpuFilt=~s/['"]//g;
 $netFilt=~s/['"]//g;
 $dskFilt=~s/['"]//g;
 $rawNetFilter=~s/['"]//g;
 $rawDskFilter=~s/['"]//g;
+
+# purely an ease of use thing to allow people to use x-y as a cpu range
+$cpuFilt=~s/-/../g;
 
 # Both kinds of DISK and NETWORK filtering
 # Remember, this filter overrides the one in collectl.conf
@@ -1022,10 +1032,44 @@ if ($rawDskFilter ne '')
   $DiskFilterFlag=1;
 }
 
+# cpu filters are a little differnt because we're detailing with
+# numbers and can't use pattern matching without some pain so
+# to make it easy just add those to keep or ignore to an array
+my $ignoreFlag=($cpuFilt=~s/^\^//) ? 1 : 0;
+foreach my $cpuRange (split(/,/, $cpuFilt))
+{
+  my @cpus=eval("($cpuRange)");
+  foreach my $cpu (@cpus)
+  {
+    $cpuFiltIgnore[$cpu]=1    if $ignoreFlag;
+    $cpuFiltKeep[$cpu]=1      if !$ignoreFlag;
+  }
+}
+
+# ugly debugging code but worth it.  note we don't know how many
+# CPUs there are because we haven't yet called initRecord()
+if ($debug & 1)
+{
+  if (@cpuFiltIgnore)
+  {
+    print "Ignore CPUs: ";
+    for (my $i=0; $i<@cpuFiltIgnore; $i++)
+    { print "$i "    if defined($cpuFiltIgnore[$i]); }
+    print "\n";
+  }
+  if (@cpuFiltKeep)
+  {
+    print "Keep CPUs: ";
+    for (my $i=0; $i<@cpuFiltKeep; $i++)
+    { print "$i "    if defined($cpuFiltKeep[$i]); }
+    print "\n";
+  }
+}
+
 # This is applied AFTER the raw disk records are read and possibly filtered
 $dskFiltKeep='';
 $dskFiltIgnore='';
-my $ignoreFlag=($dskFilt=~s/^\^//) ? 1 : 0;
+$ignoreFlag=($dskFilt=~s/^\^//) ? 1 : 0;
 foreach my $disk (split(/,/, $dskFilt))
 {
   $dskFiltIgnore.="|$disk"    if $ignoreFlag;
@@ -1619,7 +1663,23 @@ if ($playback ne '')
       $lastHost=$fileHost;
       print "NewPrefix: $newPrefixFlag  NewHost: $newHostFlag\n"    if $debug & 1;
 
-      undef $newSeconds[$rawPFlag]    if $newHostFlag;    # indicates we start anew
+      if ($newHostFlag)
+      {
+        undef $newSeconds[$rawPFlag];
+
+	# need to reset disk structures so we don't append to the last host's
+        # data.  Note that @dskSeen/@netSeen cleared at top of each interval
+	undef %disks;
+	undef @dskOrder;
+	undef @dskIndexAvail;
+	$dskIndexNext=$dskSeenLast=$dskSeenCount=0;
+
+	# same for networks
+	undef %networks;
+	undef @netOrder;
+	undef @netIndexAvail;
+	$netIndexNext=$netSeenLast=$netSeenCount=0;
+      }
 
       # For each day's set of files, we need to reset this variable so interval
       # lengths are calculared correctly.  Since int3 doesn't contain any rate
@@ -2861,61 +2921,43 @@ for (; $count!=0 && !$doneFlag; $count--)
   {
     # Whenever we hit the end of interconnect checking interval we need to 
     # see if any of them changed configuration (such as an IB port fail-over)
-    # NOTE - we do the $filename test last so we ALWAYS do the elan/ib checks
+    # NOTE - we do the $filename test last so we ALWAYS do the ib checks
     # even if printing to terminal.
     if (++$interConnectCounter==$interConnectIntervals)
     {
       newLog($filename, "", "", "", "", "")
-	  if (($quadricsFlag && elanCheck()) || ($mellanoxFlag && ibCheck()))
-	      && $filename ne '';
+	  if $mellanoxFlag && ibCheck() && $filename ne '';
       $interConnectCounter=0;
-    }
-
-    # only if there is indeed quadric stats detected
-    if ($quadricsFlag && $NumXRails)
-    {
-      for ($i=0; $i<$NumXRails; $i++)
-      {
-        getProc(0, "/proc/qsnet/ep/rail$i/stats", "Elan$i");
-      }
     }
 
     if ($mellanoxFlag && $NumHCAs)
     {
       for ($i=0; $i<$NumHCAs; $i++)
       {
-        if ( -e $SysIB ) 
-        { 
-          if ( -e $PQuery )
+        if ( -e $SysIB )
+        {
+   	  foreach my $j (1..2)
 	  {
-            foreach $j (1..2)
-            {
-              if ($HCAPorts[$i][$j])  # Make sure it has an active port
-              {
-		getExec(1, "$PQuery -r $HCALids[$i][$j] $j 0xf000", "ib$i-$j");
+	    # only read if port active
+	    if ($HCAPorts[$i][$j])
+	    {
+              # 64 bit counters always come from /sys
+	      if ($PQopt eq 'sys')
+	      {
+	        my $proc="$SysIB/$HCAName[$i]$i/ports/$j/counters_ext";
+		getProc(0, "$proc/port_rcv_data_64",     "ib$i-$j:rcvd");
+		getProc(0, "$proc/port_xmit_data_64",    "ib$i-$j:xmtd");
+		getProc(0, "$proc/port_rcv_packets_64",  "ib$i-$j:rcvp");
+		getProc(0, "$proc/port_xmit_packets_64", "ib$i-$j:xmtp");
 	      }
-            }
-          }
-        }
-        elsif ( -e $VoltaireStats )
-        {
-	  # If Voltaire ever supports multiple HCAs, we'll need the 
-	  # uncommented code instead
-	  getProc(0, $VoltaireStats, 'ib0', 3, 2);
-	  #getProc(0, "/proc/voltaire/ib$i/stats", "ib$i", 3, 2);
-	}
-        else
-        {
-          # Currently only 1 port is active, but if more are, we need to
-          # deal with them
-          foreach $j (1..2)
-          {
-            if ($HCAPorts[$i][$j])  # Make sure it has an active port
-            {
-              # Grab counters and do an immediate reset of them
-              getExec(2, "$PCounter -h $HCAName[$i] -p $j", "ib$i-$j");
-	      `$PCounter -h $HCAName[$i] -p $j -s 5 >/dev/null`;
-	     }
+
+  	      # we only use perfquery for 32bit counters or 64 when not in 
+	      # available in sys and then only if perfquery hasn't been disabled
+	      elsif ( -e $PQuery )
+	      {
+		getExec(1, "$PQuery $PQopt $HCALids[$i][$j] $j 0xf000", "ib$i-$j");
+	      }
+	    }
           }
         }
       }
@@ -4208,7 +4250,6 @@ sub newLog
     open CLT,  ">-" or logmsg("F", "Couldn't open CLT for STDOUT");  select CLT; $|=1;
     open CPU,  ">-" or logmsg("F", "Couldn't open CPU for STDOUT");  select CPU; $|=1;
     open DSK,  ">-" or logmsg("F", "Couldn't open DSK for STDOUT");  select DSK; $|=1;
-    open ELN,  ">-" or logmsg("F", "Couldn't open ELN for STDOUT");  select ELN; $|=1;
     open ENV,  ">-" or logmsg("F", "Couldn't open ENV for STDOUT");  select ENV; $|=1;
     open IB,   ">-" or logmsg("F", "Couldn't open IB for STDOUT");   select IB;  $|=1;
     open NFS,  ">-" or logmsg("F", "Couldn't open NFS for STDOUT");  select NFS; $|=1;
@@ -4402,14 +4443,6 @@ sub newLog
 	  logmsg("F", "Couldn't open DSKX gzip file")     if  $zFlag && $DFlag;
     }
 
-    if ($XFlag && $NumXRails)
-    {
-      open ELN, "$mode$filename.eln" or 
-	  logmsg("F", "Couldn't open '$filename.eln'")   if !$zFlag;
-      $ZELN=Compress::Zlib::gzopen("$filename.eln.gz", $zmode) or
-          logmsg("F", "Couldn't open ELN gzip file")     if  $zFlag;
-    }
-
     if ($XFlag && $NumHCAs)
     {
       open IB, "$mode$filename.ib" or 
@@ -4493,7 +4526,6 @@ sub newLog
       if (defined(fileno(CPU)))    { select CPU;  $|=1; }
       if (defined(fileno(DSK)))    { select DSK;  $|=1; }
       if (defined(fileno(DSKX)))   { select DSKX; $|=1; }
-      if (defined(fileno(ELN)))    { select ELN;  $|=1; }
       if (defined(fileno(ENV)))    { select ENV;  $|=1; }
       if (defined(fileno(IB)))     { select IB;   $|=1; }
       if (defined(fileno(OST)))    { select OST;  $|=1; }
@@ -4589,6 +4621,8 @@ sub buildCommonHeader
   $flags.='s'    if $slubinfoFlag;
   $flags.='x'    if $processCtxFlag;
   $flags.='D'    if $cpuDisabledFlag;
+  $flags.='X'    if $PQopt eq 'sys';
+  $flags.='PX'   if $PQopt eq '-x';
 
   my $dskNames='';
   foreach my $disk (@dskOrder)
@@ -4629,7 +4663,6 @@ sub buildCommonHeader
   $commonHeader.="# NumDisks:   $dskIndexNext DiskNames: $dskNames\n";
   $commonHeader.="# NumNets:    $netIndexNext NetNames: $netNames\n";
   $commonHeader.="# NumSlabs:   $NumSlabs Version: $SlabVersion\n"    if $yFlag || $YFlag;
-  $commonHeader.="# IConnect:   NumXRails: $NumXRails XType: $XType  XVersion: $XVersion\n"    if $NumXRails;
   $commonHeader.="# IConnect:   NumHCAs: $NumHCAs PortStates: $HCAPortStates IBVersion: $IBVersion PQVersion: $PQVersion\n"                if $NumHCAs;
   $commonHeader.="# SCSI:       $ScsiInfo\n"    if $ScsiInfo ne '';
   if ($subsys=~/l/i)
@@ -4845,7 +4878,6 @@ sub flushBuffers
     $ZCLT-> gzflush(2)<0 and flushError('clt', $ZCLT)     if $LFlag && $CltFlag;
     $ZDSK-> gzflush(2)<0 and flushError('dsk', $ZDSK)     if $DFlag && $options!~/x/;    # exception only file?
     $ZDSKX->gzflush(2)<0 and flushError('dskx',$ZDSKX)    if $DFlag && $options=~/x/i;
-    $ZELN-> gzflush(2)<0 and flushError('eln', $ZELN)     if $XFlag && $NumXRails;
     $ZIB->  gzflush(2)<0 and flushError('ib',  $ZIB)      if $XFlag && $NumHCAs;
     $ZENV-> gzflush(2)<0 and flushError('env', $ZENV)     if $EFlag;
     $ZNFS-> gzflush(2)<0 and flushError('nfs', $ZNFS)     if $FFlag;
@@ -4881,7 +4913,6 @@ sub flushBuffers
     if ($FFlag)   { select NFS;  $|=1; print NFS ""; $|=0; }
     if ($NFlag)   { select NET;  $|=1; print NET ""; $|=0; }
     if ($TFlag)   { select TCP;  $|=1; print TCP ""; $|=0; }
-    if ($XFlag && $NumXRails)                  { select ELN;  $|=1; print ELN ""; $|=0; }
     if ($XFlag && $NumHCAs)                    { select IB;   $|=1; print IB  ""; $|=0; }
     if ($YFlag && !$rawtooFlag)                { select SLB;  $|=1; print SLB ""; $|=0; }
     if ($ZFlag && !$rawtooFlag)                { select PRC;  $|=1; print PRC ""; $|=0; }
@@ -4966,7 +4997,7 @@ sub logmsg
   # if we're not writing to a message log always send F/E errors to syslog AND get out if fatal
   if (!$msgFlag)
   {
-    logsys($msg, 1)          if $severity=~/[EF]/;
+    logsys($text, 1)         if $severity=~/[EF]/ && $syslogFlag;
     exit(1)                  if $severity eq "F";
   }
 
@@ -4995,7 +5026,7 @@ sub logsys
   my $force=  shift;
 
   # if not writing to a file, only log when forced
-  return    if $PcFlag || ($filename eq '' && !$force);
+  return    if !$syslogFlag || ($filename eq '' && !$force);
 
   $x=Sys::Syslog::openlog($Program, "", "user");
   $x=Sys::Syslog::syslog("info", "%s", $message);
@@ -5210,7 +5241,6 @@ sub closeLogs
       close CLT;
       close DSK;
       close DSKX;
-      close ELN;
       close IB;
       close ENV;
       close NFS;
@@ -5229,7 +5259,6 @@ sub closeLogs
       $ZCPU-> gzclose()     if $CFlag;
       $ZDSK-> gzclose()     if $DFlag && $options!~/x/;
       $ZDSKX->gzclose()     if $DFlag && $options=~/x/i;
-      $ZELN-> gzclose()     if $XFlag && $NumXRails;
       $ZIB->  gzclose()     if $XFlag && $NumHCAs;
       $ZENV-> gzclose()     if $EFlag;
       $ZNFS-> gzclose()     if $FFlag;
@@ -5394,7 +5423,6 @@ sub loadConfig
       $PCounter=$value         if $param=~/^PCounter/;
       $PQuery=$value           if $param=~/^PQuery/;
       $VStat=$value            if $param=~/^VStat/;
-      $IbDupCheckFlag=$value   if $param=~/^IbDupCheckFlag/;
       $OfedInfo=$value         if $param=~/^OfedInfo/;
 
       $Interval=$value         if $param=~/^Interval$/;
@@ -6319,7 +6347,7 @@ These generate summary, which is the total of ALL data for a particular type
   n - network
   s - sockets
   t - tcp
-  x - interconnect (currently supported: Infiniband and Quadrics)
+  x - interconnect (currently supported: OFED/Infiniband)
   y - slabs
  
 These generate detail data, typically but not limited to the device level
@@ -6401,6 +6429,14 @@ it is displayed.  In the case of lustre there are also 'services'
 CPU
   --cpuopts
       z - do not show any detail lines which are ALL 0     
+  --cpufilt perl-regx[,perl-regx...]
+      this works the same way as dskfilt and netfilt in that it only applies
+      to output and not data collection.  Only data for CPU numbers that
+      match the pattern(s) will be included in summary stats or displayed
+      when details are requested.  This is mainly here for machines with
+      high cpu counts which would otherwise overwhelm the detail output.
+      HINT: you specify the range 1 to 3 in perl like this: 1..3 but collectl
+            also allows 1-3 (which is NOT perl) for ease of use
 
 Disk
   --dskfilt perl-regx[,perl-regx...]
@@ -6667,7 +6703,16 @@ sub whatsnew
   my $whatsnew=<<EOF6;
 What's new in collectl in the last year or so?
 
-version 3.6.8  AUg 2013
+Version 3.7.3  Apr 2014
+- support for RHEL7
+
+Version 3.7.2  Mar 2014
+- new --cpufilt allows filtering cpus in detail, plot and for interrupts
+- ehhanced InfiniBand monitoring to use extended counters when present
+  and if so, allow multiple versions of collectl to run at the same time
+- remove myrinet and quadrics support  
+
+version 3.6.8  Aug 2013
 - new --procopt u[width] specifies different username width in proc display
       --procopt k, removes known shells from process listing with -sZ,
           currently set to /bin.sh, /usr/bin/perl, /usr/bin/python & python

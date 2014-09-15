@@ -216,15 +216,12 @@ sub helloPrintExport
       push @$ref2, int($hwTot/$intSecs);
       push @$ref5, 1;    # makes it a gauge and so an avg for 'tot'
     }
-    elsif ($type eq 's')
-    {
-      $$ref1.=sprintf("  (hwtotals (hw %d))\n", int($hwTot/$intSecs));
-    }
     elsif ($type eq 'g')
     {
       push @$ref1, "hwtotals.hw";
       push @$ref2, 'num/sec';
       push @$ref3, int($hwTot/$intSecs);
+      push @$ref4, 'hello';
      }
   }
 
@@ -246,14 +243,6 @@ sub helloPrintExport
           push @$ref3, int($hwNow[$i]/$intSecs);
         }
       }
-    }
-    elsif ($type eq 's')
-    {
-      $$ref2.="  (hwinfo\n";
-      $$ref2.="    (name 0 1 2))\n";
-      $$ref2.="    (hw0 $hwNow[0])\n";
-      $$ref2.="    (hw0 $hwNow[1])\n";
-      $$ref2.="    (hw0 $hwNow[2]))\n";
     }
   }
 }

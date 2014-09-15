@@ -8,7 +8,31 @@
 <center><h1>Infiniband</h1></center>
 <p>
 <h3>Monitoring</h3>
-The most important thing you should know about Infiniband monitoring is that it
+Collectl V3.7.3 now supports monitoring infiniband by looking at 64 bit counters,
+when the HCA supports them and virtually all of them do.  This means several
+things:
+<ul>
+<li>collectl no longer has to read/clear the counters to read them and so is
+non-distructive</li>
+<li>there is no longer a restriction of multiple instances of collectl monintoring
+infiniband statistics</li>
+<li>you can now read these counters at greater intervals (if you really want to)
+with no fear of them latching when they hit their 32 bit maximum</li>
+</ul>
+<p>
+The easiest way to tell if your HCA supports 64 bit counters is to run perfquery -x
+and if it works, you have 64 bit counters.  Alternatively you could also run:
+<p>
+<i>collectl -sx --showheader</i>
+<p>
+and if it displays an X in the flag field, you have them.  If you do have 64 bit
+counters but collectl doesn't report the X, you have an older version installed.
+
+The code to deal with 32 bit counters will be left in place for awhile but
+eventually removed.  The rest of this documentation talks about monitoring
+the narrower counters and is largely unchanged from before.
+<h3>32 Bit Counters</h3>
+The most important thing you should know about 32 bit monitoring is that it
 is <i>destructive</i>.  What is meant by this is that every time 
 collectl reads the counters from the HCA it immediately resets them to zero, thereby 
 <i>destroying</i> their previous contents.  You should also note this does 
@@ -63,13 +87,7 @@ replaces perfquery collectl will break.
 <p>
 <b>Pre-OFED</b>
 <p>
-If it is determined the OFED stack is not running, collectl will try to use the
-<i>get_pcounter</i> utility to query the HCA, which is in fact what 
-<i>perfquery</i> is based on.  Since this utility has also moved around during
-various releases, it too has a search list in collectl.conf, but unlike perfquery
-if it can't be found no additional heroics will be attempted to find it.  If you
-don't have this utility on your system (and even if you do) you should probably 
-consider moving to OFED.
+All pre-OFED monitoring code has been removed.
 <p>
 <b>Debugging</b>
 <p>
@@ -93,7 +111,7 @@ was unexpected traffic on one of the <i>eth</i> interfaces.  Clearly something
 was wrong and looking at the routing showed the routes were set such that all 
 traffic to the infiniband address was being routed over the <i>eth</i> interface.
 
-<table width=100%><tr><td align=right><i>updated Nov 22, 2008</i></td></tr></colgroup></table>
+<table width=100%><tr><td align=right><i>updated Feb 04, 2014</i></td></tr></colgroup></table>
 
 </body>
 </html>

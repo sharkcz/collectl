@@ -143,46 +143,46 @@ sub gexpr
 
       if ($gexGFlag)    # for both 'g' OR 'G'
       {
-        sendData('cpu_user',   'percent', $userP[$i]);
-        sendData('cpu_nice',   'percent', $niceP[$i]);
-        sendData('cpu_system', 'percent', $sysP[$i]);
-        sendData('cpu_wio',    'percent', $waitP[$i]);
-        sendData('cpu_idle',   'percent', $idleP[$i]);
+        sendData('cpu_user',   'percent', $userP[$i], 'cpu');
+        sendData('cpu_nice',   'percent', $niceP[$i], 'cpu');
+        sendData('cpu_system', 'percent', $sysP[$i],  'cpu');
+        sendData('cpu_wio',    'percent', $waitP[$i], 'cpu');
+        sendData('cpu_idle',   'percent', $idleP[$i], 'cpu');
 
-        sendData('cpu_num',      'CPUs',       $NumCpus);
-        sendData('proc_total',   'Load/Procs', $loadQue);
-        sendData('proc_run',     'Load/Procs', $loadRun);
-        sendData('load_one',     'Load/Procs', $loadAvg1);
-        sendData('load_five',    'Load/Procs', $loadAvg5);
-        sendData('load_fifteen', 'Load/Procs', $loadAvg15);
+        sendData('cpu_num',      'CPUs',       $NumCpus,   'cpu');
+        sendData('proc_total',   'Load/Procs', $loadQue,   'cpu');
+        sendData('proc_run',     'Load/Procs', $loadRun,   'cpu');
+        sendData('load_one',     'Load/Procs', $loadAvg1,  'cpu');
+        sendData('load_five',    'Load/Procs', $loadAvg5,  'cpu');
+        sendData('load_fifteen', 'Load/Procs', $loadAvg15, 'cpu');
       }
 
       if (!$gexGFlag)      # if not 'g' use standard collectl names
       {
-        sendData('cputotals.user', 'percent', $userP[$i]);
-        sendData('cputotals.nice', 'percent', $niceP[$i]);
-        sendData('cputotals.sys',  'percent', $sysP[$i]);
-        sendData('cputotals.wait', 'percent', $waitP[$i]);
-        sendData('cputotals.idle', 'percent', $idleP[$i]);
+        sendData('cputotals.user', 'percent', $userP[$i], 'cpu');
+        sendData('cputotals.nice', 'percent', $niceP[$i], 'cpu');
+        sendData('cputotals.sys',  'percent', $sysP[$i],  'cpu');
+        sendData('cputotals.wait', 'percent', $waitP[$i], 'cpu');
+        sendData('cputotals.idle', 'percent', $idleP[$i], 'cpu');
       }
 
       if ($gexGFlag!=1)    # 'G' or nothing
       {
-        sendData('cputotals.irq',  'percent', $irqP[$i]);
-        sendData('cputotals.soft', 'percent', $softP[$i]);
-        sendData('cputotals.steal','percent', $stealP[$i]);
+        sendData('cputotals.irq',  'percent', $irqP[$i],   'cpu');
+        sendData('cputotals.soft', 'percent', $softP[$i],  'cpu');
+        sendData('cputotals.steal','percent', $stealP[$i], 'cpu');
 
-        sendData('ctxint.ctx',  'switches/sec', $ctxt/$intSecs);
-        sendData('ctxint.int',  'intrpts/sec',  $intrpt/$intSecs);
-        sendData('ctxint.proc', 'pcreates/sec', $proc/$intSecs);
-        sendData('ctxint.runq', 'runqSize',     $loadQue);
+        sendData('ctxint.ctx',  'switches/sec', $ctxt/$intSecs,   'cpu');
+        sendData('ctxint.int',  'intrpts/sec',  $intrpt/$intSecs, 'cpu');
+        sendData('ctxint.proc', 'pcreates/sec', $proc/$intSecs,   'cpu');
+        sendData('ctxint.runq', 'runqSize',     $loadQue,         'cpu');
       }
 
       if (!$gexGFlag)       # do it again so that we report ALL cpu %s together
       {
-        sendData('cpuload.avg1',   'loadAvg1',  $loadAvg1);
-        sendData('cpuload.avg5',   'loadAvg5',  $loadAvg5);
-        sendData('cpuload.avg15',  'loadAvg15', $loadAvg15);
+        sendData('cpuload.avg1',   'loadAvg1',  $loadAvg1,  'cpu');
+        sendData('cpuload.avg5',   'loadAvg5',  $loadAvg5,  'cpu');
+        sendData('cpuload.avg15',  'loadAvg15', $loadAvg15, 'cpu');
       }
     }
 
@@ -190,15 +190,15 @@ sub gexpr
     {
       for (my $i=0; $i<$NumCpus; $i++)
       {
-        sendData("cpuinfo.user.cpu$i",  'percent', $userP[$i]);
-        sendData("cpuinfo.nice.cpu$i",  'percent', $niceP[$i]);
-        sendData("cpuinfo.sys.cpu$i",   'percent', $sysP[$i]);
-        sendData("cpuinfo.wait.cpu$i",  'percent', $waitP[$i]);
-        sendData("cpuinfo.irq.cpu$i",   'percent', $irqP[$i]);
-        sendData("cpuinfo.soft.cpu$i",  'percent', $softP[$i]);
-        sendData("cpuinfo.steal.cpu$i", 'percent', $stealP[$i]);
-        sendData("cpunifo.idle.cpu$i",  'percent', $idleP[$i]);
-        sendData("cpuinfo.intrpt.cpu$i",'percent', $intrptTot[$i]);
+        sendData("cpuinfo.user.cpu$i",  'percent', $userP[$i],     'cpu');
+        sendData("cpuinfo.nice.cpu$i",  'percent', $niceP[$i],     'cpu');
+        sendData("cpuinfo.sys.cpu$i",   'percent', $sysP[$i],      'cpu');
+        sendData("cpuinfo.wait.cpu$i",  'percent', $waitP[$i],     'cpu');
+        sendData("cpuinfo.irq.cpu$i",   'percent', $irqP[$i],      'cpu');
+        sendData("cpuinfo.soft.cpu$i",  'percent', $softP[$i],     'cpu');
+        sendData("cpuinfo.steal.cpu$i", 'percent', $stealP[$i],    'cpu');
+        sendData("cpunifo.idle.cpu$i",  'percent', $idleP[$i],     'cpu');
+        sendData("cpuinfo.intrpt.cpu$i",'percent', $intrptTot[$i], 'cpu');
       }
     }
   }
@@ -207,10 +207,10 @@ sub gexpr
   {
     if ($gexSubsys=~/d/)
     {
-      sendData('disktotals.reads',    'reads/sec',    $dskReadTot/$intSecs);
-      sendData('disktotals.readkbs',  'readkbs/sec',  $dskReadKBTot/$intSecs);
-      sendData('disktotals.writes',   'writes/sec',   $dskWriteTot/$intSecs);
-      sendData('disktotals.writekbs', 'writekbs/sec', $dskWriteKBTot/$intSecs);
+      sendData('disktotals.reads',    'reads/sec',    $dskReadTot/$intSecs,    'disk');
+      sendData('disktotals.readkbs',  'readkbs/sec',  $dskReadKBTot/$intSecs,  'disk');
+      sendData('disktotals.writes',   'writes/sec',   $dskWriteTot/$intSecs,   'disk');
+      sendData('disktotals.writekbs', 'writekbs/sec', $dskWriteKBTot/$intSecs, 'disk');
     }
 
     if ($gexSubsys=~/D/)
@@ -222,10 +222,10 @@ sub gexpr
         next    if !defined($dskSeen[$i]);
         next    if ($dskFiltKeep eq '' && $dskName=~/$dskFiltIgnore/) || ($dskFiltKeep ne '' && $dskName!~/$dskFiltKeep/);
 
-        sendData("diskinfo.reads.$dskName",    'reads/sec',    $dskRead[$i]/$intSecs);
-        sendData("diskinfo.readkbs.$dskName",  'readkbs/sec',  $dskReadKB[$i]/$intSecs);
-        sendData("diskinfo.writes.$dskName",   'writes/sec',   $dskWrite[$i]/$intSecs);
-        sendData("diskinfo.writekbs.$dskName", 'writekbs/sec', $dskWriteKB[$i]/$intSecs);
+        sendData("diskinfo.reads.$dskName",    'reads/sec',    $dskRead[$i]/$intSecs,    'disk');
+        sendData("diskinfo.readkbs.$dskName",  'readkbs/sec',  $dskReadKB[$i]/$intSecs,  'disk');
+        sendData("diskinfo.writes.$dskName",   'writes/sec',   $dskWrite[$i]/$intSecs,   'disk');
+        sendData("diskinfo.writekbs.$dskName", 'writekbs/sec', $dskWriteKB[$i]/$intSecs, 'disk');
       }
     }
   }
@@ -234,38 +234,38 @@ sub gexpr
   {
     if ($nfsSFlag)
     {
-      sendData('nfsinfo.SRead',   'SvrReads/sec',  $nfsSReadsTot/$intSecs);
-      sendData('nfsinfo.SWrite',  'SvrWrites/sec', $nfsSWritesTot/$intSecs);
-      sendData('nfsinfo.Smeta',   'SvrMeta/sec',   $nfsSMetaTot/$intSecs);
-      sendData('nfsinfo.Scommit', 'SvrCommt/sec' , $nfsSCommitTot/$intSecs);
+      sendData('nfsinfo.SRead',   'SvrReads/sec',  $nfsSReadsTot/$intSecs,  'NFS server');
+      sendData('nfsinfo.SWrite',  'SvrWrites/sec', $nfsSWritesTot/$intSecs, 'NFS server');
+      sendData('nfsinfo.Smeta',   'SvrMeta/sec',   $nfsSMetaTot/$intSecs,   'NFS server');
+      sendData('nfsinfo.Scommit', 'SvrCommt/sec' , $nfsSCommitTot/$intSecs, 'NFS server');
     }
     if ($nfsCFlag)
     {
-      sendData('nfsinfo.CRead',   'CltReads/sec',  $nfsCReadsTot/$intSecs);
-      sendData('nfsinfo.CWrite',  'CltWrites/sec', $nfsCWritesTot/$intSecs);
-      sendData('nfsinfo.Cmeta',   'CltMeta/sec',   $nfsCMetaTot/$intSecs);
-      sendData('nfsinfo.Ccommit', 'CltCommt/sec' , $nfsCCommitTot/$intSecs);
+      sendData('nfsinfo.CRead',   'CltReads/sec',  $nfsCReadsTot/$intSecs,  'NFS client');
+      sendData('nfsinfo.CWrite',  'CltWrites/sec', $nfsCWritesTot/$intSecs, 'NFS client');
+      sendData('nfsinfo.Cmeta',   'CltMeta/sec',   $nfsCMetaTot/$intSecs,   'NFS client');
+      sendData('nfsinfo.Ccommit', 'CltCommt/sec' , $nfsCCommitTot/$intSecs, 'NFS client');
     }
   }
 
   if ($gexSubsys=~/i/ && $gexGFlag!=1)
   {
-    sendData('inodeinfo.dentnum',    'dentrynum',    $dentryNum);
-    sendData('inodeinfo.dentunused', 'dentryunused', $dentryUnused);
-    sendData('inodeinfo.fhandalloc', 'filesalloc',   $filesAlloc);
-    sendData('inodeinfo.fhandmpct',  'filesmax',     $filesMax);
-    sendData('inodeinfo.inodenum',   'inodeused',    $inodeUsed);
+    sendData('inodeinfo.dentnum',    'dentrynum',    $dentryNum,    'inode');
+    sendData('inodeinfo.dentunused', 'dentryunused', $dentryUnused, 'inode');
+    sendData('inodeinfo.fhandalloc', 'filesalloc',   $filesAlloc,   'inode');
+    sendData('inodeinfo.fhandmpct',  'filesmax',     $filesMax,     'inode');
+    sendData('inodeinfo.inodenum',   'inodeused',    $inodeUsed,    'inode');
   }
 
   if ($gexSubsys=~/l/ && $gexGFlag!=1)
   {
     if ($CltFlag)
     {
-      sendData('lusclt.reads',    'reads/sec',    $lustreCltReadTot/$intSecs);
-      sendData('lusclt.readkbs',  'readkbs/sec',  $lustreCltReadKBTot/$intSecs);
-      sendData('lusclt.writes',   'writes/sec',   $lustreCltWriteTot/$intSecs);
-      sendData('lusclt.writekbs', 'writekbs/sec', $lustreCltWriteKBTot/$intSecs);
-      sendData('lusclt.numfs',    'filesystems',  $NumLustreFS);
+      sendData('lusclt.reads',    'reads/sec',    $lustreCltReadTot/$intSecs,    'Lustre client');
+      sendData('lusclt.readkbs',  'readkbs/sec',  $lustreCltReadKBTot/$intSecs,  'Lustre client');
+      sendData('lusclt.writes',   'writes/sec',   $lustreCltWriteTot/$intSecs,   'Lustre client');
+      sendData('lusclt.writekbs', 'writekbs/sec', $lustreCltWriteKBTot/$intSecs, 'Lustre client');
+      sendData('lusclt.numfs',    'filesystems',  $NumLustreFS,                  'Lustre client');
     }
 
     if ($MdsFlag)
@@ -274,19 +274,19 @@ sub gexpr
       my $setattrPlus=$lustreMdsReintSetattr+$lustreMdsSetxattr;
       my $varName=($cfsVersion lt '1.6.5') ? 'reint' : 'unlink';
       my $varVal= ($cfsVersion lt '1.6.5') ? $lustreMdsReint : $lustreMdsReintUnlink;
-
-      sendData('lusmds.gattrP',    'gattrP/sec',   $getattrPlus/$intSecs);
-      sendData('lusmds.sattrP',    'sattrP/sec',   $setattrPlus/$intSecs);
-      sendData('lusmds.sync',      'sync/sec',     $lustreMdsSync/$intSecs);
-      sendData("lusmds.$varName",  "$varName/sec", $varVal/$intSecs);
+      my $varTitle = ($cfsVersion lt '1.6.5') ? 'Delete/Set Attr.' : 'File/Dir Deletes';
+      sendData('lusmds.gattrP',    'gattrP/sec',   $getattrPlus/$intSecs,   'Lustre MDS', 'Get Attributes');
+      sendData('lusmds.sattrP',    'sattrP/sec',   $setattrPlus/$intSecs,   'Lustre MDS', 'Set Attributes');
+      sendData('lusmds.sync',      'sync/sec',     $lustreMdsSync/$intSecs, 'Lustre MDS', 'File Syncs');
+      sendData("lusmds.$varName",  "$varName/sec", $varVal/$intSecs,        'Lustre MDS', '$varTitle');
     }
 
     if ($OstFlag)
     {
-      sendData('lusost.reads',    'reads/sec',    $lustreReadOpsTot/$intSecs);
-      sendData('lusost.readkbs',  'readkbs/sec',  $lustreReadKBytesTot/$intSecs);
-      sendData('lusost.writes',   'writes/sec',   $lustreWriteOpsTot/$intSecs);
-      sendData('lusost.writekbs', 'writekbs/sec', $lustreWriteKBytesTot/$intSecs);
+      sendData('lusost.reads',    'reads/sec',    $lustreReadOpsTot/$intSecs,     'Lustre OST');
+      sendData('lusost.readkbs',  'readkbs/sec',  $lustreReadKBytesTot/$intSecs,  'Lustre OST');
+      sendData('lusost.writes',   'writes/sec',   $lustreWriteOpsTot/$intSecs,    'Lustre OST');
+      sendData('lusost.writekbs', 'writekbs/sec', $lustreWriteKBytesTot/$intSecs, 'Lustre OST');
     }
   }
 
@@ -299,20 +299,20 @@ sub gexpr
       {
         for (my $i=0; $i<$NumLustreFS; $i++)
         {
-          sendData("lusost.reads.$lustreCltFS[$i]",    'reads/sec',    $lustreCltRead[$i]/$intSecs);
-	  sendData("lusost.readkbs.$lustreCltFS[$i]",  'readkbs/sec',  $lustreCltReadKB[$i]/$intSecs);
-          sendData("lusost.writes.$lustreCltFS[$i]",   'writes/sec',   $lustreCltWrite[$i]/$intSecs);
-          sendData("lusost.writekbs.$lustreCltFS[$i]", 'writekbs/sec', $lustreCltWriteKB[$i]/$intSecs);
+          sendData("lusost.reads.$lustreCltFS[$i]",    'reads/sec',    $lustreCltRead[$i]/$intSecs,    'Lustre client');
+	  sendData("lusost.readkbs.$lustreCltFS[$i]",  'readkbs/sec',  $lustreCltReadKB[$i]/$intSecs,  'Lustre client');
+          sendData("lusost.writes.$lustreCltFS[$i]",   'writes/sec',   $lustreCltWrite[$i]/$intSecs,   'Lustre client');
+          sendData("lusost.writekbs.$lustreCltFS[$i]", 'writekbs/sec', $lustreCltWriteKB[$i]/$intSecs, 'Lustre client');
         }
       }
       else
       {
         for (my $i=0; $i<$NumLustreCltOsts; $i++)
         {
-          sendData("lusost.reads.$lustreCltOsts[$i]",    'reads/sec',    $lustreCltLunRead[$i]/$intSecs);
-          sendData("lusost.readkbs.$lustreCltOsts[$i]",  'readkbs/sec',  $lustreCltLunReadKB[$i]/$intSecs);
-          sendData("lusost.writes.$lustreCltOsts[$i]",   'writes/sec',   $lustreCltLunWrite[$i]/$intSecs);
-          sendData("lusost.writekbs.$lustreCltOsts[$i]", 'writekbs/sec', $lustreCltLunWriteKB[$i]/$intSecs);
+          sendData("lusost.reads.$lustreCltOsts[$i]",    'reads/sec',    $lustreCltLunRead[$i]/$intSecs,    'Lustre client');
+          sendData("lusost.readkbs.$lustreCltOsts[$i]",  'readkbs/sec',  $lustreCltLunReadKB[$i]/$intSecs,  'Lustre client');
+          sendData("lusost.writes.$lustreCltOsts[$i]",   'writes/sec',   $lustreCltLunWrite[$i]/$intSecs,   'Lustre client');
+          sendData("lusost.writekbs.$lustreCltOsts[$i]", 'writekbs/sec', $lustreCltLunWriteKB[$i]/$intSecs, 'Lustre client');
         }
       }
     }
@@ -321,10 +321,10 @@ sub gexpr
     {
       for ($i=0; $i<$NumOst; $i++)
       {
-        sendData("lusost.reads.$lustreOsts[$i]",    'reads/sec',    $lustreReadOps[$i]/$intSecs);
-        sendData("lusost.readkbs.$lustreOsts[$i]",  'readkbs/sec',  $lustreReadKBytes[$i]/$intSecs);
-        sendData("lusost.writes.$lustreOsts[$i]",   'writes/sec',   $lustreWriteOps[$i]/$intSecs);
-        sendData("lusost.writekbs.$lustreOsts[$i]", 'writekbs/sec', $lustreWriteKBytes[$i]/$intSecs);
+        sendData("lusost.reads.$lustreOsts[$i]",    'reads/sec',    $lustreReadOps[$i]/$intSecs,     'Lustre OST');
+        sendData("lusost.readkbs.$lustreOsts[$i]",  'readkbs/sec',  $lustreReadKBytes[$i]/$intSecs,  'Lustre OST');
+        sendData("lusost.writes.$lustreOsts[$i]",   'writes/sec',   $lustreWriteOps[$i]/$intSecs,    'Lustre OST');
+        sendData("lusost.writekbs.$lustreOsts[$i]", 'writekbs/sec', $lustreWriteKBytes[$i]/$intSecs, 'Lustre OST');
       }
     }
   }
@@ -333,41 +333,41 @@ sub gexpr
   {
     if ($gexGFlag)       # 'g' or 'G'
     {
-      sendData('mem_total',     'Bytes',         $memTot);
-      sendData('mem_free',      'Bytes',         $memFree);
-      sendData('mem_shared',    'Bytes',         $memShared);
-      sendData('mem_buffers',  'Bytes',          $memBuf);
-      sendData('mem_cached',    'Bytes',         $memCached);
-      sendData('swap_total',    'Bytes',         $swapTotal);
-      sendData('swap_free',     'Bytes',         $swapFree);
+      sendData('mem_total',     'Bytes',         $memTot,    'memory');
+      sendData('mem_free',      'Bytes',         $memFree,   'memory');
+      sendData('mem_shared',    'Bytes',         $memShared, 'memory');
+      sendData('mem_buffers',  'Bytes',          $memBuf,    'memory');
+      sendData('mem_cached',    'Bytes',         $memCached, 'memory');
+      sendData('swap_total',    'Bytes',         $swapTotal, 'memory');
+      sendData('swap_free',     'Bytes',         $swapFree,  'memory');
     }
 
     if (!$gexGFlag)       # neither
     {
-      sendData('meminfo.tot',       'kb',         $memTot);
-      sendData('meminfo.free',      'kb',         $memFree);
-      sendData('meminfo.shared',    'kb',         $memShared);
-      sendData('meminfo.buf',       'kb',         $memBuf);
-      sendData('meminfo.cached',    'kb',         $memCached);
-      sendData('swapinfo.total',    'kb',         $swapTotal);
-      sendData('swapinfo.free',     'kb',         $swapFree);
+      sendData('meminfo.tot',       'kb',         $memTot,    'memory');
+      sendData('meminfo.free',      'kb',         $memFree,   'memory');
+      sendData('meminfo.shared',    'kb',         $memShared, 'memory');
+      sendData('meminfo.buf',       'kb',         $memBuf,    'memory');
+      sendData('meminfo.cached',    'kb',         $memCached, 'memory');
+      sendData('swapinfo.total',    'kb',         $swapTotal, 'memory');
+      sendData('swapinfo.free',     'kb',         $swapFree,  'memory');
     }
 
     if ($gexGFlag!=1)     # nothing or 'G'
     {
-      sendData('meminfo.used',      'kb',         $memUsed);
-      sendData('meminfo.slab',      'kb',         $memSlab);
-      sendData('meminfo.map',       'kb',         $memMap);
-      sendData('meminfo.hugetot',   'kb',         $memHugeTot);
-      sendData('meminfo.hugefree',  'kb',         $memHugeFree);
-      sendData('meminfo.hugersvd',  'kb',         $memHugeRsvd);
-      sendData('swapinfo.used',     'kb',         $swapUsed);
-      sendData('swapinfo.in',       'swaps/sec',  $swapin/$intSecs);
-      sendData('swapinfo.out',      'swaps/sec',  $swapout/$intSecs);
-      sendData('pageinfo.fault',    'faults/sec', $pagefault/$intSecs);
-      sendData('pageinfo.majfault', 'majflt/sec', $pagemajfault/$intSecs);
-      sendData('pageinfo.in',       'pages/sec',  $pagein/$intSecs);
-      sendData('pageinfo.out',      'pages/sec',  $pageout/$intSecs);
+      sendData('meminfo.used',      'kb',         $memUsed,               'memory');
+      sendData('meminfo.slab',      'kb',         $memSlab,               'memory');
+      sendData('meminfo.map',       'kb',         $memMap,                'memory');
+      sendData('meminfo.hugetot',   'kb',         $memHugeTot,            'memory');
+      sendData('meminfo.hugefree',  'kb',         $memHugeFree,           'memory');
+      sendData('meminfo.hugersvd',  'kb',         $memHugeRsvd,           'memory');
+      sendData('swapinfo.used',     'kb',         $swapUsed,              'memory');
+      sendData('swapinfo.in',       'swaps/sec',  $swapin/$intSecs,       'memory');
+      sendData('swapinfo.out',      'swaps/sec',  $swapout/$intSecs,      'memory');
+      sendData('pageinfo.fault',    'faults/sec', $pagefault/$intSecs,    'memory');
+      sendData('pageinfo.majfault', 'majflt/sec', $pagemajfault/$intSecs, 'memory');
+      sendData('pageinfo.in',       'pages/sec',  $pagein/$intSecs,       'memory');
+      sendData('pageinfo.out',      'pages/sec',  $pageout/$intSecs,      'memory');
     }
   }
 
@@ -378,7 +378,7 @@ sub gexpr
     {
       foreach my $field ('used', 'free', 'slab', 'map', 'anon', 'lock', 'act', 'inact')
       {
-        sendData("numainfo.$field.$i", 'kb', $numaMem[$i]->{$field});
+        sendData("numainfo.$field.$i", 'kb', $numaMem[$i]->{$field}, 'memory');
       }
     }
   }
@@ -389,17 +389,17 @@ sub gexpr
     {
       if ($gexGFlag)       # 'g' or 'G'
       {
-        sendData('bytes_in',  'Bytes/sec', $netRxKBTot*1024/$intSecs);
-        sendData('bytes_out', 'Bytes/sec', $netTxKBTot*1024/$intSecs);
-        sendData('pkts_in',   'pkts/sec', $netRxPktTot/$intSecs);
-        sendData('pkts_out',  'pkts/sec', $netTxPktTot/$intSecs);
+        sendData('bytes_in',  'Bytes/sec', $netRxKBTot*1024/$intSecs, 'network');
+        sendData('bytes_out', 'Bytes/sec', $netTxKBTot*1024/$intSecs, 'network');
+        sendData('pkts_in',   'pkts/sec', $netRxPktTot/$intSecs,      'network');
+        sendData('pkts_out',  'pkts/sec', $netTxPktTot/$intSecs,      'network');
       }
       else                 # neither
       {
-        sendData('nettotals.kbin',   'kb/sec', $netRxKBTot/$intSecs);
-        sendData('nettotals.pktin',  'pkts/sec', $netRxPktTot/$intSecs);
-        sendData('nettotals.kbout',  'kb/sec', $netTxKBTot/$intSecs);
-        sendData('nettotals.pktout', 'pkts/sec', $netTxPktTot/$intSecs);
+        sendData('nettotals.kbin',   'kb/sec', $netRxKBTot/$intSecs,    'network');
+        sendData('nettotals.pktin',  'pkts/sec', $netRxPktTot/$intSecs, 'network');
+        sendData('nettotals.kbout',  'kb/sec', $netTxKBTot/$intSecs,    'network');
+        sendData('nettotals.pktout', 'pkts/sec', $netTxPktTot/$intSecs, 'network');
       }
     }
 
@@ -412,35 +412,35 @@ sub gexpr
         next    if ($netFiltKeep eq '' && $netName=~/$netFiltIgnore/) || ($netFiltKeep ne '' && $netName!~/$netFiltKeep/);
         next    if $netName=~/lo|sit/;
 
-        sendData("nettotals.kbin.$netName",   'kb/sec', $netRxKB[$i]/$intSecs);
-        sendData("nettotals.pktin.$netName",  'pkts/sec', $netRxPkt[$i]/$intSecs);
-        sendData("nettotals.kbout.$netName",  'kb/sec', $netTxKB[$i]/$intSecs);
-        sendData("nettotals.pktout.$netName", 'pkts/sec', $netTxPkt[$i]/$intSecs);
+        sendData("nettotals.kbin.$netName",   'kb/sec', $netRxKB[$i]/$intSecs,    'network');
+        sendData("nettotals.pktin.$netName",  'pkts/sec', $netRxPkt[$i]/$intSecs, 'network');
+        sendData("nettotals.kbout.$netName",  'kb/sec', $netTxKB[$i]/$intSecs,    'network');
+        sendData("nettotals.pktout.$netName", 'pkts/sec', $netTxPkt[$i]/$intSecs, 'network');
       }
     }
   }
 
   if ($gexSubsys=~/s/ && $gexGFlag!=1)
   {
-    sendData("sockinfo.used",  'sockets', $sockUsed);
-    sendData("sockinfo.tcp",   'sockets', $sockTcp);
-    sendData("sockinfo.orphan",'sockets', $sockOrphan);
-    sendData("sockinfo.tw",    'sockets', $sockTw);
-    sendData("sockinfo.alloc", 'sockets', $sockAlloc);
-    sendData("sockinfo.mem",   'sockets', $sockMem);
-    sendData("sockinfo.udp",   'sockets', $sockUdp);
-    sendData("sockinfo.raw",   'sockets', $sockRaw);
-    sendData("sockinfo.frag",  'sockets', $sockFrag);
-    sendData("sockinfo.fragm", 'sockets', $sockFragM);
+    sendData("sockinfo.used",  'sockets', $sockUsed,   'socket');
+    sendData("sockinfo.tcp",   'sockets', $sockTcp,    'socket');
+    sendData("sockinfo.orphan",'sockets', $sockOrphan, 'socket');
+    sendData("sockinfo.tw",    'sockets', $sockTw,     'socket');
+    sendData("sockinfo.alloc", 'sockets', $sockAlloc,  'socket');
+    sendData("sockinfo.mem",   'sockets', $sockMem,    'socket');
+    sendData("sockinfo.udp",   'sockets', $sockUdp,    'socket');
+    sendData("sockinfo.raw",   'sockets', $sockRaw,    'socket');
+    sendData("sockinfo.frag",  'sockets', $sockFrag,   'socket');
+    sendData("sockinfo.fragm", 'sockets', $sockFragM,  'socket');
   }
 
   if ($gexSubsys=~/t/ && $gexGFlag!=1)
   {
-    sendData("tcpinfo.iperrs",   'num/sec', $ipErrors/$intSecs)       if $tcpFilt=~/i/;
-    sendData("tcpinfo.tcperrs",  'num/sec', $tcpErrors/$intSecs)      if $tcpFilt=~/t/;
-    sendData("tcpinfo.udperrs",  'num/sec', $udpErrors/$intSecs)      if $tcpFilt=~/u/;
-    sendData("tcpinfo.icmperrs", 'num/sec', $icmpErrors/$intSecs)     if $tcpFilt=~/c/;
-    sendData("tcpinfo.tcpxerrs", 'num/sec', $tcpExErrors/$intSecs)    if $tcpFilt=~/T/;
+    sendData("tcpinfo.iperrs",   'num/sec', $ipErrors/$intSecs,    'tcp')    if $tcpFilt=~/i/;
+    sendData("tcpinfo.tcperrs",  'num/sec', $tcpErrors/$intSecs,   'tcp')    if $tcpFilt=~/t/;
+    sendData("tcpinfo.udperrs",  'num/sec', $udpErrors/$intSecs,   'tcp')    if $tcpFilt=~/u/;
+    sendData("tcpinfo.icmperrs", 'num/sec', $icmpErrors/$intSecs,  'tcp')    if $tcpFilt=~/c/;
+    sendData("tcpinfo.tcpxerrs", 'num/sec', $tcpExErrors/$intSecs, 'tcp')    if $tcpFilt=~/T/;
 
   }
 
@@ -462,10 +462,10 @@ sub gexpr
       $pktOutT=$ibTxTot;
     }
    
-    sendData("iconnect.kbin",   'kb/sec',  $kbInT/$intSecs);
-    sendData("iconnect.pktin",  'pkt/sec', $pktInT/$intSecs);
-    sendData("iconnect.kbout",  'kb/sec',  $kbOutT/$intSecs);
-    sendData("iconnect.pktout", 'pkt/sec', $pktOutT/$intSecs);
+    sendData("iconnect.kbin",   'kb/sec',  $kbInT/$intSecs,   'infiniband', 'Data Received');
+    sendData("iconnect.pktin",  'pkt/sec', $pktInT/$intSecs,  'infiniband', 'Packets Received');
+    sendData("iconnect.kbout",  'kb/sec',  $kbOutT/$intSecs,  'infiniband', 'Data Transmitted');
+    sendData("iconnect.pktout", 'pkt/sec', $pktOutT/$intSecs, 'infiniband', 'Packets Transmitted');
   }
 
   if ($gexSubsys=~/E/i && $gexGFlag!=1)
@@ -477,7 +477,7 @@ sub gexpr
         my $name=$ipmiData->{$key}->[$i]->{name};
         my $inst=($key!~/power/ && $ipmiData->{$key}->[$i]->{inst} ne '-1') ? $ipmiData->{$key}->[$i]->{inst} : '';
 
-        sendData("env.$name$inst", $name,  $ipmiData->{$key}->[$i]->{value}, '%s');
+        sendData("env.$name$inst", $name,  $ipmiData->{$key}->[$i]->{value}, 'IPMI');
       }
     }
   }
@@ -488,11 +488,11 @@ sub gexpr
   #        restriction and ALL imports will have to deal with $gexFlag if called from here
   if ($gexGFlag!=1)
   {
-    my (@names, @units, @vals);
-    for (my $i=0; $i<$impNumMods; $i++) { &{$impPrintExport[$i]}('g', \@names, \@units, \@vals); }
+    my (@names, @units, @vals, @groups, @titles);
+    for (my $i=0; $i<$impNumMods; $i++) { &{$impPrintExport[$i]}('g', \@names, \@units, \@vals, \@groups, \@titles); }
     foreach (my $i=0; $i<scalar(@names); $i++)
     {
-      sendData($names[$i], $units[$i], $vals[$i]);
+      sendData($names[$i], $units[$i], $vals[$i], $groups[$i], $titles[$i]);
     }
   }
   $gexCounter=0    if $gexOutputFlag;
@@ -515,9 +515,12 @@ sub openSocket
 # this code tightly synchronized with lexpr and graphite
 sub sendData
 {
+
   my $name=shift;
   my $units=shift;
   my $value=shift;
+  my $group=shift;
+  my $title=shift;
 
   $value=int($value);
 
@@ -564,8 +567,8 @@ sub sendData
   if (!$gexCOFlag || $value!=$gexDataLast{$name} || $gexTTL{$name}==1)
   {
     $valSentFlag=1;
-    sendMetaPacket($name, $units);
-    sendDataPacket($name, $value);    
+    sendMetaPacket($name, $units, $group, $title);
+    sendDataPacket($name, $value);
     $gexDataLast{$name}=$value;
   }
 
@@ -587,8 +590,12 @@ sub sendData
     $intUsecs=sprintf("%06d", $intUsecs);
     my ($sec, $min, $hour)=localtime($intSeconds);
     my $timestamp=sprintf("%02d:%02d:%02d.%s", $hour, $min, $sec, substr($intUsecs, 0, 3));
-    printf "$timestamp Name: %-25s Units: %-12s Val: %8d TTL: %d %s\n",
-                $name, $units, $value, $gexTTL{$name}, ($valSentFlag) ? 'sent' : ''
+    printf "$timestamp Name: %-25s Units: %-12s Val: %8d Group: %-10s TTL: %3d Title: %-20s %s\n",
+                $name, $units, $value,
+		defined($group) ? $group : '-',
+		$gexTTL{$name},
+		defined($title) ? $title : '-',
+		($valSentFlag) ? 'sent' : ''
                         if $gexDebug & 1 || $valSentFlag;
   }
 
@@ -605,6 +612,12 @@ sub sendMetaPacket
 {
   my $name= shift;
   my $units=shift;
+  my $group=shift;
+  my $title=shift;
+
+  my $numOptArgs=0;
+  $numOptArgs++    if defined($group);
+  $numOptArgs++    if defined($title);
 
   my $string='';
   $string.=pack('N', 0x80);
@@ -622,10 +635,26 @@ sub sendMetaPacket
   $string.=pack('N', length($units));
   $string.=packString($units);
 
-  $string.=pack('N', 3);         # slope
+  $string.=pack('N', 3);                        # slope
   $string.=pack('N', 2*$gexTTL*$gexInterval);   # time to live
-  $string.=pack('N', 0);         # dmax
-  $string.=pack('N', 0);
+  $string.=pack('N', 4*$gexTTL*$gexInterval);   # dmax
+
+  $string.=pack('N', $numOptArgs);
+  if (defined($group))
+  {
+    $string.=pack('N', length('GROUP'));
+    $string.=packString('GROUP');
+    $string.=pack('N', length($group));
+    $string.=packString($group)
+  }
+
+  if (defined($title))
+  {
+    $string.=pack('N', length('TITLE'));
+    $string.=packString('TITLE');
+    $string.=pack('N', length($title));
+    $string.=packString($title);
+  }
 
   sendUDP($string);
 }

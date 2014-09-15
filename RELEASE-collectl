@@ -1,4 +1,4 @@
-dnRELEASE NOTES FOR COLLECTL
+RELEASE NOTES FOR COLLECTL
 
 INSTALLATION
 
@@ -38,9 +38,62 @@ KNOWN PROBLEMS/RESTRICTIONS
 
 CHANGES
 
+3.7.3-1  Apr  1, 2014
+  - had to change 'defined(@array)' to remove the 'defined() which is
+    deprecated on RHEL7
+
+3.7.2-2  Mar 31, 2014
+  - deal with process names in /proc/pid/stat that have embedded spaces
+    in them (ugh!!!)  [thanks, guy]
+  - if HCA supports extended InfiniBand counters, read them from /sys if
+    present, otherwise read them with perfquery {thanks fred and roy]
+      - NOTE: error counters are not present when looked at extended
+              counters and so will be reported as 0
+    - removed IbDupCheck from collectl.conf since perfquery monitoring
+      always checks for dups
+    - since extended counters do not need to be cleared, you can now run
+      multiple copies of collectl when used
+  - fixed bug in -sX because it was generating wrong stats and more amazingly
+    nobody ever noticed
+  - removed quadrics and myrinet code, indicating end of an error for proprietary
+    interconnects, but without them we may not have gotten to 10Gb or IB as quickly
+  - new switch: --cpufilt allows filtering on CPU number in the same
+    way as dskfile and netfilt, primarily for use with high cpu counts.
+    also honored when reporting interrupt stats
+  - fixed typo for sorting on 'syst'  [thanks stig]
+
+3.7.2-1  Mar  5, 2014
+  - added optional groups & titles to ganglia export module [thanks peter] 
+  - removed extra '%s' in gexpr/senddata call for ipmi
+  - an error trying to run dmidecode when it wasn't there was fixed some time
+    after v3.6.0 but never made it into the release notes. [thanks seb]
+  - added additional stats for disk details to graphite.ph [thanks bob]
+  - changed format for AccumTim reporting for process data in prc file to
+    be a single format.  [thanks andy]
+  - fixed a problem with --procanalyze when processing multiple raw files, it
+    was not clearing the right data structures
+
+3.7.1-1  Jan  7, 2014
+  - removed nvidia and sexpr from kit as warned over a year ago
+  - lookup of uid:gid via grep needs trailing ':' in search or it will
+    incorrectly match first entry with longer name string
+  - changed deprecated use of defined(@$impiRemap) to defined($ipmiRemap)
+    re: http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=728760
+  - when rearranged logging code for E/F messages for syslog, ending up
+    using a variable that wasn't yet defined
+  - during playback of multiple files with different host names, disk/network
+    indexing structures need to be reinitialized
+  - when filtering network details, the Num in the output should start at 0
+    as opposed to its value when not filtered which left holes in numbering
+  - was reporting swapped data as bytes when in fact it is reported by the
+    kernel in pages.  it now reports swap sizes correctly by multiplying by
+    the correct page size.  [thanks philippe]
+
 3.6.9-1  Oct 18, 2013
   - typo in network plot header loop resulted in infinite loop [thanks andy]
   - remove $int/secs from numa hit rate calc AND add more precision to its output [thanks stig]
+  - need deal with a new process showing up with an existing pid, though rare
+    it can happen when a high rate of process creations [thanks guy]   
 
 3.6.8-1  Jul 20, 2013
   - new flag $exportComm must be set in gexpr/ganglia so that they won't

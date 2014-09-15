@@ -29,16 +29,15 @@ Summary</i>, but rather will have those details included as part of the CPU deta
 as shown in the examples below.
 </ul>
 <p>
-<h3>Plot Data and s-expressions</h3>
+<h3>Plot Data</h3>
 Although looking at interrupt data in <i>brief</i> or <i>verbose</i> fits quite well with
-collectl's reporting methodology, it doesn't fit the <i>plot</i> and <i>s-expression</i> 
-formats.  This is because both expect a fixed number of fields in for summary data and
+collectl's reporting methodology, it doesn't fit the <i>plot</i> format.
+This is because it expects a fixed number of fields for summary data and
 a variable number of fields for detail data, indexed by a device number.  However, 
 interrupt summary data is actually variable size based on the number of CPUs and the
 detail data doesn't really fit with anything and so trying to do so will generate an error.
-Therefore to report interrupt data in plot or s-sexpressions
-you will be required to request CPU detail data as well since interrupts are reported
-as part of that data.
+Therefore to report interrupt data in plot format you will be required to request CPU
+detail data as well since interrupts are reported as part of that data.
 <p>
 <h3>Examples</h3>
 The following examples only show interrupt data except where CPU data is required.  Any of

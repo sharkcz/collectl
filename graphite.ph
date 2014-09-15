@@ -217,6 +217,11 @@ sub graphite
       sendData("diskinfo.readkbs.$dskName",  'readkbs/sec',  $dskReadKB[$i]/$intSecs);
       sendData("diskinfo.writes.$dskName",   'writes/sec',   $dskWrite[$i]/$intSecs);
       sendData("diskinfo.writekbs.$dskName", 'writekbs/sec', $dskWriteKB[$i]/$intSecs);
+      sendData("diskinfo.rqst.$dskName",     'requests/sec', $dskRqst[$i]);
+      sendData("diskinfo.qlen.$dskName",     'depth',        $dskQueLen[$i]);
+      sendData("diskinfo.wait.$dskName",     'msec',         $dskWait[$i]);
+      sendData("diskinfo.time.$dskName",     'msec',         $dskSvcTime[$i]);
+      sendData("diskinfo.util.$dskName",     'percent',      $dskUtil[$i]);
     }
   }
 

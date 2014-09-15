@@ -132,8 +132,8 @@ checked by examining <i>$plotFlag</i> in your init routine),  you can safely lea
 <tr><td>InitInterval<td>Initializations required for each processing cycle</td></tr>
 <tr><td>IntervalEnd<td>Optional routine, called at end of each processing cycle if defined</td></tr>
 <tr><td>PrintBrief</td><td>Build output strings for brief format</td></tr>
-<tr><td>PrintExport</td><td>Build output strings for formatting by gexpr, lexpr and sexpr, which are 
-3 standard collectl <i>--export</i> modules</td></tr>
+<tr><td>PrintExport</td><td>Build output strings for formatting by gexpr, graphite and lexpr,
+which are 3 standard collectl <i>--export</i> modules</td></tr>
 <tr><td>PrintPlot</td><td>Build output string in plot format</td></tr>
 <tr><td>PrintVerbose</td><td>Build output string in verbose format</td></tr>
 <tr><td>UpdateHeader</td><td>Add custom line(s) to all file headers</td></tr>
@@ -280,20 +280,21 @@ totals, since that is always printed on the terminal and never goes to a socket 
 <p><b>PrintExport($type, \$ref1, \$ref2, \$ref3, \$ref4)</b>
 <p>
 What about custom export modules and how this effects them?  
-The good news is that at least for the standard 3, <i>sexpr, lexpr</i> and the newest
-<i>gexpr</i> all support <i>--import</i>.  In other words they too have callbacks that you must respond
+The good news is that at least for the standard 3 modules, <i>lexpr, gexpr and grphite</i>
+all support <i>--import</i>.  In other words they too have callbacks that you must respond
 to if your code is being run at the same time as one of these.
 <p>
 Again, see <i>hello.ph</i> for an example, but suffice it to say you need to do something when
 called, even if only a null function is supplied.
 <p>
-Since both <i>lexpr</i> and <i>sexpr</i> can write their output to the terminal, the easiest way
-to test these is to just run collect and have it display on the terminal.  However, the output
-of gexpr is binary and so the easiest way to test this code is to tell it not to open a socket
-(though you must supply an address/port, even if invalid) and report the 3 data elements it is about to 
-encode by running with a debug value of 9 noting this is <i>gexpr's</i> own internal debug
-switch and not collectl's.  The 8 bit tells gexpr to <i>not</i> open the sockeT (which is why an
-invalid value is ok) and the 1 bit tells it to display its output nicely formatting on the terminal.
+<i>lexpr</i> can write its output to the terminal and do the easiest way
+to test this is to just run collect and have it display on the terminal.  However, the output
+of gexpr and graphite is binary and so the easiest way to test this code is to tell them not
+to open a socket (though you must supply an address/port for gexpr, even if invalid) and print
+the data elements they are about to send to the terminal by running with a debug value of 9
+noting this is <i>gexpr's & graphite's</i> own internal debugging switches and not collectl's.
+The 8 bit tells them to <i>not</i> open the output socket and the 1 bit tells them to display 
+their output nicely formatting on the terminal.
 
 <div class=terminal>
 <pre>

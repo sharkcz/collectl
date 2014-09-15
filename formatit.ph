@@ -276,13 +276,8 @@ sub initRecord
   }
 
   # if doing interconnect, the first thing to do is see what interconnect
-  # hardware is present via lspci.  Note that from the H/W database, we get
-  # the following IDS -Quadrics: 14fc, Myricom: 14c1, Mellanox (IB): 15b3
-  # OR 0c06, QLogic (IB): 1077
-  # we also have to make sure in the right position of output of lspci command
-  # so need to be a little clever
-  $NumXRails=$NumHCAs=0;
-  $myrinetFlag=$quadricsFlag=$mellanoxFlag=0;
+  # hardware is present via lspci
+  $NumHCAs=$mellanoxFlag=0;
   if ($subsys=~/x/i)
   {
     my $lspciVer=`$Lspci --version`;
@@ -302,20 +297,7 @@ sub initRecord
     @pci=`$command`;
     foreach $temp (@pci)
     {
-      # Save the type in case we ever need that level of discrimination.
       ($vendorID, $type)=split(/:/,(split(/\s+/, $temp))[$lspciVendorField]);
-      if ($vendorID eq '14c1')
-      {
-        printf "WARNING: found myrinet card but no collectl support\n";
-      }
-
-      if ($vendorID eq '14fc')
-      {
-	print "Found Quadrics Interconnect\n"    if $debug & 2;
-        $quadricsFlag=1;
-	elanCheck();
-      }
-
       if ($vendorID=~/15b3|0c06|1077/)
       {
 	next    if $type eq '5a46';    # ignore pci bridge
@@ -325,100 +307,94 @@ sub initRecord
         ibCheck('');
       }
     }
-
-    disableSubsys('x', 'no interconnect hardware/drivers found')
-	if $myrinetFlag+$quadricsFlag+$mellanoxFlag==0;
+    disableSubsys('x', 'no interconnect hardware/drivers found')    if !$mellanoxFlag;
 
     # User had ability to turn off in case they don't want destructive monitoring
     if ($mellanoxFlag)
     {
-      $message='';
-      $message="Open Fabric IB Stats disabled in $configFile"    if  -e $SysIB && $PQuery eq '';
-      $message="Voltaire IB Stats disabled in $configFile"       if !-e $SysIB && $PCounter eq '';
-      if ($message ne '')
-      {
-        logmsg("W", $message);
-        $xFlag=$XFlag=0;
-        $subsys=~s/x//ig;
-        $mellanoxFlag=0;
-      }
+      # use name for hca0 port 1 and see if extended counters supported, noting we can
+      # force perfquery usage during debug, which itself might use -x
+      my $hca0_1="$SysIB/${HCAName[0]}0/ports/1";
+      $PQopt = '-r';
+      $PQopt = 'sys'    if -e "$hca0_1/counters_ext" && !($debug & 16384);
 
-      if ($mellanoxFlag)
+      # We usually only care about perfquery for non-extended counters
+      if ($PQopt eq '-r')
       {
-        # The way forward is clearly OFED
-	if (-e $SysIB)
+        # no monitoring if disabled in config file
+        if ($PQuery eq '')
         {
-          # This block's job is to make sure perfquery is there
+          logmsg("W", "Open Fabric IB Stats disabled in $configFile");
+          $subsys=~s/x//ig;
+          $mellanoxFlag=0;
+        }
+	else
+	{
+          print "Looking for 'perfquery' and 'ofed_info'\n"    if $debug & 2;
+          $PQuery=getOfedPath($PQuery, 'perfquery', 'PQuery');
+          if ($PQuery eq '')
           {
-            print "Looking for 'perfquery' and 'ofed_info'\n"    if $debug & 2;
-            $PQuery=getOfedPath($PQuery, 'perfquery', 'PQuery');
-            if ($PQuery eq '')
-            {
-              disableSubsys('x', "couldn't find perfquery!");
-              $mellanoxFlag=0;
-	      last;
-            }
+            disableSubsys('x', "couldn't find perfquery!");
+            $mellanoxFlag=0;
+	  }
+        }
 
-            # I hate support questions and this is the place to catch perfquery problems!
-            # so, if perfquery IS there, since it generates warnings on stderr in V1.5 and
-            # we don't know the version yet, always ignore them
-            if ($mellanoxFlag)
-            {
-              my $message='';
-              my $temp=`$PQuery 2>/dev/null`;
+        # I hate support questions and this is the place to catch perfquery problems!
+        # so, if perfquery IS there, since it generates warnings on stderr in V1.5 and
+        # we don't know the version yet, always ignore them
+        if ($mellanoxFlag)
+        {
+          my $message='';
+          my $temp=`$PQuery 2>/dev/null`;
 
-              $message="Permission denied"            if $temp=~/Permission denied/;
-              $message="Failed to open IB device"     if $temp=~/Failed to open/;
-              $message="Required module missing"      if $temp=~/required by/;
-              $message="No such file or directory"    if $temp=~/No such file/;
-              if ($message ne '')
-              {
-                disableSubsys('x', "perfquery error: $message!");
-                $mellanoxFlag=0;
-                $PQuery='';
-		last;
-              }
-            }
-
-            # perfquery IS there and we can execute it w/o error...
-            # Can you believe it?  PQuery writes its version output to stderr!
-            $temp=`$PQuery -V 2>&1`;
-            $temp=~/VERSION: (\d+\.\d+\.\d+)/;
-            $PQVersion=$1;
+          $message="Permission denied"            if $temp=~/Permission denied/;
+          $message="Failed to open IB device"     if $temp=~/Failed to open/;
+          $message="Required module missing"      if $temp=~/required by/;
+          $message="No such file or directory"    if $temp=~/No such file/;
+          if ($message ne '')
+          {
+            disableSubsys('x', "perfquery error: $message!");
+            $mellanoxFlag=0;
+            $PQuery='';
+	    last;
           }
+
+          # perfquery IS there and we can execute it w/o error...
+          # Can you believe it?  PQuery writes its version output to stderr!
+          $temp=`$PQuery -V 2>&1`;
+          $temp=~/VERSION: (\d+\.\d+\.\d+)/;
+          $PQVersion=$1;
 
           # perfquery there, but what is ofed's version?
           # NOTE - looks like RedHat is no longer shipping ofed
-          if ($PQuery ne '')
-	  {
-            if (!-e $OfedInfo)
-            {
-              $OfedInfo=getOfedPath($OfedInfo, 'ofed_info', 'OfedInfo');
-              logmsg('W', "Couldn't find 'ofed_info'.  Won't be able to determine OFED version")
+          if (!-e $OfedInfo)
+          {
+            $OfedInfo=getOfedPath($OfedInfo, 'ofed_info', 'OfedInfo');
+            logmsg('W', "Couldn't find 'ofed_info'.  Won't be able to determine OFED version")
 	          if $OfedInfo eq '';
-            }
+          }
 
-            # Unfortunately the ofed_info that ships with voltaire adds 5 extra
-            # line at front end so let's look at first 10 lines for version.
-            $IBVersion=($OfedInfo ne '' && `$OfedInfo|head -n10`=~/OFED-(.*)/) ? $1 : '???';
-	    print "OFED V: $IBVersion PQ V:$PQVersion\n"    if $debug & 2;
-	  }
+          # Unfortunately the ofed_info that ships with voltaire adds 5 extra
+          # line at front end so let's look at first 10 lines for version.
+          $IBVersion=($OfedInfo ne '' && `$OfedInfo|head -n10`=~/OFED-(.*)/) ? $1 : '???';
         }
-	else
-        {
-  	  $IBVersion=(`head -n1 $VoltaireStats`=~/ibstat\s+(.*)/) ? $1 : '???';
-	  print "Voltaire IB V$IBVersion\n"    if $debug & 2;
-        }
+
+	# last possibility is even though extended stats not in /sys they may still be
+	# available with perfquery so let's see
+	$PQopt = '-x'    if `$PQuery -h 2>&1`=~/--extended/m;
       }
+
+      print "reading extended IB stats from $SysIB\n"                if $debug & 2 && $PQopt eq 'sys';
+      print "OFED V: $IBVersion PQ V:$PQVersion  PQOpt: $PQopt\n"    if $debug & 2 && $PQopt ne 'sys';
     }
 
-    # One last check and this is a doozie!  Because we read IB counters by doing
-    # a read/clear everytime, multiple copies of collectl will step on each other.
+    # One last check and this is a doozie!  Because we do destructive counter access
+    # with perfquery -r, multiple copies of collectl will step on each other.
     # Therefore we can only allow one instance to actually monitor the IB and the
     # first one wins, unless we're trying to start a daemon in which case we let 
     # step on the other [hopefully temporary] instance.  Since there are odd cases
     # where it may not always catch exception, one can override checking in .conf
-    if ($IbDupCheckFlag && $mellanoxFlag)
+    if ($PQopt eq '-r')
     {
       my $myppid=getppid();
       $command="$Ps axo pid,cmd | $Grep collectl | $Grep -vE 'grep|ssh'";
@@ -427,12 +403,6 @@ sub initRecord
         $line=~s/^\s+//;    # some pids have leading white space
         my ($pid, $procCmd)=split(/ /, $line, 2);
         next    if $pid==$$ || $pid==$myppid;   # check ppid in case started by a script
-
-        # There are just too many ways one can specify the subsystems whether it's
-        # overriding the DaemonCommands or SubsysCore in collectl.conf, using an
-        # alternate collectl.conf or specifying --subsys instead of -s  and I'm 
-        # just not going to go there [for now] as it's complicated enough, hence
-        # '$IbDupCheckFlag'
 
         # If not running as a daemon, '$procCmd' has the command invocation string
         # from the 'ps' above.  If a daemon, we need to pull it out of collectl.cont.
@@ -1182,6 +1152,18 @@ sub initFormat
     $processCtxFlag= ($flags=~/x/) ? 1 : 0;
     $cpuDisabledFlag=($flags=~/D/) ? 1 : 0;
 
+    # IB flags a little different becuase various combinations noting we can
+    # have 2 different types of extended counters, from /sys and from perfquery
+    if ($flags=~/[PX]/)
+    {
+      if ($flags=~/PX/)
+      { $PQopt='-x'; }
+      elsif ($flags=~/X/)
+      { $PQopt='sys'; }
+      else
+      { $PQopt='-r'; }
+    }
+
     # If we're not processing CPU data, this message will never be set so
     # just initialized for all cases.
     $cpuDisabledMsg='';
@@ -1198,6 +1180,8 @@ sub initFormat
     $numNets=$1;
     $netNames=$2;
     $NetWidth=$netOptsW;
+
+    undef(@netOrder);
     my $netIndex=0;
     my $interval1=(split(/:/, $interval))[0];
     foreach my $netName (split(/ /, $netNames))
@@ -1257,16 +1241,6 @@ sub initFormat
     $yFlag=$YFlag=1    if $userSubsys=~/y/i;
 
     # This one not always present in header
-    $NumXRails=0;
-    $XType=$XVersion='';
-    if ($header=~/NumXRails:\s+(\d+)\s+XType:\s+(\S*)\s+XVersion:\s+(\S*)/m)
-    {
-      $NumXRails=$1;
-      $XType=$2;
-      $XVersion=$3;
-    }
-
-    # Nor this
     $NumHCAs=0;
     if ($header=~/NumHCAs:\s+(\d+)\s+PortStates:\s+(\S+)/m)
     {
@@ -1438,7 +1412,7 @@ sub initFormat
   # these all need to be initialized in case we use /proc/stats since not all variables
   # supplied by that
 
-  for ($i=0; $i<<$dskIndexNext; $i++)
+  for ($i=0; $i<$dskIndexNext; $i++)
   {
     $dskOps[$i]=$dskTicks[$i]=0;
     $dskRead[$i]=$dskReadKB[$i]=$dskReadMrg[$i]=0;
@@ -1623,18 +1597,16 @@ sub initLast
     $netTxFifoLast[$i]=$netTxCollLast[$i]=$netTxCarLast[$i]=$netTxCmpLast[$i]=0;
   }
 
-  # and interconnect
-  for ($i=0; $i<$NumXRails; $i++)
-  {
-    $elanSendFailLast[$i]=$elanNeterrAtomicLast[$i]=$elanNeterrDmaLast[$i]=0;
-    $elanRxLast[$i]=$elanRxMBLast[$i]=$elanTxLast[$i]=$elanTxMBLast[$i]=0;
-    $elanPutLast[$i]=$elanPutMBLast[$i]=$elanGetLast[$i]=$elanGetMBLast[$i]=0;
-    $elanCompLast[$i]=$elanCompMBLast[$i]=0;
-  }
-
-  # IB
+  # IB - we only need 16 for 32bit counters
   for ($i=0; $i<$NumHCAs; $i++)
   {
+    # in almost all cases we only have 64 bit counters
+    $ibRxLast[$i][1]=$ibRxLast[$i][2]=0;
+    $ibTxLast[$i][1]=$ibTxLast[$i][2]=0;
+    $ibRxKBLast[$i][1]=$ibRxKBLast[$i][2]=0;
+    $ibTxKBLast[$i][1]=$ibTxKBLast[$i][2]=0;
+
+    # maybe some day we can just get rid of these...
     for ($j=0; $j<16; $j++)
     {
       # There are 2 ports on an hca, numbered 1 and 2
@@ -1831,7 +1803,6 @@ sub initDay
   $newDayFlag=1;
   $inactiveOstFlag=0;
   $inactiveMyrinetFlag=0;
-  $inactiveElanFlag=0;
   $inactiveIBFlag=0;
 }
 
@@ -1922,11 +1893,6 @@ sub initInterval
     $lusDiskReadBTot[$i]=$lusDiskWriteBTot[$i]=0;
   }
 
-  $elanSendFailTot=$elanNeterrAtomicTot=$elanNeterrDmaTot=0;
-  $elanRxTot=$elanRxKBTot=$elanTxTot=$elanTxKBTot=$elanErrors=0;
-  $elanPutTot=$elanPutKBTot=$elanGetTot=$elanGetKBTot=0;
-  $elanCompTot=$elanCompKBTot=0;
-
   $ibRxTot=$ibRxKBTot=$ibTxTot=$ibTxKBTot=$ibErrorsTotTot=0;
 
   $slabObjActTotal=$slabObjAllTotal=$slabSlabActTotal=$slabSlabAllTotal=0;
@@ -2013,14 +1979,12 @@ sub intervalEnd
     if ($dskChangeFlag & 2)
     {
       print "Update \@dskOrder\n"    if $debug & 1;
-      print "Update Before: @dskOrder\n";
       @tmpOrder=@dskOrder;
       undef @dskOrder;
       foreach my $disk (@tmpOrder)
       {
         push @dskOrder, $disk    if defined($disks{$disk});
       }
-      print "Update After:  @dskOrder\n";
     }
   }
   $dskSeenLast=$dskSeenCount;
@@ -2166,9 +2130,9 @@ sub dataAnalyze
 
    if ($subsys=~/Z/)
    {
-    # make sure we note this this interval has process data in it and is ready
-    # to be reported.
+    # make sure this interval has process data in it and is ready to be reported.
     $interval2Print=1;
+    $newPidSeen=0;
 
     # Whenever we see a new pid, we need to add to allocate a new index
     # and add it to the hash of indexes PLUS this is where we have to 
@@ -2176,11 +2140,7 @@ sub dataAnalyze
     if (!defined($procIndexes{$procPidNow}))
     {
       $i=$procIndexes{$procPidNow}=nextAvailProcIndex();
-      $procMinFltLast[$i]=$procMajFltLast[$i]=0;
-      $procUTimeLast[$i]=$procSTimeLast[$i]=$procCUTimeLast[$i]=$procCSTimeLast[$i]=0;
-      $procRCharLast[$i]=$procWCharLast[$i]=$procSyscrLast[$i]=	$procSyscwLast[$i]=0;
-      $procRBytesLast[$i]=$procWBytesLast[$i]=$procCancelLast[$i]=0;
-      $procVCtxLast[$i]=$procNCtxLast[$i]=0;
+      $newPidSeen=1;
       print "### new index $i allocated for $procPidNow\n"    if $debug & 256;
     }
 
@@ -2203,7 +2163,60 @@ sub dataAnalyze
        $procUTimeTot[$i], $procSTimeTot[$i], 
        $procCUTimeTot[$i], $procCSTimeTot[$i], $procPri[$i], $procNice[$i], $procTCount[$i], $procSTTime[$i], $procCPU[$i])=
 		(split(/ /, $data))[2,3,4,10,12,14,15,16,17,18,19,20,22,39];
+
+      # I hate hacks and this is a big one, something I also want to keep reasonably
+      # efficient.  For some reason it looks like processes can get greated with an
+      # embedded space in their name which totally screws up the field positions in
+      # stat.  So, if the process name ends in a ) as it should, we're happy but it
+      # not, there are spaces and we need to remove them.
+      if ($procName[$i]!~/\)$/)
+      {
+        $data=~/\((.*)\)/;
+        my $pname=$1;
+        $pname=~s/\s+//g;
+        $data=~s/\(.*\)/($pname)/;
+
+        ($procName[$i], $procState[$i], $procPpid[$i],
+         $procMinFltTot[$i], $procMajFltTot[$i],
+         $procUTimeTot[$i], $procSTimeTot[$i],
+         $procCUTimeTot[$i], $procCSTimeTot[$i], $procPri[$i], $procNice[$i], $procTCount[$i], $procSTTime[$i], $procCPU[$i])=
+                (split(/ /, $data))[2,3,4,10,12,14,15,16,17,18,19,20,22,39];
+      }
+
       return    if !defined($procSTimeTot[$i]);  # check for incomplete
+
+      # very rare, but where there is a high process creation rate, we can end up with a new process
+      # having the same one a different process had during the previous monitoring inteval and the
+      # only way to tell is the process with this pid started at a different time
+      if ($newPidSeen || $procSTTime[$i]!=$procSTTimeLast[$i])
+      {
+        if (!$newPidSeen)
+	{
+	  # since not all processes have a command line OR VM stats, we need to undefine
+	  # the last process's values in case it had them and this one doesn't
+	  undef($procCmd[$i]);
+	  undef($procVmPeak[$i]);
+	  undef($procVmSize[$i]);
+	  undef($procVmLck[$i]);
+	  undef($procVmHWM[$i]);
+	  undef($procVmRSS[$i]);
+	  undef($procVmData[$i]);
+	  undef($procVmStk[$i]);
+	  undef($procVmExe[$i]);
+	  undef($procVmLib[$i]);
+	  undef($procVmPTE[$i]);
+	  undef($procVmSwap[$i]);
+
+	  logmsg('D', "Same pid: $i, Old Start: $procSTTimeLast[$i] New Start: $procSTTime[$i]");
+	}
+
+        $procMinFltLast[$i]=$procMajFltLast[$i]=0;
+        $procUTimeLast[$i]=$procSTimeLast[$i]=$procCUTimeLast[$i]=$procCSTimeLast[$i]=0;
+        $procRCharLast[$i]=$procWCharLast[$i]=$procSyscrLast[$i]=	$procSyscwLast[$i]=0;
+        $procRBytesLast[$i]=$procWBytesLast[$i]=$procCancelLast[$i]=0;
+        $procVCtxLast[$i]=$procNCtxLast[$i]=0;
+      }
+      $procSTTimeLast[$i]=$procSTTime[$i];
 
       # don't incude main process in thread count
       $procTCount[$i]--;
@@ -2459,7 +2472,7 @@ sub dataAnalyze
   elsif ($subsys=~/c|d/i && $type=~/^cpu/)
   {
     $type=~/^cpu(\d*)/;   # can't do above because second "~=" kills $1
-    $cpuIndex=($1 ne "") ? $1 : $NumCpus;    # only happens in pre 1.7.4
+    $cpuIndex=($1 ne "") ? $1 : $NumCpus;
     $cpuEnabled[$cpuIndex]=1;
     $cpusEnabled++    if $cpuIndex != $NumCpus;
     ($userNow, $niceNow, $sysNow, $idleNow, $waitNow, $irqNow, $softNow, $stealNow)=split(/\s+/, $data);
@@ -2505,6 +2518,48 @@ sub dataAnalyze
     $irqLast[$cpuIndex]=  $irqNow;
     $softLast[$cpuIndex]= $softNow;
     $stealLast[$cpuIndex]=$stealNow;
+
+    # this is messy and needs some explanation...  the way cpu average
+    # load currently works is that those values are simply taken from
+    # the 'cpu' field (no explicit number).  BUT when filtering we can't
+    # do that so when we read the last cpu, recalculate the average based
+    # on only those CPUs we're interested in.
+    if ($cpuIndex==$NumCpus-1 && (@cpuFiltKeep || (@cpuFiltIgnore)))
+    {
+      $cpusUsed=0;
+      $cpuIndex=$NumCpus;
+      $userP[$cpuIndex]=$niceP[$cpuIndex]=$sysP[$cpuIndex]=$idleP[$cpuIndex]=0;
+      $waitP[$cpuIndex]=$irqP[$cpuIndex]=$softP[$cpuIndex]=$stealP[$cpuIndex]=0;
+      for (my $i=0; $i<$NumCpus; $i++)
+      {
+        next    if (@cpuFiltKeep && !defined($cpuFiltKeep[$i])) ||
+		   (@cpuFiltIgnore && defined($cpuFiltIgnore[$i]));
+
+	$cpusUsed++;
+	$userP[$cpuIndex]+= $userP[$i];
+	$niceP[$cpuIndex]+= $niceP[$i];
+	$sysP[$cpuIndex]+=  $sysP[$i];
+	$idleP[$cpuIndex]+= $idleP[$i];
+	$waitP[$cpuIndex]+= $waitP[$i];
+	$irqP[$cpuIndex]+=  $irqP[$i];
+	$softP[$cpuIndex]+= $softP[$i];
+	$stealP[$cpuIndex]+=$stealP[$i];
+      }
+
+      # now convert totals of all percents back to averages
+      $userP[$cpuIndex]/= $cpusUsed;
+      $niceP[$cpuIndex]/= $cpusUsed;
+      $sysP[$cpuIndex]/=  $cpusUsed;
+      $idleP[$cpuIndex]/= $cpusUsed;
+      $waitP[$cpuIndex]/= $cpusUsed;
+      $irqP[$cpuIndex]/=  $cpusUsed;
+      $softP[$cpuIndex]/= $cpusUsed;
+      $stealP[$cpuIndex]/=$cpusUsed;
+
+      $totlP[$cpuIndex]=$userP[$cpuIndex]+$niceP[$cpuIndex]+
+		      $sysP[$cpuIndex]+$irqP[$cpuIndex]+
+		      $softP[$cpuIndex]+$stealP[$cpuIndex];
+    }
   }
 
   elsif ($subsys=~/c/ && $type=~/^load/)
@@ -3146,7 +3201,7 @@ sub dataAnalyze
       $fields[1]=-1             if $fields[1] eq '' || $fields[1] eq 'no reading';
 
       # If any last minute name remapping, this is the place for it
-      for (my $i=0; defined(@$ipmiRemap) && $i<@{$ipmiRemap}; $i++)
+      for (my $i=0; defined($ipmiRemap) && $i<@{$ipmiRemap}; $i++)
       {
         my $p1=$ipmiRemap->[$i]->[1];
         my $p2=$ipmiRemap->[$i]->[2];
@@ -3645,13 +3700,13 @@ sub dataAnalyze
     }
     elsif ($type=~/^pswpin/)
     {
-      $swapinNow=$data;
+      $swapinNow=$data*$PageSize;
       $swapin=fix($swapinNow-$swapinLast);
       $swapinLast=$swapinNow;
     }
     elsif ($type=~/^pswpout/)
     {
-      $swapoutNow=$data;
+      $swapoutNow=$data*$PageSize;
       $swapout=fix($swapoutNow-$swapoutLast);
       $swapoutLast=$swapoutNow;
     }
@@ -4166,166 +4221,106 @@ sub dataAnalyze
     }
   }
 
-  #    E L A N    S t a t s
-
-  # we have to test the subsys first becaue $1 gets trashed if first
-  elsif ($subsys=~/x/i && $type=~/^Elan(\d+)/)
-  {
-    $i=$1;
-    if ($XVersion lt '5.20.0')
-    {
-      ($name, $value)=(split(/\s+/, $data))[0,1]    if $XVersion;
-    }
-    else
-    {
-      ($value, $name)=(split(/\s+/, $data))[0,1]    if $XVersion;
-    }
-
-    if ($value=~/^Send/ || $name=~/^Send/)
-    {
-      ($elanSendFail, $elanNeterrAtomic, $elanNeterrDma)=(split(/\s+/, $data))[1,3,5];
-      $elanSendFail[$i]=    fix($elanSendFail-$elanSendFailLast[$i]);
-      $elanNeterrAtomic[$i]=fix($elanNeterrAtomic-$elanNeterrAtomicLast[$i]);
-      $elanNeterrDma[$i]=   fix($elanNeterrDma-$elanNeterrDmaLast[$i]);
-
-      $elanSendFailTot+=    $elanSendFail[$i];
-      $elanNeterrAtomicTot+=$elanNeterrAtomic[$i];
-      $elanNeterrDmaTot+=   $elanNeterrDma[$i];
-
-      $elanSendFailLast[$i]=    $elanSendFail;
-      $elanNeterrAtomicLast[$i]=$elanNeterrAtomic;
-      $elanNeterrDmaLast[$i]=   $elanNeterrDma;
-    }
-    elsif ($name=~/^Rx/)
-    {  
-      $elanRx[$i]=    fix($value-$elanRxLast[$i]);
-      $elanRxLast[$i]=$value;
-      $elanRxTot=     $elanRx[$i];
-      $elanRxFlag=1;
-      $elanTxFlag=$elanPutFlag=$elanGetFlag=$elanCompFlag=0;
-    }
-    elsif ($name=~/^Tx/)
-    {
-      $elanTx[$i]=    fix($value-$elanTxLast[$i]);
-      $elanTxLast[$i]=$value;
-      $elanTxTot=     $elanTx[$i];
-      $elanTxFlag=1;
-      $elanRxFlag=$elanPutFlag=$elanGetFlag=$elanCompFlag=0;
-    }
-    elsif ($name=~/^Put/)
-    {
-      $elanPut[$i]=    fix($value-$elanPutLast[$i]);
-      $elanPutLast[$i]=$value;
-      $elanPutTot=     $elanPut[$i];
-      $elanPutFlag=1;
-      $elanTxFlag=$elanRxFlag=$elanGetFlag=$elanCompFlag=0;
-    }
-    elsif ($name=~/^Get/)
-    {
-      $elanGet[$i]=    fix($value-$elanGetLast[$i]);
-      $elanGetLast[$i]=$value;
-      $elanGetTot=     $elanGet[$i];
-      $elanGetFlag=1;
-      $elanTxFlag=$elanRxFlag=$elanPutFlag=$elanCompFlag=0;
-    }
-    elsif ($name=~/^Comp/)
-    {
-      $elanComp[$i]=    fix($value-$elanCompLast[$i]);
-      $elanCompLast[$i]=$value;
-      $elanCompTot=     $elanComp[$i];
-      $elanCompFlag=1;
-      $elanTxFlag=$elanRxFlag=$elanPutFlag=$elanGetFlag=0;
-    }
-    elsif ($name=~/^MB/)
-    {
-      # NOTE - elan reports data in MB but we want it in KB to be
-      #        consistent with other interconects
-      if ($elanRxFlag)
-      {      
-        $elanRxMB=        fix($value-$elanRxMBLast[$i], $OneMB);
-        $elanRxMBLast[$i]=$value;
-        $elanRxKB[$i]=    $elanRxMB*1024;
-        $elanRxKBTot=     $elanRxKB[$i];
-      }
-      elsif ($elanTxFlag)
-      {
-        $elanTxMB=        fix($value-$elanTxMBLast[$i], $OneMB);
-        $elanTxMBLast[$i]=$value;
-	$elanTxKB[$i]=    $elanTxMB*1024;
-        $elanTxKBTot=     $elanTxKB[$i];
-      }
-      elsif ($elanPutFlag)
-      {      
-        $elanPutMB=        fix($value-$elanPutMBLast[$i], $OneMB);
-        $elanPutMBLast[$i]=$value;
-        $elanPutKB[$i]=    $elanPutMB*1024;
-        $elanPutKBTot=     $elanPutKB[$i];
-      }
-      elsif ($elanGetFlag)
-      {      
-        $elanGetMB=        fix($value-$elanGetMBLast[$i], $OneMB);
-        $elanGetMBLast[$i]=$value;
-        $elanGetKB[$i]=    $elanGetMB*1024;
-        $elanGetKBTot=     $elanGetKB[$i];
-      }
-      elsif ($elanCompFlag)
-      {      
-        $elanCompMB=        fix($value-$elanCompMBLast[$i], $OneMB);
-        $elanCompMBLast[$i]=$value;
-        $elanCompKB[$i]=    $elanCompMB*1024;
-        $elanCompKBTot=     $elanCompKB[$i];
-      }
-      else
-      {
-        logmsg("W", "### Found elan MB without type flag set");
-      }
-    }
-  }
-
   #    I n f i n i b a n d    S t a t s
 
-  # we have to test the subsys first becaue $1 gets trashed if first
-  elsif ($subsys=~/x/i && $type=~/^ib(\d+)/)
+  elsif ($subsys=~/x/i && $type=~/^ib(\d+)-(\d):(\S*)/)
   {
-    $i=$1;
-    my ($port, @fieldsNow)=(split(/\s+/, $data))[0,4..19];
-
-    # Only 1 of the two ports are actually active at any one time
-    if ($HCAPorts[$i][$port])
+    my $i=$1;
+    my $port=$2;
+    my $name=$3;
+    if ($PQopt eq 'sys')
     {
-      # Remember which port is active.
-      $HCAPortActive=$port;
+      if ($name eq 'rcvd')
+      {
+        $ibRxKB[$i]=fix($data-$ibRxKBLast[$i][$port])/256;
+	$ibRxKBLast[$i][$port]=$data;
+        $ibRxKBTot+=$ibRxKB[$i];
+      }
 
-      # Calculate values for each field based on 'last' values.
-      $ibErrorsTot[$i]=0;
-      for ($j=0; $j<16; $j++)
+      elsif ($name eq 'xmtd')
+      {
+        $ibTxKB[$i]=fix($data-$ibTxKBLast[$i][$port])/256;
+	$ibTxKBLast[$i][$port]=$data;
+        $ibTxKBTot+=$ibTxKB[$i];
+      }
+
+      elsif ($name eq 'rcvp')
+      {
+        $ibRx[$i]=fix($data-$ibRxLast[$i][$port]);
+	$ibRxLast[$i][$port]=$data;
+        $ibRxTot+=$ibRx[$i];
+      }
+
+      elsif ($name eq 'xmtp')
+      {
+        $ibTx[$i]=fix($data-$ibTxLast[$i][$port]);
+	$ibTxLast[$i][$port]=$data;
+        $ibTxTot+=$ibTx[$i];
+      }
+   }
+
+    elsif ($PQopt eq '-r')
+    {
+      my ($port, @fieldsNow)=(split(/\s+/, $data))[0,4..19];
+
+      # Only 1 of the two ports are actually active at any one time
+      if ($HCAPorts[$i][$port])
+      {
+        $ibErrorsTot[$i]=0;
+        for ($j=0; $j<16; $j++)
+        {
+          $fields[$j]=fix($fieldsNow[$j]-$ibFieldsLast[$i][$port][$j]);
+          $ibFieldsLast[$i][$port][$j]=$fieldsNow[$j];
+
+          # the first 12 are accumulated as a single error count and ultimately
+          # reporting as anbsolute number and NOT a rate so don't use 'last'
+          $ibErrorsTot[$i]+=$fieldsNow[$j]    if $j<12;
+	}
+
+        # these are already absolute since they're reset after reading
+        $ibTxKB[$i]=$fieldsNow[12]/256;
+        $ibTx[$i]=  $fieldsNow[14];
+        $ibRxKB[$i]=$fieldsNow[13]/256;
+        $ibRx[$i]=  $fieldsNow[15];
+      }
+      $ibTxKBTot+=$ibTxKB[$i];
+      $ibTxTot+=  $ibTx[$i];
+      $ibRxKBTot+=$ibRxKB[$i];
+      $ibRxTot+=  $ibRx[$i];
+      $ibErrorsTotTot+=$ibErrorsTot[$i];
+    }
+
+    else
+    {
+      $numFields=($PQopt eq 'r') ? 19 : 7;
+      my ($port, @fieldsNow)=(split(/\s+/, $data))[0,4..$numFields];
+
+      for ($j=0; $j<$numFields-4; $j++)
       {
         $fields[$j]=fix($fieldsNow[$j]-$ibFieldsLast[$i][$port][$j]);
         $ibFieldsLast[$i][$port][$j]=$fieldsNow[$j];
 
-        # the first 12 are accumulated as a single error count and ultimately
-        # reporting as anbsolute number and NOT a rate so don't use 'last'
-        $ibErrorsTot[$i]+=$fieldsNow[$j]    if $j<12;
+        # this only applies to regular counters, but the first 12 are
+	# accumulated as a single error count and ultimately reporting
+	# as anbsolute number and NOT a rate so don't use 'last'
+        $ibErrorsTot[$i]+=$fieldsNow[$j]    if $PQopt eq 'r' && $j<12;
       }
 
-      # Do individual counters, noting that the open fabric one has '-port' appended
-      # and that their values are alredy absolute and not incrementing counters that
-      # that need to be adjusted agaist previous versions
-      if ($type=~/^ib(\d+)-(\d)/)
+      if ($PQopt eq '-r')    # these are always reset and so always start at 0
       {
         $ibTxKB[$i]=$fieldsNow[12]/256;
         $ibTx[$i]=  $fieldsNow[14];
         $ibRxKB[$i]=$fieldsNow[13]/256;
         $ibRx[$i]=  $fieldsNow[15];
       }
-      else
+      else    # these are the extended counters and never start at 0
       {
-        $ibTxKB[$i]=$fields[12]/256;
-        $ibTx[$i]=  $fields[14];
-        $ibRxKB[$i]=$fields[13]/256;
-        $ibRx[$i]=  $fields[15];
-      }
+        $ibTxKB[$i]=$fields[0]/256;
+        $ibTx[$i]=  $fields[2];
+        $ibRxKB[$i]=$fields[1]/256;
+        $ibRx[$i]=  $fields[2];
 
+      }
       $ibTxKBTot+=$ibTxKB[$i];
       $ibTxTot+=  $ibTx[$i];
       $ibRxKBTot+=$ibRxKB[$i];
@@ -4453,7 +4448,7 @@ sub printPlotHeaders
 
   if ($subsys=~/x/)
   {
-    my $int=($NumXRails) ? 'ELAN' : 'IB';
+    my $int='IB';
     $headers.="[$int]InPkt${SEP}[$int]OutPkt${SEP}[$int]InKB${SEP}[$int]OutKB${SEP}[$int]Err${SEP}";
   }
 
@@ -4498,7 +4493,7 @@ sub printPlotHeaders
   # common header.
 
   $cpuHeaders=$dskHeaders=$envHeaders=$nfsHeaders=$netHeaders='';
-  $ostHeaders=$mdsHeaders=$cltHeaders=$tcpHeaders=$elanHeaders='';
+  $ostHeaders=$mdsHeaders=$cltHeaders=$tcpHeaders='';
 
   # Whenever we print a header to a file, we do both the common header
   # and date/time.  Remember, if we're printing the terminal, this is
@@ -4509,6 +4504,9 @@ sub printPlotHeaders
   { 
     for ($i=0; $i<$NumCpus; $i++)
     {
+      next    if (@cpuFiltKeep && !defined($cpuFiltKeep[$i])) ||
+      	         (@cpuFiltIgnore && defined($cpuFiltIgnore[$i]));
+
       $cpuHeaders.="[CPU:$i]User%${SEP}[CPU:$i]Nice%${SEP}[CPU:$i]Sys%${SEP}";
       $cpuHeaders.="[CPU:$i]Wait%${SEP}[CPU:$i]Irq%${SEP}[CPU:$i]Soft%${SEP}";
       $cpuHeaders.="[CPU:$i]Steal%${SEP}[CPU:$i]Idle%${SEP}[CPU:$i]Totl%${SEP}";
@@ -4748,15 +4746,6 @@ sub printPlotHeaders
       { $tcpHeaders.="[TCPD]$header$SEP"; }
     }
     writeData(0, $ch, \$tcpHeaders, TCP, $ZTCP, 'tcp', \$headersAll);
-  }
-
-  if ($subsys=~/X/ && $NumXRails)
-  {
-    for ($i=0; $i<$NumXRails; $i++)
-    {
-      $elanHeaders.="[ELAN:$i]Rail${SEP}[ELAN:$i]Rx${SEP}[ELAN:$i]Tx${SEP}[ELAN:$i]RxKB${SEP}[ELAN:$i]TxKB${SEP}[ELAN:$i]Get${SEP}[ELAN:$i]Put${SEP}[ELAN:$i]GetKB${SEP}[ELAN:$i]PutKB${SEP}[ELAN:$i]Comp${SEP}[ELAN:$i]CompKB${SEP}[ELAN:$i]SendFail${SEP}[ELAN:$i]Atomic${SEP}[ELAN:$i]DMA${SEP}";
-    }
-    writeData(0, $ch, \$elanHeaders, ELN, $ZELN, 'eln', \$headersAll);
   }
 
   if ($subsys=~/X/ && $NumHCAs)
@@ -5085,20 +5074,10 @@ sub printPlot
       }
     }
 
-    #ELAN
-    if ($subsys=~/x/ && $NumXRails)
-    {
-      $elanErrors=$elanSendFailTot+$elanNeterrAtomicTot+$elanNeterrDmaTot;
-      $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
-		$elanRxTot/$intSecs,   $elanTxTot/$intSecs,
-		$elanRxKBTot/$intSecs, $elanTxKBTot/$intSecs,
-		$elanErrors/$intSecs);
-    }
-
     # INFINIBAND
-    # Now if 'x' specified and neither ELAN or IB, we still want to print all 0s so lets
-    # do it here (we could have done it in the ELAN routines is we wanted to).
-    if ($subsys=~/x/ && ($NumHCAs || ($NumHCAs==0 && $NumXRails==0)))
+    # Now if 'x' specified and no IB, we still want to print all 0s so lets
+    # do it here
+    if ($subsys=~/x/ && $NumHCAs)
     {
       $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
 		$ibRxTot/$intSecs,   $ibTxTot/$intSecs,
@@ -5155,6 +5134,9 @@ sub printPlot
     $cpuPlot='';
     for ($i=0; $i<$NumCpus; $i++)
     {
+      next    if (@cpuFiltKeep && !defined($cpuFiltKeep[$i])) ||
+      	         (@cpuFiltIgnore && defined($cpuFiltIgnore[$i]));
+
       $cpuPlot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
                 $userP[$i], $niceP[$i],  $sysP[$i],  $waitP[$i], $irqP[$i],  
                 $softP[$i], $stealP[$i], $idleP[$i], $totlP[$i], $intrptTot[$i]/$intSecs);
@@ -5489,21 +5471,6 @@ sub printPlot
   #    I n t e r c o n n e c t
   ############################
 
-  # Quadrics
-  if ($subsys=~/X/ && $NumXRails)
-  {
-    $elanPlot='';
-    for ($i=0; $i<$NumXRails; $i++)
-    {
-      $elanPlot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
-	$elanRx[$i], $elanTx[$i], $elanRxKB[$i], $elanTxKB[$i],
-	$elanGet[$i], $elanPut[$i], $elanGetKB[$i], $elanPutKB[$i], 
-	$elanComp[$i], $elanCompKB[$i],
-	$elanSendFail[$i], $elanNeterrAtomic[$i], $elanNeterrDma[$i]);
-    }
-    writeData(0, $datetime, \$elanPlot, ELN, $ZELN, 'eln', \$oneline);
-  }
-
   # INFINIBAND
   if ($subsys=~/X/ && $NumHCAs)
   {
@@ -5805,9 +5772,14 @@ sub printTerm
     {
       for ($i=0; $i<$NumCpus; $i++)
       {
-        # skip idle CPUs if --cpuopts z specified.  I'm rather check for idle==100% but some kernels don't
+        # skip idle CPUs if --cpuopts z specified.  I'd rather check for idle==100% but some kernels don't
 	# always increment counts and there are actually idle cpus with values of 0 here.
         next    if $cpuOpts=~/z/ && $userP[$i]+$niceP[$i]+$sysP[$i]+$waitP[$i]+$irqP[$i]+$softP[$i]+$stealP[$i]==0;
+
+	# apply filters if specified
+	next    if (@cpuFiltKeep && !defined($cpuFiltKeep[$i])) ||
+		   (@cpuFiltIgnore && defined($cpuFiltIgnore[$i]));
+
         $line=sprintf("$datetime   %4d   %3d  %3d  %3d  %3d  %3d  %3d   %3d  %3d",
            $i, 
            $userP[$i], $niceP[$i], $sysP[$i],   $waitP[$i], 
@@ -5821,6 +5793,7 @@ sub printTerm
   # Only meaningful when Interrupts not combined with -sC
   if ($subsys=~/j/ && !$CFlag)
   {
+    # note we skip cpu when filtering
     if (printHeader())
     {
       printText("\n")    if !$homeFlag;
@@ -5828,6 +5801,9 @@ sub printTerm
       my $oneline="#$miniDateTime ";
       for (my $i=0; $i<$NumCpus; $i++)
       {
+        next    if (@cpuFiltKeep && !defined($cpuFiltKeep[$i])) ||
+		   (@cpuFiltIgnore && defined($cpuFiltIgnore[$i]));
+
         my $cpuname=($cpuEnabled[$i]) ? "Cpu$i" : "CpuX";
         $oneline.=sprintf(" %6s", $cpuname);
       }
@@ -5838,6 +5814,9 @@ sub printTerm
     my $oneline="$datetime  ";
     for (my $i=0; $i<$NumCpus; $i++)
     {
+      next    if (@cpuFiltKeep && !defined($cpuFiltKeep[$i])) ||
+      	         (@cpuFiltIgnore && defined($cpuFiltIgnore[$i]));
+
       $oneline.=sprintf(" %6d", $intrptTot[$i]);
     }
     printText("$oneline\n");
@@ -5854,6 +5833,9 @@ sub printTerm
 
       for (my $i=0; $i<$NumCpus; $i++)
       {
+        next    if (@cpuFiltKeep && !defined($cpuFiltKeep[$i])) ||
+		   (@cpuFiltIgnore && defined($cpuFiltIgnore[$i]));
+
         my $cpuname=($cpuEnabled[$i] || $subsys!~/c/i) ? "Cpu$i" : "CpuX";
         $oneline.=sprintf(" %6s", $cpuname);
       }
@@ -5869,6 +5851,8 @@ sub printTerm
       for (my $i=0; $i<$NumCpus; $i++)
       {
         next    if $key eq 'ERR' || $key eq 'MIS';
+	next    if (@cpuFiltKeep && !defined($cpuFiltKeep[$i])) ||
+		   (@cpuFiltIgnore && defined($cpuFiltIgnore[$i]));
 
         my $ints=($key=~/^\d/) ? $intrpt[$key]->[$i]/$intSecs : $intrpt{$key}->[$i]/$intSecs;
         $oneline.=sprintf("%6d ", $ints);
@@ -6834,6 +6818,7 @@ sub printTerm
       exit(0)    if $showColFlag;
     }
 
+    my $idx=0;
     for ($o=0; $o<@netOrder; $o++)
     {
       # since we want to print in the discovery order, we need to turn the next 
@@ -6848,7 +6833,7 @@ sub printTerm
       if ($netOpts!~/e/)
       {
         $line=sprintf("$datetime %3d  %${NetWidth}s %6d %6d %6d %6d %6d %6d %6d %6d %6d %6d %6d\n",
-	      $i, $netName, 
+	      $idx, $netName,
 	      $netRxKB[$i]/$intSecs,  $netRxPkt[$i]/$intSecs, $netRxPkt[$i] ? $netRxKB[$i]*1024/$netRxPkt[$i] : 0,
               $netRxMlt[$i]/$intSecs, $netRxCmp[$i]/$intSecs, $netRxErrs[$i]/$intSecs,
               $netTxKB[$i]/$intSecs,  $netTxPkt[$i]/$intSecs, $netTxPkt[$i] ? $netTxKB[$i]*1024/$netTxPkt[$i] : 0,
@@ -6857,12 +6842,13 @@ sub printTerm
       else
       {
         $line=sprintf("$datetime %3d  %${NetWidth}s %7d %7d %7d %7d   %7d %7d %7d %7d %7d\n",
-	      $i, $netName[$i], 
+	      $idx, $netName[$i],
 	      $netRxErr[$i]/$intSecs,  $netRxDrp[$i]/$intSecs, $netRxFifo[$i]/$intSecs, $netRxFra[$i]/$intSecs,
 	      $netTxErr[$i]/$intSecs,  $netTxErr[$i]/$intSecs, $netTxDrp[$i]/$intSecs,  $netTxFifo[$i]/$intSecs,
               $netTxColl[$i]/$intSecs, $netTxCar[$i]/$intSecs);
       }
       printText($line)    if $netOpts!~/E/ || $netErrors;
+      $idx++;
     }
   }
 
@@ -7024,24 +7010,6 @@ sub printTerm
 
   if ($subsys=~/x/)
   {
-    if ($NumXRails)
-    {
-      if (printHeader())
-      {
-        printText("\n")    if !$homeFlag;
-        printText("# ELAN4 SUMMARY ($rate)\n");
-        printText("#${miniDateTime}OpsIn OpsOut   KBIn  KBOut Errors\n");
-        exit(0)    if $showColFlag;
-      }
-
-      $elanErrors=$elanSendFailTot+$elanNeterrAtomicTot+$elanNeterrDmaTot;
-      $line=sprintf("$datetime%6d %6d %6d %6d %6d\n",
-	$elanRxTot/$intSecs,   $elanTxTot/$intSecs,
-	$elanRxKBTot/$intSecs, $elanTxKBTot/$intSecs,
-	$elanErrors/$intSecs);
-      printText($line);
-    }
-
     if ($NumHCAs)
     {
       if (printHeader())
@@ -7062,31 +7030,6 @@ sub printTerm
 
   if ($subsys=~/X/)
   {
-    if ($NumXRails)
-    {
-      if (printHeader())
-      {
-        printText("\n")    if !$homeFlag;
-        printText("# ELAN4 STATISTICS ($rate)\n");
-        printText("#${miniDateTime}Rail  OpsIn OpsOut  KB-In KB-Out OpsGet OpsPut KB-Get KB-Put   Comp CompKB SndErr AtmErr DmsErr\n");
-        exit(0)    if $showColFlag;
-      }
-
-      for ($i=0; $i<$NumXRails; $i++)
-      {
-        $line=sprintf("$datetime %4d %6d %6d %6d %6d %6d %6d %6d %6d %6d %6d %6d %6d %6d\n",
-	  $i, 
-	  $elanRx[$i]/$intSecs,       $elanTx[$i]/$intSecs,
-	  $elanRxKB[$i]/$intSecs,     $elanTxKB[$i]/$intSecs, 
-	  $elanGet[$i]/$intSecs,      $elanPut[$i]/$intSecs,
-	  $elanGetKB[$i]/$intSecs,    $elanPutKB[$i]/$intSecs, 
-	  $elanComp[$i]/$intSecs,     $elanCompKB[$i]/$intSecs, 
-	  $elanSendFail[$i]/$intSecs, $elanNeterrAtomic[$i]/$intSecs, 
-	  $elanNeterrDma[$i]/$intSecs);
-        printText($line);
-      }
-    }
-
     if ($NumHCAs)
     {
       if (printHeader())
@@ -7099,11 +7042,13 @@ sub printTerm
 
       for ($i=0; $i<$NumHCAs; $i++)
       {
-        $line=sprintf("$datetime  %2d %7d %7d %7d %7d %7d %7d %7d\n",
+        $line=sprintf("$datetime  %2d %7s %7s %7s %7s %7s %7s %7s\n",
 	  $i,
-	  $ibRxKB[$i]/$intSecs, $ibRx[$i]/$intSecs, $ibRx[$i] ? $ibRxKB[$i]/$ibRx[$i] : 0,
-	  $ibTxKB[$i]/$intSecs, $ibTx[$i]/$intSecs, $ibTx[$i] ? $ibTxKB[$i]/$ibTx[$i] : 0,
-	  $ibErrorsTot[$i]);
+          cvt($ibRxKB[$i]/$intSecs,7,0,1), cvt($ibRx[$i]/$intSecs,6),
+          $ibRx[$i] ? cvt($ibRxKB[$i]*1024/$ibRx[$i],4,0,1) : 0,
+          cvt($ibTxKB[$i]/$intSecs,7,0,1), cvt($ibTx[$i]/$intSecs,6),
+          $ibTx[$i] ? cvt($ibTxKB[$i]*1024/$ibTx[$i],4,0,1) : 0,
+          cvt($ibErrorsTot[$i],4));
         printText($line);
       }
     }
@@ -7449,7 +7394,7 @@ sub printTermProc
 	} elsif ($topType eq 'cpu') {
   	  $accum=$NumCpus-$procCPU[$ipid];   # to sort ascending
 	} elsif ($topType eq 'syst') {
-          $accum=$procUTime[$ipid];
+          $accum=$procSTime[$ipid];
 	} elsif ($topType eq 'usrt') {
           $accum=$procUTime[$ipid];
 	} elsif ($topType eq 'time') {
@@ -7641,8 +7586,7 @@ sub printTermProc
 # *** warning ***  It appears that partition 'use' counters wrap at wordsize/100 
 # on an ia32 (these are pretty pesky to actually catch).  There may be more and 
 # they may behave differently on different architectures (though I tend to doubt 
-# it) so the best we can do is deal with them when we see them.  It also looks like
-#  elan counters are divided by 1MB before reporting so we have to deal with them too
+# it) so the best we can do is deal with them when we see them.
 sub fix
 {
   my $counter=shift;
@@ -8009,7 +7953,21 @@ sub printBrief
     $line.="<----${fill1}CPU$Hyper$fill2---->"     if $subsys=~/c/;
     if ($subsys=~/j/)
     {
-      my $num=int(($NumCpus-1)*5/2);
+      my $numCpus=$NumCpus;    # number of cpus to display usually all of them
+
+      # if doing CPU filtering, we only want those of interest in the header
+      if (@cpuFiltIgnore || @cpuFiltKeep)
+      {
+        $numCpus=0;
+	for (my $i=0; $i<$NumCpus; $i++)
+	{
+	  next    if (@cpuFiltKeep && !defined($cpuFiltKeep[$i])) ||
+	  	      (@cpuFiltIgnore && defined($cpuFiltIgnore[$i]));
+	  $numCpus++;
+	}
+      }
+
+      my $num=int(($numCpus-1)*5/2);
       my $pad1='-'x$num;
       my $pad2=$pad1;
       $line.="<${pad1}Int$pad2->";
@@ -8054,9 +8012,8 @@ sub printBrief
     $line.=$tcp1                                       if $subsys=~/t/;
     $line.="<------Sockets----->"                      if $subsys=~/s/;
     $line.="<----Files--->"                            if $subsys=~/i/;
-    $line.="<---------------Elan------------->"        if $subsys=~/x/ && $NumXRails;
-    $line.="<-----------InfiniBand----------->"        if $subsys=~/x/ && ($NumHCAs || $NumHCAs+$NumXRails==0) && (!$ioSizeFlag && $xOpts!~/i/);
-    $line.="<----------------InfiniBand---------------->" if $subsys=~/x/ && ($NumHCAs || $NumHCAs+$NumXRails==0) && ($ioSizeFlag || $xOpts=~/i/);
+    $line.="<-----------InfiniBand----------->"        if $subsys=~/x/ && $NumHCAs && (!$ioSizeFlag && $xOpts!~/i/);
+    $line.="<----------------InfiniBand---------------->" if $subsys=~/x/ && $NumHCAs && ($ioSizeFlag || $xOpts=~/i/);
 
     # probably a better way to handle iosize too
     $line=~s/Network/---Network---/    if $netOpts=~/e/;
@@ -8098,18 +8055,26 @@ sub printBrief
 
     if ($subsys=~/j/)
     {
-      # If < 10 cpus, use header of 'Cpu'.  otherwiswe use 'Cp', 'C' or just the number.
-      # Naturally if more than a couple of dozen we'll need a very wide monitor.
-      $line.=sprintf("Cpu%d "x($NumCpus>10?10:$NumCpus),        0..$NumCpus);
-      $line.=sprintf("Cp%d "x($NumCpus>100?90:$NumCpus-10),    10..$NumCpus);
-      $line.=sprintf("C%d "x($NumCpus>1000?900:$NumCpus-100), 100..$NumCpus);
-      $line.=sprintf("%d "x($NumCpus-1000),                  1000..$NumCpus);
+      # more ugliness caused by cpu filtering
+      for (my $i=0; $i<$NumCpus; $i++)
+      {
+        next    if (@cpuFiltKeep && !defined($cpuFiltKeep[$i])) ||
+		   (@cpuFiltIgnore && defined($cpuFiltIgnore[$i]));
+
+        $line.=sprintf("Cpu%d ", $i)    if $i<10;
+        $line.=sprintf("Cp%d ", $i)     if $i>9 &&  $i<100;
+        $line.=sprintf("C%d ", $i)      if $i>99 && $i<1000;
+        $line.=sprintf("%d ", $i)       if $i>999;
+      }
 
       # Rare, but if a cpu is offline, change its name in the header
       if ($cpusDisabled)
       {
 	for (my $i=0; $i<$NumCpus; $i++)
         {
+	  next    if (@cpuFiltKeep && !defined($cpuFiltKeep[$i])) ||
+	  	     (@cpuFiltIgnore && defined($cpuFiltIgnore[$i]));
+
 	  $line=~s/Cpu$i/CpuX/    if !$cpuEnabled[$i];
 	  $line=~s/Cp$i/CpXX/     if !$cpuEnabled[$i] && length($i)==2;
 	  $line=~s/C$i/CXXX/      if !$cpuEnabled[$i] && length($i)==3;
@@ -8138,9 +8103,8 @@ sub printBrief
     $line.=$tcp2                                     if $subsys=~/t/;
     $line.=" Tcp  Udp  Raw Frag "                    if $subsys=~/s/;
     $line.="Handle Inodes "                          if $subsys=~/i/;
-    $line.="   KBIn  PktIn   KBOut PktOut Errs "     if $subsys=~/x/ && $NumXRails;
-    $line.="   KBIn  PktIn   KBOut PktOut Errs "     if $subsys=~/x/ && ($NumHCAs || $NumHCAs+$NumXRails==0) && (!$ioSizeFlag && $xOpts!~/i/);
-    $line.="   KBIn  PktIn Size   KBOut PktOut Size Errs " if $subsys=~/x/ && ($NumHCAs || $NumHCAs+$NumXRails==0) && ($ioSizeFlag || $xOpts=~/i/);
+    $line.="   KBIn  PktIn   KBOut PktOut Errs "     if $subsys=~/x/ && $NumHCAs && (!$ioSizeFlag && $xOpts!~/i/);
+    $line.="   KBIn  PktIn Size   KBOut PktOut Size Errs " if $subsys=~/x/ && $NumHCAs && ($ioSizeFlag || $xOpts=~/i/);
     $line.=" Reads Writes Meta Comm "                 if $subsys=~/f/;
 
     if ($subsys=~/l/ && $reportMdsFlag) 
@@ -8187,6 +8151,9 @@ sub printBrief
   {
     for (my $i=0; $i<$NumCpus; $i++)
     {
+      next    if (@cpuFiltKeep && !defined($cpuFiltKeep[$i])) ||
+      	         (@cpuFiltIgnore && defined($cpuFiltIgnore[$i]));
+
       $line.=sprintf("%4s ", cvt($intrptTot[$i]/$intSecs,4,0,0));
     }
   }
@@ -8290,18 +8257,9 @@ sub printBrief
     $line.=sprintf("%6s %6s ", cvt($filesAlloc, 6), cvt($inodeUsed, 6));
   }
 
-  # and so is elan
   if ($subsys=~/x/)
   {
-    if ($NumXRails)
-    {
-      $elanErrors=$elanSendFailTot+$elanNeterrAtomicTot+$elanNeterrDmaTot;
-      $line.=sprintf("%7s %6s %7s %6s %4s ",
-          cvt($elanRxKBTot/$intSecs,7,0,1), cvt($elanRxTot/$intSecs,6),
-          cvt($elanTxKBTot/$intSecs,7,0,1), cvt($elanTxTot/$intSecs,6),
-	  cvt($elanErrors/$intSecs,4));
-    }
-    if ($NumHCAs || $NumXRails+$NumHCAs==0)
+    if ($NumHCAs)
     {
       if (!$ioSizeFlag && $xOpts!~/i/)
       {
@@ -8443,7 +8401,6 @@ sub resetBriefCounters
   $tcpIpErrTOT=$tcpIcmpErrTOT=$tcpTcpErrTOT=$tcpUdpErrTOT=$tcpTcpExErrTOT=0;
   $sockUsedTOT=$sockUdpTOT=$sockRawTOT=$sockFragTOT=0;
   $filesAllocTOT=$inodeUsedTOT=0;
-  $elanRxKBTOT=$elanRxTOT=$elanTxKBTOT=$elanTxTOT=$elanErrorsTOT=0;
   $ibRxKBTOT=$ibRxTOT=$ibTxKBTOT=$ibTxTOT=$ibErrorsTOT=0;
   $nfsReadsTOT=$nfsWritesTOT=$nfsMetaTOT=$nfsCommitTOT=0;
   $lustreMdsGetattrPlusTOT=$lustreMdsSetattrPlusTOT=$lustreMdsSyncTOT=0;
@@ -8521,12 +8478,6 @@ sub countBriefCounters
 
   $filesAllocTOT+= $filesAlloc;
   $inodeUsedTOT+=  $inodeUsed;
-
-  $elanRxKBTOT+=   $elanRxKBTot;
-  $elanRxTOT+=     $elanRxTot;
-  $elanTxKBTOT+=   $elanTxKBTot;
-  $elanTxTOT+=     $elanTxTot;
-  $elanErrorsTOT+= $elanErrors;
 
   $ibRxKBTOT+=     $ibRxKBTot;
   $ibRxTOT+=       $ibRxTot;
@@ -8607,6 +8558,9 @@ sub printBriefCounters
   {
     for (my $i=0; $i<$NumCpus; $i++)
     {
+      next    if (@cpuFiltKeep && !defined($cpuFiltKeep[$i])) ||
+      	         (@cpuFiltIgnore && defined($cpuFiltIgnore[$i]));
+
       printf "%4s ", cvt($intrptTOT[$i]/$totSecs,4,0,0);
     }
   }
@@ -8693,12 +8647,6 @@ sub printBriefCounters
 
   printf "%6s %6s ", cvt($filesAllocTOT/$mi, 6), cvt($inodeUsedTOT/$mi, 6)
 		  if $subsys=~/i/;
-
-  printf "%7s %6s %7s %6s %6s ", 
-	cvt($elanRxKBTOT/$totSecs,6,0,1), cvt($elanRxTOT/$totSecs,6), 
-        cvt($elanTxKBTOT/$totSecs,6,0,1), cvt($elanTxTOT/$totSecs,6),
-        cvt($elanErrorsTOT/$totSecs,6)
-		  if $subsys=~/x/ && $NumXRails;
 
   if ($subsys=~/x/ && $NumHCAs)
   {
@@ -8937,7 +8885,7 @@ sub printPlotProc
 	  $procCPU[$i],
 	  cvtT1($procSTime[$i],1), cvtT1($procUTime[$i],1),
           ($procSTime[$i]+$procUTime[$i])/$interval2SecsReal,
-	  cvtT2($procSTimeTot[$i]+$procUTimeTot[$i],1),
+	  cvtT3($procSTimeTot[$i]+$procUTimeTot[$i],1),
 	  defined($procRKB[$i])    ? $procRKB[$i]/$interval2Secs  : 0,
 	  defined($procWKB[$i])    ? $procWKB[$i]/$interval2Secs  : 0,
 	  defined($procRKBC[$i])   ? $procRKBC[$i]/$interval2Secs : 0,
@@ -8992,7 +8940,7 @@ sub procAnalyze
     my $cpu=$procCPU[$i];
     my $sysT=$procSTime[$i];
     my $usrT=$procUTime[$i];
-    my $accum=cvtT2($procSTimeTot[$i]+$procUTimeTot[$i]);
+    my $accum=cvtT3($procSTimeTot[$i]+$procUTimeTot[$i]);
     my $majF=$procMajFlt[$i];
     my $minF=$procMinFlt[$i];
     my $command=(defined($procCmd[$i])) ? $procCmd[$i] : $procName[$i];
@@ -9066,6 +9014,8 @@ sub procAnalyze
     $summary[$pid]->{sysT}+=$sysT;
     $summary[$pid]->{usrT}+=$usrT;
     $summary[$pid]->{accumT}=$accum;
+    $summary[$pid]->{majF}+=$majF;
+    $summary[$pid]->{minF}+=$minF;
 
     if ($processIOFlag)
     {
@@ -9076,8 +9026,6 @@ sub procAnalyze
       $summary[$pid]->{RSYS}+=$rsys;
       $summary[$pid]->{WSYS}+=$wsys;
       $summary[$pid]->{CNCL}+=$cncl;
-      $summary[$pid]->{majF}+=$majF;
-      $summary[$pid]->{minF}+=$minF;
     }
   }
 }
@@ -9161,7 +9109,11 @@ sub printProcAnalyze
     print PRCS $line     if !$zFlag;
     $ZPRCS->gzwrite($line) or logmsg('E', "Error writing to prcs")     if  $zFlag;
   }
-  undef %summary;
+
+  # reset for next pass
+  undef @summary;
+  undef %analyzed;
+
   $procAnalyzed=0;
   close PRCS;
   $ZPRCS->gzclose()    if $zFlag;
@@ -9331,44 +9283,6 @@ sub printPlotSlab
   }
 }
 
-sub elanCheck
-{
-  my $saveRails=$NumXRails;
-
-  $NumXRails=0;
-  if (!-e "/proc/qsnet")
-  {
-    logmsg('W', "no interconnect data found (/proc/qsnet missing)")
-	if $inactiveElanFlag==0;
-    $inactiveElanFlag=1;
-  }
-  else
-  {
-    $NumXRails++    if -e "/proc/qsnet/ep/rail0";
-    $NumXRails++    if -e "/proc/qsnet/ep/rail1";
-
-    # Now that I changed from using `cat` to cat(), let's just do
-    # this each time.
-    if ($NumXRails)
-    {
-      $XType='Elan';
-      $XVersion=cat('/proc/qsnet/ep/version');
-      chomp $XVersion;
-    }
-    else
-    {
-      logmsg('W', "/proc/qsnet exists but no rail stats found.  is the driver loaded?")
-	  if $inactiveElanFlag==0;
-      $inactiveElanFlag=1;
-    }
-  }
-
-  print "ELAN Change -- OldRails: $saveRails  NewRails: $NumXRails\n"
-        if $debug & 2 && $NumXRails ne $saveRails;
-
-  return ($NumXRails ne $saveRails) ? 1 : 0;
-}
-
 sub ibCheck
 {
   my $saveHCANames=$HCANames;
@@ -9380,6 +9294,7 @@ sub ibCheck
   # Since VStat can be a list, reset to the first that is found (if any)
   $NumHCAs=0;
   my $found=0;
+
   foreach my $temp (split(/:/, $VStat))
   {
     if (-e $temp)
@@ -9400,100 +9315,50 @@ sub ibCheck
     return(0);
   }
 
-  # We need the names of the interfaces and port info, but it depends on the
-  # type of IB we're dealing with.  In the case of 'vib' we get them via 'vtstat'
-  # and in the case of ofed via '/sys'.  However, in very rare cases someone might
-  # have both stacks installed so just because we find 'vstat' doesn't mean vib is
-  # loaded.
-  my ($maxPorts, $numPorts)=(0,0);
+  # We need the names of the interfaces and port info.
   $HCANames='';
-  if (-e $VStat)
+  my ($maxPorts, $numPorts)=(0,0);
+  my (@ports, $state, $file, $lid);
+  @lines=ls($SysIB);
+  foreach $line (@lines)
   {
-    @lines=`$VStat`;
-    foreach $line (@lines)
-    {
-      if ($line=~/hca_id=(.+)/)
-      {
-	# We need to track max ports across all HCAs.  Most likely this
-        # is a contant.
-        $maxPorts=$numPorts    if $numPorts>$maxPorts;
-        $numPorts=0;
+    $line=~/(.*)(\d+)$/;
+    $devname=$1;
+    $devnum=$2;
 
-        $NumHCAs++;
-        $HCAName[$NumHCAs-1]=$1;
-        $HCAPorts[$NumHCAs-1]=0;  # none active yet
-        $HCANames.=" $1";
-      }
-      elsif ($line=~/port=(\d+)/)
+    # While this should work for any ofed compliant adaptor, doing it this
+    # way at least makes it more explicit which ones have been found to work.
+    if ($devname=~/mthca|mlx4_|qib/)
+    {
+      $HCAName[$NumHCAs]=$devname;
+      $HCAPorts[$NumHCAs]=0;  # none active yet
+      $HCANames.=" $devname";
+      $file=$SysIB;
+      $file.="/$devname";
+      $file.=$devnum;
+      $file.="/ports";
+
+      @ports=ls($file);
+      $maxPorts=scalar(@ports)    if scalar(@ports)>$maxPorts;
+      foreach $port (@ports)
       {
-        $port=$1;
-        $numPorts++;
-      }
-      elsif ($line=~/port_state=(.+)/)
-      {
-        $portState=($1 eq 'PORT_ACTIVE') ? 1 : 0;
-        $HCAPorts[$NumHCAs-1][$port]=$portState;
-        if ($portState)
+	$port=~/(\d+)/;
+	$port=$1;
+	$state=cat("$file/$1/state");
+        $state=~/.*: *(.+)/;
+        $portState=($1 eq 'ACTIVE') ? 1 : 0;
+        $HCAPorts[$NumHCAs][$port]=$portState;
+	chomp($lid=cat("$file/$port/lid"));
+        $HCALids[$NumHCAs][$port]=$lid;
+	if ($portState)
         {
-	  print "  VIB Port: $port\n"    if $debug & 2;
+	  print "  OFED Port: $port  LID: $lid\n"    if $debug & 2;
           $HCANames.=":$port";
           $activePorts++;
         }
       }
-    $maxPorts=$numPorts    if $numPorts>$maxPorts;
     }
-
-    # Only if we found any HCAs (since 'vib' may not actually be loaded...)
-    $VoltaireStats=(-e '/proc/voltaire/adaptor-mlx/stats') ?
-	  '/proc/voltaire/adaptor-mlx/stats' : '/proc/voltaire/ib0/stats'
-		if $NumHCAs;
-  }
-
-  # To get here, either no 'vib' OR 'vib' is there but not loaded
-  if ($NumHCAs==0)
-  {
-    my (@ports, $state, $file, $lid);
-    @lines=ls($SysIB);
-    foreach $line (@lines)
-    {
-      $line=~/(.*)(\d+)$/;
-      $devname=$1;
-      $devnum=$2;
-
-      # While this should work for any ofed compliant adaptor, doing it this
-      # way at least makes it more explicit which ones have been found to work.
-      if ($devname=~/mthca|mlx4_|qib/)
-      {
-        $HCAName[$NumHCAs]=$devname;
-        $HCAPorts[$NumHCAs]=0;  # none active yet
-        $HCANames.=" $devname";
-	$file=$SysIB;
-	$file.="/$devname";
-	$file.=$devnum;
-	$file.="/ports";
-
-        @ports=ls($file);
-	$maxPorts=scalar(@ports)    if scalar(@ports)>$maxPorts;
-        foreach $port (@ports)
-        {
-	  $port=~/(\d+)/;
-	  $port=$1;
-	  $state=cat("$file/$1/state");
-          $state=~/.*: *(.+)/;
-          $portState=($1 eq 'ACTIVE') ? 1 : 0;
-          $HCAPorts[$NumHCAs][$port]=$portState;
-	  chomp($lid=cat("$file/$port/lid"));
-          $HCALids[$NumHCAs][$port]=$lid;
-	  if ($portState)
-          {
-	    print "  OFED Port: $port  LID: $lid\n"    if $debug & 2;
-            $HCANames.=":$port";
-            $activePorts++;
-           }
-        }
-      }
-      $NumHCAs++;
-    }
+    $NumHCAs++;
   }
   $HCANames=~s/^ //;
 

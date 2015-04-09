@@ -18,7 +18,7 @@ mkdir -p $INITDIR
 mkdir -p $SHRDIR/util
 mkdir -p $DESTDIR/var/log/collectl
 
-cp collectl.pl           $BINDIR/collectl
+cp collectl colmux       $BINDIR
 cp collectl.conf         $ETCDIR
 cp man1/*                $MANDIR
 cp initd/*               $INITDIR
@@ -33,7 +33,9 @@ cp lexpr.ph              $SHRDIR
 cp gexpr.ph misc.ph      $SHRDIR
 cp hello.ph graphite.ph  $SHRDIR
 cp envrules.std          $SHRDIR
+cp statsd.ph             $SHRDIR
 cp vmstat.ph             $SHRDIR
+cp vnet.ph vmsum.ph      $SHRDIR
 cp client.pl             $SHRDIR/util
 cp col2tlviz.pl          $SHRDIR/util
 
@@ -44,8 +46,8 @@ chmod 755 $INITDIR/collectl*
 chmod 444 $ETCDIR/collectl.conf
 chmod 755 $BINDIR/collectl
 chmod 444 $DOCDIR/ARTISTIC $DOCDIR/COPYING $DOCDIR/GPL
+chmod 444 $SHRDIR/*ph
 chmod 755 $SHRDIR/util/*
-chmod 444 $SHRDIR/formatit.ph $SHRDIR/*expr.ph $SHRDIR/vmstat.ph
 
 # remove any stale versions in case the names/numbers used have changed.
 # on new ROCKS installion 'rm' isn't there yet!  [thanks roy]

@@ -36,7 +36,37 @@ KNOWN PROBLEMS/RESTRICTIONS
     cycle(s)
   - never include aliased networks in the network summary calculations
 
-CHANGES
+COLLECTL CHANGES
+
+4.0.0	Mar 9, 2015
+  - rare, but if selecting processes by parent pid or command name, it's
+    possible when a new pid is seen that it's already exited by the time
+    we try to read /proc/pid/stat, and it will return an undef value
+  - finally cleaned up code to read speeds from /sys to use internal
+    cat() to avoid misc 'Invalid Arg' errors.  also fixed cat() to return
+    null when nothing read.
+  - added mlx5 as a new type of IB device name [thanks fred]
+  - get lustre version a different way because format changed [thanks Jeff]
+    also note that native lustre support in collectl is going away in
+    summer of 2015!
+  - lexpr was incorrectly reporting sys/user cpu details in the wrong
+    place and as a result showed up before the timestamp in some cases
+  - colmux has now been moved to the collectl package, release notes
+    to be continued here going forward
+
+COLMUX CHANGES
+
+4.8.3  Mar 9, 2015
+- -oT -test wasn't including time column in help output whereas -od and -oD
+  did [thanks, robbin]
+- new switch: -retaddr tells collectl to connect back to this address rather
+  than the one colmux chooses by default which is default interface's addr
+- change in way return address is determined because RHEL 7 changed the
+  format of the ifconfig output, changing Bcast to broadcast and dropping
+  addr:  [thanks hank]
+
+
+PRE-4.0 COLLECTL CHANGES
 
 3.7.4-1  Sep 10, 2014
   - typo in $netFilt (should have been $netFiltIgnore) preventing any
@@ -2166,3 +2196,5 @@ CHANGES
 1.1.2	Nov 26, 2003
   - added support for disk and partition exception reporting along with 
     several switches to support it. See -l, -L and -o x/X 
+
+COLMUX CHANGES

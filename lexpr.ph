@@ -223,8 +223,9 @@ sub lexpr
         $cpuDetString.=sendData("cpuinfo.idle.cpu$i",   $idleP[$i], 1);
         $cpuDetString.=sendData("cpuinfo.intrpt.cpu$i", $intrptTot[$i], 1);
 
-        $cpuSumString.=sendData("cputotals.systot.cpu$i",  $sysP[$i]+$irqP[$i]+$softP[$i]+$stealP[$i], 1);
-        $cpuSumString.=sendData("cputotals.usertot.cpu$i", $userP[$i]+$niceP[$i], 1);
+	# sys and user can be useful too
+        $cpuDetString.=sendData("cputotals.systot.cpu$i",  $sysP[$i]+$irqP[$i]+$softP[$i]+$stealP[$i], 1);
+        $cpuDetString.=sendData("cputotals.usertot.cpu$i", $userP[$i]+$niceP[$i], 1);
       }
     }
   }

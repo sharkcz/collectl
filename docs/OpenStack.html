@@ -1,0 +1,196 @@
+<html>
+<head>
+<link rel=stylesheet href="style.css" type="text/css">
+<title>OpenStack Support</title>
+</head>
+
+<body>
+<center><h1>OpenStack Support</h1></center>
+<p>
+For the most part, the hardware configuration is static and so is collectl.  When you boot, it discovers
+disks, networks and CPUs and that configuration doesn't change until you shutdown, reconfigure and
+reboot. Clouds and virtual machines have turned this whole notion on its head, something that was bound
+to happen anyway.  But it wasn't until several years ago when collectl started to be used in OpenStack
+environments that this design restriction became significant and needed to be changed.  Since 2012
+collectl has had the notion of dynamic Disks and Networks embedded in its core.  Dynamic CPUs were
+added even earlier.  Collectl has been heavily tested in OpenStack clouds and is as rock solid as ever.
+<p>
+But what about cloud-specific subsystems?  Once collectl was able to deal with dynamic devices, additional
+capabilities were added to deal with new cloud-specific subsystems as well.  While not everything in an
+OpenStack cloud can be monitored one has to start somewhere and collectl has chosen to focus on the
+following:
+<p><b>Nova</b>
+<p>In the case of Nova, almost all the data one needs to report on what a VM is doing is already being collected.
+Specifically, a VM is using a CPU, a Disk and a Network so if one can tell which host resources they corresond to,
+one can then associate their instance data with the VM and report something that looks like standard collectl
+process data like this:
+
+<div class=terminal>
+<pre>
+# PROCESS SUMMARY (counters are /sec)
+# PID  THRD S   VSZ   RSS CP  SysT  UsrT Pct  N   AccumTim DskI DskO NetI NetO Instance
+15622     1 S    5G  562M  8  0.00  0.00   0  1   07:26.72    0    0    0    0 0094eed9
+32738     4 S    6G  632M  5  0.01  0.00   0  2   01:11:25    0    0    0    0 0093c0ef
+36432     2 S    4G  944M  4  0.32  0.41  73  1   13:24:35    0   16  445  445 009570b9
+36841     1 S    4G  935M  7  0.24  0.32  56  1   12:31:27    0    0  445  445 009570bb
+</pre>
+</div>
+
+The <i>magic</i> that makes this all work comes from 3 places.  First, the actual command that
+starts the VM contains the CPU number, the MAC address of the
+virtual network and even the instance ID.  The process data for the VM also contains runtime
+information as well as memory usage, all of which are available if runs the command
+<i>collectl -scnZ -i:1</i>, which is exactly what the export module named vmsum does under
+the covers.
+<p>
+The second thing is one needs to figure out how to map the network MAC address to an actual network
+name and for that a second plugin, this time an import module called vnet has been developed.  It
+doesn't generate any output as do other import modules but rather loads the required data structures
+that vmsum needs to find the network virtual device.
+<p>
+Finally, the disk stats come from the process data, but are only available when run as root, so the
+ultimate command one needs to run to see the above output is the following, noting you will be warned
+to use sudo if are not root.
+<div class=terminal>
+<pre>
+sudo collectl --import vnet --export vmsum
+</pre>
+</div>
+
+Be sure to try displaying VM output across a cluster with colmux.  You'll never look at your cluster
+the same way again.
+
+<p><b>Swift</b>
+<p>Getting swift data is slightly more complicated because it doen't report statistics in am easy-to-use
+form.  Rather its standard mechanism is to use <a href=http://statsd.readthedocs.org/en/latest/>statsd</a>,
+which requires a statsd listener.  Further, since swift can only send to one listener, you can't have
+multiple consumer's of the data, which is why <a href=https://github.com/markseger/swift-statstee>statstee</a>
+was developed.  It is based on the philosphy of the unix <i>tee</i> command in that it can sit between the 
+source and destination and record data locally, in this case to a file that looks like a /proc data structure.
+<p>
+For example, when you install/run statstee, it creates a file like the following which is updated with rolling
+counters every tenth of a second (as long as something changes).  This means anyone can read that file as often
+as they choose and simply report the differences between samples as rates, just like collectl already does
+for all the other data it reports.
+<div class=terminal>
+<pre>
+cat /var/log/swift/swift-stats 
+V1.0 1425398070.323784
+#       errs pass fail
+accaudt 0 2784 0
+#       errs cfail cdel cremain cposs_remain ofail odel oremain oposs_remain
+accreap 0 0 0 0 0 0 0 0 0
+#       diff diff_cap nochg hasmat rsync rem_merge attmpt fail remov succ
+accrepl 0 0 167004 0 0 0 167004 0 0 167004
+#       put get post del head repl errs
+accsrvr 153 56960 0 0 57398 175140 0
+#       errs pass fail
+conaudt 0 4770 0
+#       diff diff_cap nochg hasmat rsync rem_merge attmpt fail remov succ
+conrepl 74 0 551811 0 0 0 1306955 0 0 551885
+#       put get post del head repl errs
+consrvr 16884 104 0 7203 630 616300 11
+#       skip fail sync del put
+consync 0 0 0 0 0
+#       succ fail no_chg
+conupdt 43 0 130683
+#       quar errs
+objaudt 0 0
+#       obj errs
+objexpr 0 0
+#       part_del part_upd suff_hashes suff_sync
+objrepl 0 73646775 7514 0
+#       put get post del head repl errs quar async_pend putcount puttime
+objsrvr 16771 3819 0 7189 243 1615248 0 0 49 16614 17031.689711
+#       errs quar succ fail unlk
+objupdt 0 0 49 0 49
+#       put get post del head copy opt bad_meth errs handoff handoff_all timout discon status
+prxyacc 0 0 0 0 716 0 0 0 0 0 0 0 0 204:716
+prxycon 37 195 0 19 1051 0 0 0 0 0 0 0 0 200:195 201:4 202:33 204:1059 409:11
+prxyobj 12560 8155 0 7099 533 0 0 0 0 0 0 0 0 200:8681 201:12560 204:7099 404:7
+</pre>
+</div>
+To make this data available to collectl, one simply imports the statsd plugin.  As it turns out, there is
+a LOT of data that is provided by swift and in fact too much to display in a meaningful way.  Therefore
+one should get in the habit of running statsd with the help option like this:
+
+<div class=terminal>
+<pre>
+collectl --import statsd,h
+
+usage: statsd, switches...
+  d=mask  debug mask, see header for details
+  h       print this help test
+  f file  reads stats from specified file
+  r       include return codes with proxy stats
+  s       server: a, c, o and/or p
+  t       data type to report, noting from the following
+          that not all servers report all types
+
+           t  name             servers
+           a  auditor       acc  con  obj
+           x  expirer                 obj
+           p  reaper        acc   
+           r  replicator    acc  con  obj
+           s  server        acc  con  obj
+           y  sync               con
+           u  updater            con  obj
+
+  p	   proxies require their own service type
+	   a  account service
+           c  container service
+           o  object service
+
+  v        show version and default settings
+  xx       2 char specific types built from -s, -t and -p
+
+  NOTE = setting s, t or p to * selects everything
+</pre>
+</div>
+This can be a bit of a mouthful so perhaps an example will help.  Also try to get into the habit of NOT using
+-s, -t or -p as those may eventually go away as I'm not sure they're really useful.  Looking at the matrix
+above, think of the types of data you'd like to look at for which types of servers.  So say you want to
+look at object server server data and container server replicator data at the same time.  These translate
+to os and cr so you'd run the following, noting since this is standard collectl you can even include time
+stamps:
+
+<div class=terminal>
+<pre>
+collectl --import statsd,os,cr
+waiting for 1 second sample...
+#                       Container                                                Object                        
+#<----------------------Replicator----------------------><-----------------------Server----------------------->
+# Diff DCap Nochg Hasm Rsync RMerg Atmpt Fail Remov Succ   Put  Get Post Dele Head Repl Errs Quar Asyn PutTime 
+     0    0    0     0    0     0     0     0    0     0     0    0    0    0    0    0    0    0    0   0.000
+     0    0    0    17    0     0     0    60    0     0     0    0    0    0    0    0    0    0    0   0.000
+</pre>
+</div>
+
+You can try various combinations of servers and services.  You can also use this plugin with colmux or even
+generate output in plot format as there are now also a number of custom plots available for swift, many of
+which are included when you select <i>All Summary Plots</i>.  See the help next to the <i>Plots by Name</i>
+for more information.
+
+<p><b>Neutron</b>
+
+<p>There is currently one big issue with neutron and that is whenever you create a new VM, you get a new tap
+and so overtime, the number of these devices continue to grow.  If you are generating device specific files,
+you will see the number of networks collectl is tracking includes ALL networks that have ever existing since
+collectl started.  This in turn means the columns in the <i>net</i> file will continue to grow uncontrolled.
+If you have a set number of VMs that aren't changing, this may be ok but in most cases is won't be.  While
+there is currently no good solution for how to deal with this, collectl does have a new options for
+<i>--netopts</i>, specifically o, which tells collectl that whenever there is a change in the network
+configuration, drop any unused networks from the current list.  This means you'll end up breaking the
+column alignment in the detail file but at least it won't grow uncontrollably.  Since the names of the
+networks ARE retained in the line items, you can still see what's happening but you won't be able to
+get a consistent view with colplot.
+<p>
+A second situation is the shear volume of virtual network devices that one can have in a large cluster and
+trying to collect data for them on the neutron nodes themselves can easily involve monitoring thousands of
+devices which may start to consume more CPU cycles than you wish to use.  If this becomes the case, consider
+using <i>--rawnetfilt</i> which tells collectl to not even collect data on the specified network(s).
+
+<p><table width=100%><tr><td align=right><i>updated March 9, 2015</i></td></tr></colgroup></table>
+
+</body>
+</html>

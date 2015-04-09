@@ -550,19 +550,20 @@ sub initRecord
   while (my $line=<FIND>)
   {
     chomp $line;
-    my $mode=$line;
-    $mode=~s/speed/operstate/;
-    $mode=`cat $mode`;
-    next    if $mode!~/up|unknown/;
-
-    my $speed=`cat $line 2>&1`;
-    chomp $speed;
-
     $line=~/.*\/(\S+)\/speed/;
     my $netName=$1;
-    $speed='??'    if $netName=~/^vnet|^tap/;               # hardcoded in kernel to 10 which causes bogus msgs later
-    $netSpeeds{$netName}=$speed    if $speed!~/Invalid/;    # this can happen on a VM where operstate IS up
-    #print "set netSpeeds{$netName}=$speed\n";
+
+    my $mode=$line;
+    $mode=~s/speed/operstate/;
+    $mode=cat($mode);
+    next    if $mode!~/up|unknown/;
+
+    # get speed, noting the kernel hardcodes vnets and tap devices to 10, which is wrong!
+    # and if problems reading (which can happen) we get ''
+    my $speed=cat($line);
+    chomp $speed;
+    $netSpeeds{$netName}=(defined($speed) && $speed ne '' && $netName!~/^vnet|^tap/) ? $speed : '??';
+    print "set netSpeeds{$netName}=>$netSpeeds{$netName}<\n"    if $debug & 1;
   }
   close FIND;
 
@@ -639,10 +640,10 @@ sub initRecord
     }
     else
     {
-      # Get Luster and SFS Versions before looking at any data structions in the
+      # Get Luster and SFS Versions before looking at any data structures in the
       # 'lustreCheck' routines because things change over time
-      $temp=`$Lctl lustre_build_version 2>/dev/null`;
-      $temp=~/version: (.+?)-/m;
+      $temp=`cat /proc/fs/lustre/version | grep lustre 2>/dev/null`;
+      $temp=~/lustre: (\d+.*)/;
       $cfsVersion=$1;
       $sfsVersion='';
       if (-e '/etc/sfs-release')
@@ -9423,7 +9424,7 @@ sub ibCheck
 
     # While this should work for any ofed compliant adaptor, doing it this
     # way at least makes it more explicit which ones have been found to work.
-    if ($devname=~/mthca|mlx4_|qib/)
+    if ($devname=~/mthca|mlx4_|mlx5_|qib/)
     {
       $HCAName[$NumHCAs]=$devname;
       $HCANames.=" $devname";
@@ -9839,16 +9840,16 @@ sub cat
 {
   my $file=shift;
   my $eof= shift;
-  my $temp;
 
+  my $temp='';
   if (!open CAT, "<$file")
   {
     logmsg("W", "Can't open '$file'");
-    $temp='';
   }
   else
   {
     # if 'eof' set, return entire file, otherwise just 1st line.
+    # also note if empty file return default value which is ''
     while (my $line=<CAT>)
     {
       $temp.=$line; 

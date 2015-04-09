@@ -1,0 +1,255 @@
+<html>
+<head>
+<link rel=stylesheet href="style.css" type="text/css">
+<title>Colmux</title>
+</head>
+
+<body>
+
+<body>
+<center>
+<h1>Colmux</h1>
+</center>
+
+<h3>Introduction</h3>
+Have you ever seen an nfs server getting beaten up but didn't know which of the
+many hundreds of clients were doing the beating?  Or have you wondered if an
+application was leaking memory when it ran but there was no easy way to observe
+all the memory on all the nodes at the same time?  Or how about whether or not
+a few disks in a large farm had slow access times and so were slowing down <i>all</i>
+the disks?  It has always been easy to observe all of these types of behaviors with collectl
+one node at a time, or even plot the data after the fact with colplot.  But observing
+cluster-wide activity in real-time has never been that easy, until now.
+<p>
+As its name implies, colmux is a <i>collectl multiplexor</i>, which allows 
+one to collect data from multiple systems and treat it as a single data 
+stream, essentially extending collectl's functionality to a set of hosts
+rather than a single one.  Colmux has been tested on clusters of over 1000 
+nodes but one should also take note that this will put a heavier load on 
+the system on which colmux is running.
+<p>
+Colmux runs in 2 distinct modes: <i>Real-Time</i> and <i>Playback</i>.
+In real-time mode, colmux actually communicates with instances of
+collectl running on remote systems which in turn are collecting real-time
+performance metrics. In playback mode colmux also communicates with a 
+remote copy of collectl but in this case collectl is playing back a data 
+file collected some time in the past.
+<p>
+Colmux can also provide its output in 2 distinct formats: 
+<i>single-line</i> and <I>multi-line</i>.  In single-line format colmux
+reports the multiplexed data from all systems on a single line by allowing
+the user to choose a small number of variables to display, based on both
+the display width and the number of systems.  While it is possibly to handle
+more than a couple of dozen systems, (see the example at the bottom of this
+page), one rarely does so because of the screen width.
+However it is also possible to redirect the output to a file
+for <i>off-line</i> viewing, via a text editor or a spreadsheet.  
+<p>
+Colmux has been extensively tested on versions of collectl from V3.3.6 forward
+and there have been some additional enhancements made to V3.5.0, which is the
+recommended minimal version.  You should first make sure all the systems of interest
+have the latest versions of collectl installed or at least those at V3.3.6 or newer.
+
+<p>
+Colmux also provides the ability for dynamic interaction with the keyboard arrow
+keys if the optional perl module <i>Term::ReadKey</i> has been installed.  To see if
+this is the case and that colmux can find it run with -v and you should see the
+following:
+<div class=terminal-wide14><pre>
+colmux -v
+colmux: 3.0 (Term::ReadKey: V2.30)
+</pre></div>
+<p>
+<center><table width=70%>
+<tr align=center><td><b><i>Restriction</i></b></tr></td>
+<tr><td>Colmux <i>requires</i> passwordless ssh between it and all hosts it is monitoring</td></tr>
+</table></center>
+
+<p>
+<h3>Using colmux</h3>
+Although colmux does not have any required switches, <i>-command</i> is one of the
+two most important as you use it to tell collectl what switches to use when running.
+Colmux will then take care of multiplexing the command out to multiple instances 
+of collectl either running them in real-time or playback mode.  The other key switch,
+also not required but typically used, is <i>-address</i> because it identifies the 
+remote system(s) on which to run colmux.  The default addess is that of the host colmux
+is running on.
+<p>
+The inclusion of a playback filename 
+in the collectl command instructs colmux to run in playback mode and the use of 
+colmux's <i>-cols</i> switch tells it to produce output in <i>single-line</i> format.  
+By using various combinations of these switches you can get colmux to run in any 4 
+distinct modes as shown in the following table:
+<p>
+<center>
+<table cellpadding=3 cellspacing=0 border=1>
+<tr><td>&nbsp;</td><td><b>Real-Time</b></td><td><b>Playback</b></td></tr>
+<tr><td><b>Single-line</b></td><td>-cols</td><td>-command "-p filename" -cols</td></tr>
+<tr><td><b>Multi-line</b></td><td><i>default</i></td><td>-command "-p filename"</td></tr>
+</table>
+</center>
+<p>
+Let's discuss these 4 options separately to give a better feel for what they actually
+mean and when you might use them. Note that the 2 operational modes have nothing to do
+with the way the data is displayed and the 2 formats have nothing to do with the way
+the data is collected - in other words a complete separation between form and function.
+<p>
+<b>Real-Time Mode</b>
+<br>
+If you've ever run collectl before, and you probably have if you're looking at these
+utilities, you already know the real-time nature of the tool.  The difference here is that
+with colmux you're actually able to look at multiple systems at the same time.
+By default, colmux runs in real-time mode unless you explicitly instruct it to
+run in playback mode by including -p in the collectl command.
+<p>
+<b>Playback Mode</b>
+<br>
+The way you tell colmux to run in this mode is to simply point the collectl command at
+a file with the -p switch as you would normally do when you want to play back a file.
+The main restriction is that the file needs to exist on all the systems you've pointed
+colmux to and therefore wild cards are required for portion of the filename and that 
+includes the hostname and are often used for the timestamp portion as well.
+<p>
+Typically one simply uses a collectl 
+playback filename in a format something like <i>/var/log/collectl/*20101225*</i>,
+wildcarding all but the date of interest.  If you want, you can put all the collectl 
+files in one directory on the same system colmux is running on, but this method is 
+restricted to <i>only</i> running on the local system. 
+<p>
+During playback by colmux, only the data falling in the same
+time interval will be reported and so the header that reports how many nodes have had
+their data included becomes more meaningful in case there is missing data. 
+<p>
+<b>Multi-Line Format</b>
+<br>
+Once you've decided which systems you want to monitor and what collectl command
+you want to execute, you need to decide whether you're interested in single- or
+multi-line output.  Most users will probably be interested in the multi-line
+format, at least at first.  Think of the linux top command but not being limited
+to just processes.
+<p>
+Multi-line format reports <i>all data</i> provided by collectl in its original
+format. Further, it sorts it by a column of the user's choice (the default
+is column 1) and presents
+as much data as will fit on the screen.  The result is a <i>top-like utilility</i>
+capable of reporting the top consumers of virtually any resource on the cluster
+be it the more traditional process statistics or something more exotic such
+as memory or network consumption.  
+<p>
+Since this IS native collectl data it can
+be virtually anything, including that provided by any custom <i>import</i>
+modules you may have written.   You will also see the identical information in playback mode,
+though this is presented as scrolling text (there
+is also a <i>-home</i> switch to display the data in <i>top</i> format if you wish, 
+but unless you include <i>-delay</i> it may scroll by too fast to be of use).
+<p>
+The main consideration with multi-line format is that colmux can only deal with
+collectl commands that themselves only produce single line output OR multiple lines
+that are all the same format, noting that data provided by a custom import are
+considered to be a single device themselves.  These include:
+<ul>
+<li>output in brief mode</li>
+<li>verbose output for a single subsystem</li>
+<li>detail output for a single device</li>
+<li>process or slab data</li>
+<li>environmental data in single line format</li>
+</ul>
+<p>
+While the column number to sort on should also be a consideration, and you can 
+manually select it at startup with <i>-column</i>, you can easily change the sort
+column once colmux is running by either using the arrow keys (if Term::ReadKey 
+has been installed) or simply typing the desired column number followed by the 
+<i>enter</i> key.  This works in both real-time and playback mode.
+<p>
+Below is an example of examing the network traffic on 5 nodes and sorting
+it by column 2.  As you can also see, all 5 nodes have reported data for
+the interval being displayed and colmux highlights the selected column, though
+not as the bolded text shown in the examples that follow but rather in reverse video:
+
+<div class=terminal-wide14><pre>
+colmux -addr 'xx1n[1-5]' -command "-sn" -column 2
+
+# Wed Dec 29 05:42:21 2010  Connected: 5 of 5
+#         <----------Network---------->
+#Host       KBIn  <font face=arial black><b>PktIn</b></font>  KBOut  PktOut
+xx1n1          9     82     42     326
+xx1n2          9     77     41     320
+xx1n5          8     75     41     318
+xx1n4          8     74     41     317
+xx1n3          8     71     40     314
+</pre></div>
+<p>
+<b>Single-Line Format</b>
+<br>
+Unlike multi-line format which only displays output for the top systems which can change
+from interval to interval, in single-line format you <i>always</i> see the selected data
+for <i>all</i> systems and it is <i>never</i> sorted but rather reported in a fixed
+format.  Therefore you need to tell colmux which data fields you're interested in when
+you first start it up.  To determine the correct column numbers you can either run the
+desired collectl command manually and start counting columns, noting the first column is
+always 1, <i>or</i> you can use colmux's <i>-test</i> switch, which you can also use in multi-line format.
+This switch will display the header line of collectl's output including the hostname as column 0,
+with  the column(s) you have selected highlighted, as well as a list of all the columns
+and their numbers for quick reference.
+<div class=terminal-wide14><pre>
+colmux -command "-sc" -test -cols 3,4
+>>> Headers <<<
+#          <--------CPU-------->
+#Host      cpu sys <font face=arial black><b>inter  ctxsw</b></font>
+
+>>> Column Numbering <<<
+ 0 #Host  1 cpu    2 sys    3 inter  4 ctxsw
+</pre></div>
+<p>
+Once you have decided on the column numbers, there are a couple of other optional
+switches you may choose to use, including timestamps, data type totals and for
+very wide displays you can even request the columns be narrower and to divide each value
+by 1000 or 1024. To preface each line with a timestamp, you actually include the appropriate time format
+switch with the collectl command itself, rather than using a distinct colmux switch. <i>caution: when including timestamps the column numbering is shifted
+appropriately and so you may want to use -test to be sure you're specifying 
+the correct columns.</i>
+<p>
+Here is an example of the same command to look at network data, except in this case
+colmux has been instructed report data for only columns 3 and 4, to print time
+stamps at the beginning of each line and to report totals at the far right.  
+As colmux first starts you can see the data being reported as all -1s since those 
+systems have not yet sent any data back:
+<p>
+<div class=terminal-wide14><pre>
+colmux -addr 'xx1n[1-5]' -command "-sn -oT" -cols 2,4 -coltot
+
+#Time    xx1n1  xx1n2  xx1n3  xx1n4  xx1n5  |  xx1n1  xx1n2  xx1n3  xx1n4  xx1n5  |     KBIn    KBOut
+05:29:48    -1     -1     -1     -1     -1  |     -1     -1     -1     -1     -1  |        0        0
+05:29:49     2      2      2      2      2  |      0      0      0      0      0  |       10        0
+05:29:50     2      2      2      2      2  |      0      0      0      0      0  |       10        0
+05:29:51     9     10      4      8      9  |     41     42      3     41     42  |       40      169
+05:29:52     2      2      9      2      2  |      0      0     40      0      0  |       17       40
+05:29:53     2      2      2      2      2  |      0      0      0      0      0  |       10        0
+05:29:54     2      2      2      2      2  |      0      0      0      0      0  |       10        0
+</pre></div>
+<p>
+The following screenshot is an example of looking 
+at Infiniband traffic between 16 clients writing to 4 lustre servers and
+even though the font is small, you can still make out the patterns of
+the column widths changing.
+The left half of the display shows <i>network received KB</i>
+and the right half <i>network transmitted KB</i>.  The first 4 columns in each section are
+the lustre servers and the next 16 columns the clients.  As expected during a client 
+write test, the lustre servers show high receive traffic and the clients show high
+transmit traffic.  Look how easy it is to see drops in the client transmission rates 
+even if you can't easily read the numbers. Also notice that the second client isn't 
+doing any transmitting at all and since it's not displaynig -1 we know collectl <i>is</i>
+running correctly.
+
+<p><img src=ColmuxLustre.jpg><p>
+
+Here's an even more dense example showing CPU load on a large cluster which is so 
+wide it takes 3 monitors to display it all.  Even though you can't read the output you
+can still see different patterns as some systems start/stop and others sit idle.
+
+<p><img src=ColmuxCPU.jpg><p>
+<p>
+<table width=100%><tr><td align=right><i>updated March 9, 2015</i></td></tr></colgroup></table>
+
+</body>
+</html>

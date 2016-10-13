@@ -46,6 +46,7 @@ use IO::Socket;
 use IO::Select;
 use Net::Ping;
 use Time::Local;
+use Cwd 'abs_path';
 use strict 'vars';
 
 use threads;
@@ -65,9 +66,14 @@ my $threadsVersion=threads->VERSION;
 # Make sure we flush buffers on print.
 $|=1;
 
-my $Collectl='/usr/bin/collectl';
+# If running the '.pl' version of colmux, which I typically do during
+# development, assume collectl lives in /usr/bin.  The rest of the time use
+# the same directory as colmux since the both might be on a network share
+my $BinDir=($0=~/pl$/) ? '/usr/bin' : dirname(abs_path($0));
+my $Collectl="$BinDir/collectl";
+
 my $Program='colmux';
-my $Version='4.9.0';
+my $Version='4.9.1';
 my $Copyright='Copyright 2005-2015 Hewlett-Packard Development Company, L.P.';
 my $License="colmux may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";

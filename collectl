@@ -111,7 +111,7 @@ $syslogFlag=(eval {require "Sys/Syslog.pm" or die}) ? 1 : 0;
 $rootFlag=(!$PcFlag && `whoami`=~/root/) ? 1 : 0;
 $SrcArch= $Config{"archname"};
 
-$Version=  '4.0.4-1';
+$Version=  '4.0.5-1';
 $Copyright='Copyright 2003-2016 Hewlett-Packard Development Company, L.P.';
 $License=  "collectl may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
@@ -6761,9 +6761,16 @@ sub whatsnew
   my $whatsnew=<<EOF6;
 What's new in collectl in the last year or so?
 
+version 4.0.5
+- added '+' to --rawdskfilt to make easier to extend
+- added 'hed' to known ethernet devices
+- fixed uninitialized variable bug in numa memory processing
+
 Version 4.0.4
 - new switch: --dskremap
 - enhance switch: --dskfilt
+- enhanced procopt k so it also recognizes python running under virtualenv
+- procopt r now applied after k so it will truncate arg1 which is new command
 - added disk read/write times to -sD output
 - added AnonHuge to memory stats
 - added nr_shmem to memory -P stats

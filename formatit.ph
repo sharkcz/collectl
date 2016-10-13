@@ -1323,7 +1323,7 @@ sub initFormat
 
   for (my $i=0; $i<$CpuNodes; $i++)
   {
-    foreach my $numa ('used', 'free', 'slab', 'map', 'anon', 'lock', 'inact',)
+    foreach my $numa ('used', 'free', 'slab', 'map', 'anon', 'anonH', 'lock', 'inact',)
     { $numaMem[$i]->{$numa}=$numaMem[$i]->{$numa.'C'}=0; }
 
     foreach my $hits ('for', 'miss', 'hits')
@@ -4189,7 +4189,7 @@ sub dataAnalyze
 
     # at least for now, we're only worrying about totals on real network
     # first, always ignore those in ignore list
-    if (($netFilt eq '' && $netNameNow=~/^eth|^ib|^em|^en|^p\dp/) ||
+    if (($netFilt eq '' && $netNameNow=~/^eth|^hed|^ib|^em|^en|^p\dp/) ||
         ($netFiltKeep ne '' && $netNameNow=~/$netFiltKeep/) ||
         ($netFiltIgnore ne '' && $netNameNow!~/$netFiltIgnore/))
     {
@@ -7602,7 +7602,6 @@ sub printTermProc
       # If wide mode OR when removing known shells (in which case we need to look at cmd1),
       # we include the command arguments AND chop trailing spaces
       ($cmd0, $cmd1)=(defined($procCmd[$i])) ? split(/\s+/,$procCmd[$i],2) : ($procName[$i],'');
-      $cmd0=basename($cmd0)    if $procOpts=~/r/ && $cmd0=~/^\//;
       $cmd1=''                 if $procOpts!~/[kw]/ || !defined($cmd1);
 
       # Since a program CAN modify its definition in /proc/pid/cmdline, it can
@@ -7618,7 +7617,7 @@ sub printTermProc
       # if told to do so, remove some of the known/standard shells from the command string in cmd0;
       if ($procOpts=~/k/)
       {
-        if ($cmd0=~m[/bin/sh|/bin/bash|/usr/bin/perl|/usr/bin/python|^python])
+        if ($cmd0=~m[/bin/sh|/bin/bash|/usr/bin/perl|/bin/python\d*|^python])
 	{
           $cmd1=~s/^-\S+\s+//;   # remove optional switch some shells have
 
@@ -7629,6 +7628,10 @@ sub printTermProc
 	}
         $cmd1=''    if $procOpts!~/w/;
       }
+
+      # If only keeping the root of the command name, do it after dealing with known
+      # shells in case we want the root of arg1
+      $cmd0=basename($cmd0)    if $procOpts=~/r/ && $cmd0=~/^\//;
 
       # This is the standard format
       if ($procOpts!~/[im]/)

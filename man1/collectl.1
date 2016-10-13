@@ -1152,7 +1152,9 @@ m \- show breakdown of memory utilization instead of default format
 .br
 p \- never look for new pids or threads during data collection
 .br
-r \- show root command name only (no directory) for narrower display
+r \- show root command name only (no directory) for narrower display. Note that this
+is applied AFTER 'k' so if arg1 becomes the new command it will be truncated now,
+which is very handy when running in a virtual python environment
 .br
 R \- show ALL process priorities ('RT' currently displayed if realtime)
 .br

@@ -27,6 +27,12 @@ KNOWN PROBLEMS/RESTRICTIONS
 
 COLLECTL CHANGES
 
+4.0.5	 Apr 26, 2016
+  - rawdskfilt has been enhanced to allow a preceding + which will
+    cause the following string to be appended to the default filter
+  - needed to initialized anonH for numa stats [thanks andy]
+  - added 'hed' to known ethernet devices, used by HP Helion
+
 4.0.4    Jan 29, 2016
   - if you try to playback a file with --stats and it has recorded
     processes or slabs, ignore them be removing from $subsys [thanks ghassen]
@@ -42,8 +48,6 @@ COLLECTL CHANGES
     in some cases such as etherd disks, the names are messy for use with
     other tools like ganlia [thanks gabriel]
   - removed access to disk name remapping file
-  - the rawdskfilt has been enhanced to allow a preceding + which will
-    cause the following string to be appended to the default filter
 
 4.0.3	 July 2, 2015
   - add AnonHuge memory to memory stats, both verbose and detailed as
@@ -94,6 +98,11 @@ COLLECTL CHANGES
     to be continued here going forward
 
 COLMUX CHANGES
+
+4.9.1  Mar 29, 2016
+  - assume collectl in same directory as colmux so you can install both
+    on network share BUT if colmux ends in 'pl', it's probably me doing
+    development/testing, so use collectl in /usr/bin. [thanks Paul]
 
 4.9.0  Jan 06, 2016
   - header name printing in single line mode not quite right for all

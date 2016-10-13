@@ -27,6 +27,13 @@ KNOWN PROBLEMS/RESTRICTIONS
 
 COLLECTL CHANGES
 
+4.1.0   Oct 7, 2016
+  - allow lexpr to pass formatting information for strings and numbers
+    [thanks Guy]
+  - modify the way misc.ph reports uptime to thousandths of a day [thanks, seb]
+  - added OPA interface support for -sx reporting and cleaned up some very
+    old code, like quadrics support! [thanks fred]
+
 4.0.5	 Apr 26, 2016
   - rawdskfilt has been enhanced to allow a preceding + which will
     cause the following string to be appended to the default filter

@@ -89,7 +89,7 @@ $PageSize=0;
 $Memory=$Swap=$Hyper=$Distro=$ProductName='';
 $CpuVendor=$CpuMHz=$CpuCores=$CpuSiblings=$CpuNodes='';
 $PidFile='/var/run/collectl.pid';    # default, unless --pname
-$PQuery=$PQopt=$PCounter=$VStat=$IBVersion=$HCALids=$OfedInfo='';
+$PQuery=$PQopt=$PCounter=$VStat=$IBVersion=$OfedInfo='';
 $numBrwBuckets=$cfsVersion=$sfsVersion='';
 $Resize=$IpmiCache=$IpmiTypes=$ipmiExec='';
 $i1DataFlag=$i2DataFlag=$i3DataFlag=0;
@@ -111,7 +111,7 @@ $syslogFlag=(eval {require "Sys/Syslog.pm" or die}) ? 1 : 0;
 $rootFlag=(!$PcFlag && `whoami`=~/root/) ? 1 : 0;
 $SrcArch= $Config{"archname"};
 
-$Version=  '4.0.5-1';
+$Version=  '4.1.0-1';
 $Copyright='Copyright 2003-2016 Hewlett-Packard Development Company, L.P.';
 $License=  "collectl may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
@@ -160,6 +160,7 @@ $zlibErrors=0;
 undef %disks;
 undef @HCAName;
 undef @HCAPorts;
+undef @HCAId;
 undef %networks;
 undef @dskIndexAvail;
 undef @netIndexAvail;
@@ -2962,36 +2963,43 @@ for (; $count!=0 && !$doneFlag; $count--)
     if (++$interConnectCounter==$interConnectIntervals)
     {
       newLog($filename, "", "", "", "", "")
-	  if $mellanoxFlag && ibCheck() && $filename ne '';
+	  if ($mellanoxFlag || $opaFlag) && ibCheck() && $filename ne '';
       $interConnectCounter=0;
     }
 
-    if ($mellanoxFlag && $NumHCAs)
+    if (($mellanoxFlag || $opaFlag) && $NumHCAs)
     {
-      for ($i=0; $i<$NumHCAs; $i++)
+      for (my $i=0; $i<$NumHCAs; $i++)
       {
         if ( -e $SysIB )
         {
-   	  foreach my $j (1..2)
+          foreach my $j (1..2)
 	  {
 	    # only read if port active
-	    if ($HCAPorts[$i][$j])
+            if ($HCAPorts[$i][$j])
 	    {
-              # 64 bit counters always come from /sys
-	      if ($PQopt eq 'sys')
+	      if ($HCAName[$i]=~/hfi/)
 	      {
-	        my $proc="$SysIB/$HCAName[$i]$i/ports/$j/counters_ext";
-		getProc(0, "$proc/port_rcv_data_64",     "ib$i-$j:rcvd");
-		getProc(0, "$proc/port_xmit_data_64",    "ib$i-$j:xmtd");
-		getProc(0, "$proc/port_rcv_packets_64",  "ib$i-$j:rcvp");
-		getProc(0, "$proc/port_xmit_packets_64", "ib$i-$j:xmtp");
+		getExec(5, "/sbin/opapmaquery -h $HCAId[$i] -p $j -o getdatacounters", "ib$i-$j:opa");
 	      }
-
-  	      # we only use perfquery for 32bit counters or 64 when not in 
-	      # available in sys and then only if perfquery hasn't been disabled
-	      elsif ( -e $PQuery )
+	      else
 	      {
-		getExec(1, "$PQuery $PQopt $HCALids[$i][$j] $j 0xf000", "ib$i-$j");
+                # 64 bit counters always come from /sys
+	        my $proc="$SysIB/$HCAName[$i]$i/ports/$j/counters_ext";
+	        if ($PQopt eq 'sys')
+	        {
+		  getProc(0, "$proc/port_rcv_data_64",     "ib$i-$j:rcvd");
+	    	  getProc(0, "$proc/port_xmit_data_64",    "ib$i-$j:xmtd");
+	  	  getProc(0, "$proc/port_rcv_packets_64",  "ib$i-$j:rcvp");
+		  getProc(0, "$proc/port_xmit_packets_64", "ib$i-$j:xmtp");
+	        }
+
+  	        # we only use perfquery for 32bit counters or 64 when not in 
+	        # available in sys and then only if perfquery hasn't been disabled
+	        elsif ( -e $PQuery )
+	        {
+	 	  getExec(1, "$PQuery $PQopt -C $HCAId[$i] -P $j", "ib$i-$j:pquery");
+                }
 	      }
 	    }
           }
@@ -4114,6 +4122,18 @@ sub getExec
     foreach my $line (<CMD>)
     {  $count++; }
     record(2, "$tag: $count\n");
+  }
+
+  # OPA
+  elsif ($type==5)
+  {
+    foreach my $line (<CMD>)
+    {
+      $line=~/ ([0x]*\d+)/;
+      $oneLine.="$1 ";
+    }
+    $oneLine=~s/ $//;
+    record(2, "$tag: $oneLine\n");
   }
   close CMD;
 }
@@ -6761,6 +6781,11 @@ sub whatsnew
   my $whatsnew=<<EOF6;
 What's new in collectl in the last year or so?
 
+version 4.1.0
+- enhanced lexpr to allow reporting fractional metrics
+- modified misc to report uptime days to 3 decimal places
+- added support for Intel's OPA
+
 version 4.0.5
 - added '+' to --rawdskfilt to make easier to extend
 - added 'hed' to known ethernet devices
@@ -6780,15 +6805,6 @@ Version 4.0.4
 Version 4.0
 - added mlx5 as new IB device type
 - colmux now part of collectl distro
-
-Version 3.7.4  Jun 2014
-- new: --ALL collect/playback for ALL subsystems both summary and detail
-- new: --full forces --verbose + RECORD separator as parsing aid for others
-       also include subsystems contained withing RECORD separator after UCT:
-- new: 2 new cpu stats, guest and guest_nice
-- new: 3rd --top parameter for vertical (non-home) display, see --showtopopt
-- default native lustre support has been removed.  either add 'l' to -s in
-  collectl.conf OR contact Peter Piela at Cray for his plugin
 
 EOF6
 

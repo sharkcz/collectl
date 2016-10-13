@@ -275,8 +275,8 @@ sub initRecord
   }
 
   # if doing interconnect, the first thing to do is see what interconnect
-  # hardware is present via lspci
-  $NumHCAs=$mellanoxFlag=0;
+  # hardware is present via lspci.
+  $NumHCAs=$mellanoxFlag=$opaFlag=0;
   if ($subsys=~/x/i)
   {
     my $lspciVer=`$Lspci --version`;
@@ -291,9 +291,10 @@ sub initRecord
     print "lspci -- Version: $lspciVer  Vendor Field: $lspciVendorField\n"
 	if $debug & 1;
 
-    $command="$Lspci -n | $Egrep '15b3|0c06|14c1|14fc|1077'";
+    $command="$Lspci -n | $Egrep '15b3|0c06|14c1|14fc|1077|8086:24f0'";
     print "Command: $command\n"    if $debug & 1;
     @pci=`$command`;
+    $HCANames='';
     foreach $temp (@pci)
     {
       ($vendorID, $type)=split(/:/,(split(/\s+/, $temp))[$lspciVendorField]);
@@ -302,20 +303,34 @@ sub initRecord
 	next    if $type eq '5a46';    # ignore pci bridge
 	print "Found Infiniband Interconnect\n"    if $debug & 1;
 	$mellanoxFlag=1;
-	$HCANames='';
         ibCheck('');
       }
+      elsif ($vendorID=~/8086/)
+      {
+        print "Found OPA Interconnect\n"    if $debug & 1;
+        $opaFlag=1;
+        ibCheck('');
+      }
+
     }
-    disableSubsys('x', 'no interconnect hardware/drivers found')    if !$mellanoxFlag;
+    disableSubsys('x', 'no interconnect or opa hardware/drivers found')    if $mellanoxFlag+$opaFlag==0;
 
     # User had ability to turn off in case they don't want destructive monitoring
+    my $firstHCA='';
     if ($mellanoxFlag)
     {
-      # use name for hca0 port 1 and see if extended counters supported, noting we can
-      # force perfquery usage during debug, which itself might use -x
-      my $hca0_1="$SysIB/${HCAName[0]}0/ports/1";
+      # use name for first non-opa hca port 1 and see if extended counters supported,
+      # noting we can force perfquery usage during debug, which itself might use -x
+      for (my $i=0; $i<$NumHCAs; $i++)
+      {
+        if ($HCAName[$i]!~/hfi/)
+	{
+          $firstHCA="$SysIB/${HCAName[$i]}0/ports/1";
+	  last;
+	}
+      }
       $PQopt = '-r';
-      $PQopt = 'sys'    if -e "$hca0_1/counters_ext" && !($debug & 16384);
+      $PQopt = 'sys'    if -e "$firstHCA/counters_ext" && !($debug & 16384);
 
       # We usually only care about perfquery for non-extended counters
       if ($PQopt eq '-r')
@@ -368,9 +383,11 @@ sub initRecord
           # NOTE - looks like RedHat is no longer shipping ofed
           if (!-e $OfedInfo)
           {
+            # comment out the warning, at least for now.  we WILL still see '???'
+	    # in header
             $OfedInfo=getOfedPath($OfedInfo, 'ofed_info', 'OfedInfo');
-            logmsg('W', "Couldn't find 'ofed_info'.  Won't be able to determine OFED version")
-	          if $OfedInfo eq '';
+            #logmsg('W', "Couldn't find 'ofed_info'.  Won't be able to determine OFED version")
+	    #      if $OfedInfo eq '';
           }
 
           # Unfortunately the ofed_info that ships with voltaire adds 5 extra
@@ -380,9 +397,10 @@ sub initRecord
 
 	# last possibility is even though extended stats not in /sys they may still be
 	# available with perfquery so let's see
-	$PQopt = '-x'    if `$PQuery -h 2>&1`=~/--extended/m;
+	$PQopt = '-x'    if !($debug & 16384) && `$PQuery -h 2>&1`=~/--extended/m;
       }
 
+      print "PQopt: $PQopt\n"    if $debug & 1;
       print "reading extended IB stats from $SysIB\n"                if $debug & 2 && $PQopt eq 'sys';
       print "OFED V: $IBVersion PQ V:$PQVersion  PQOpt: $PQopt\n"    if $debug & 2 && $PQopt ne 'sys';
     }
@@ -1645,7 +1663,7 @@ sub initLast
     $netTxFifoLast[$i]=$netTxCollLast[$i]=$netTxCarLast[$i]=$netTxCmpLast[$i]=0;
   }
 
-  # IB - we only need 16 for 32bit counters
+  # IB - we only need 16 for 32bit counters, but 20 for OPA!
   for ($i=0; $i<$NumHCAs; $i++)
   {
     # in almost all cases we only have 64 bit counters
@@ -1655,7 +1673,7 @@ sub initLast
     $ibTxKBLast[$i][1]=$ibTxKBLast[$i][2]=0;
 
     # maybe some day we can just get rid of these...
-    for ($j=0; $j<16; $j++)
+    for ($j=0; $j<20; $j++)
     {
       # There are 2 ports on an hca, numbered 1 and 2
       $ibFieldsLast[$i][1][$j]=$ibFieldsLast[$i][2][$j]=0;
@@ -4322,104 +4340,135 @@ sub dataAnalyze
 
   #    I n f i n i b a n d    S t a t s
 
+  # these stats can come from multiple sources depending on values of'
+  # $PQopt and/or whether or not we're getting them from opa
+
   elsif ($subsys=~/x/i && $type=~/^ib(\d+)-(\d):(\S*)/)
   {
     my $i=$1;
     my $port=$2;
     my $name=$3;
+
+    #######################
+    #   ib stats from /sys
+    #######################
+
+    # as a optimization don't even look for these unless /sys
     if ($PQopt eq 'sys')
     {
       if ($name eq 'rcvd')
       {
         $ibRxKB[$i]=fix($data-$ibRxKBLast[$i][$port])/256;
-	$ibRxKBLast[$i][$port]=$data;
+        $ibRxKBLast[$i][$port]=$data;
         $ibRxKBTot+=$ibRxKB[$i];
       }
 
       elsif ($name eq 'xmtd')
       {
         $ibTxKB[$i]=fix($data-$ibTxKBLast[$i][$port])/256;
-	$ibTxKBLast[$i][$port]=$data;
+        $ibTxKBLast[$i][$port]=$data;
         $ibTxKBTot+=$ibTxKB[$i];
       }
 
       elsif ($name eq 'rcvp')
       {
         $ibRx[$i]=fix($data-$ibRxLast[$i][$port]);
-	$ibRxLast[$i][$port]=$data;
+        $ibRxLast[$i][$port]=$data;
         $ibRxTot+=$ibRx[$i];
       }
 
       elsif ($name eq 'xmtp')
       {
         $ibTx[$i]=fix($data-$ibTxLast[$i][$port]);
-	$ibTxLast[$i][$port]=$data;
+        $ibTxLast[$i][$port]=$data;
         $ibTxTot+=$ibTx[$i];
       }
-   }
+    }
 
-    elsif ($PQopt eq '-r')
+    ###############################
+    #    ib stats from pquery
+    ###############################
+
+    # note that these can either be extended or 32 bit counters
+    elsif ($name eq 'pquery:')
     {
-      my ($port, @fieldsNow)=(split(/\s+/, $data))[0,4..19];
-
-      # Only 1 of the two ports are actually active at any one time
-      if ($HCAPorts[$i][$port])
+      # extended status
+      if ($PQopt eq '-x')
       {
-        $ibErrorsTot[$i]=0;
-        for ($j=0; $j<16; $j++)
+        my ($port, @fieldsNow)=(split(/\s+/, $data))[0,4..7];
+
+        for ($j=0; $j<3; $j++)
         {
           $fields[$j]=fix($fieldsNow[$j]-$ibFieldsLast[$i][$port][$j]);
           $ibFieldsLast[$i][$port][$j]=$fieldsNow[$j];
+        }
 
-          # the first 12 are accumulated as a single error count and ultimately
-          # reporting as anbsolute number and NOT a rate so don't use 'last'
-          $ibErrorsTot[$i]+=$fieldsNow[$j]    if $j<12;
-	}
-
-        # these are already absolute since they're reset after reading
-        $ibTxKB[$i]=$fieldsNow[12]/256;
-        $ibTx[$i]=  $fieldsNow[14];
-        $ibRxKB[$i]=$fieldsNow[13]/256;
-        $ibRx[$i]=  $fieldsNow[15];
-      }
-      $ibTxKBTot+=$ibTxKB[$i];
-      $ibTxTot+=  $ibTx[$i];
-      $ibRxKBTot+=$ibRxKB[$i];
-      $ibRxTot+=  $ibRx[$i];
-      $ibErrorsTotTot+=$ibErrorsTot[$i];
-    }
-
-    else
-    {
-      $numFields=($PQopt eq 'r') ? 19 : 7;
-      my ($port, @fieldsNow)=(split(/\s+/, $data))[0,4..$numFields];
-
-      for ($j=0; $j<$numFields-4; $j++)
-      {
-        $fields[$j]=fix($fieldsNow[$j]-$ibFieldsLast[$i][$port][$j]);
-        $ibFieldsLast[$i][$port][$j]=$fieldsNow[$j];
-
-        # this only applies to regular counters, but the first 12 are
-	# accumulated as a single error count and ultimately reporting
-	# as anbsolute number and NOT a rate so don't use 'last'
-        $ibErrorsTot[$i]+=$fieldsNow[$j]    if $PQopt eq 'r' && $j<12;
-      }
-
-      if ($PQopt eq '-r')    # these are always reset and so always start at 0
-      {
-        $ibTxKB[$i]=$fieldsNow[12]/256;
-        $ibTx[$i]=  $fieldsNow[14];
-        $ibRxKB[$i]=$fieldsNow[13]/256;
-        $ibRx[$i]=  $fieldsNow[15];
-      }
-      else    # these are the extended counters and never start at 0
-      {
         $ibTxKB[$i]=$fields[0]/256;
         $ibTx[$i]=  $fields[2];
         $ibRxKB[$i]=$fields[1]/256;
-        $ibRx[$i]=  $fields[2];
+        $ibRx[$i]=  $fields[3];
 
+        $ibTxKBTot+=$ibTxKB[$i];
+        $ibTxTot+=  $ibTx[$i];
+        $ibRxKBTot+=$ibRxKB[$i];
+        $ibRxTot+=  $ibRx[$i];
+        $ibErrorsTotTot+=$ibErrorsTot[$i];
       }
+
+      # regular
+      elsif ($PQopt eq '-r')
+      {
+        my ($port, @fieldsNow)=(split(/\s+/, $data))[0,4..19];
+
+        # Only 1 of the two ports are actually active at any one time
+        if ($HCAPorts[$i][$port])
+        {
+          $ibErrorsTot[$i]=0;
+          for ($j=0; $j<16; $j++)
+          {
+            $fields[$j]=fix($fieldsNow[$j]-$ibFieldsLast[$i][$port][$j]);
+            $ibFieldsLast[$i][$port][$j]=$fieldsNow[$j];
+
+            # the first 12 are accumulated as a single error count and ultimately
+            # reporting as anbsolute number and NOT a rate so don't use 'last'
+            $ibErrorsTot[$i]+=$fieldsNow[$j]    if $j<12;
+          }
+
+          # these are already absolute since they're reset after reading
+          $ibTxKB[$i]=$fieldsNow[12]/256;
+          $ibTx[$i]=  $fieldsNow[14];
+          $ibRxKB[$i]=$fieldsNow[13]/256;
+          $ibRx[$i]=  $fieldsNow[15];
+        }
+        $ibTxKBTot+=$ibTxKB[$i];
+        $ibTxTot+=  $ibTx[$i];
+        $ibRxKBTot+=$ibRxKB[$i];
+        $ibRxTot+=  $ibRx[$i];
+        $ibErrorsTotTot+=$ibErrorsTot[$i];
+      }
+    }
+
+    ################################
+    #   opastats from opapmsquery
+    ################################
+
+    elsif ($name eq 'opa:')
+    {
+      my ($port, @fieldsNow)=(split(/\s+/, $data))[4,5..24];
+      for ($j=0; $j<4; $j++)
+      {
+        $fields[$j]=fix($fieldsNow[$j]-$ibFieldsLast[$i][$port][$j]);
+        $ibFieldsLast[$i][$port][$j]=$fieldsNow[$j];
+      }
+
+      $ibErrorsTot[$i]=$fieldsNow[19]-$ibFieldsLast[$i][$port][19];
+      $ibFieldsLast[$i][$port][19]=$fieldsNow[19];
+
+      $ibTxKB[$i]=$fields[0]*976.5625;  # need to express as KB
+      $ibTx[$i]=  $fields[2];
+      $ibRxKB[$i]=$fields[1]*976.5625;
+      $ibRx[$i]=  $fields[3];
+
       $ibTxKBTot+=$ibTxKB[$i];
       $ibTxTot+=  $ibTx[$i];
       $ibRxKBTot+=$ibRxKB[$i];
@@ -4854,7 +4903,8 @@ sub printPlotHeaders
   {
     for ($i=0; $i<$NumHCAs; $i++)
     {
-      $ibHeaders.="[IB:$i]HCA${SEP}[IB:$i]InPkt${SEP}[IB:$i]OutPkt${SEP}[IB:$i]InKB${SEP}[IB:$i]OutKB${SEP}[IB:$i]Err${SEP}";
+      $HCAName[$i]=~/(\S+?)_*$/;
+      $ibHeaders.="[IB:$1]HCA${SEP}[IB:$1]InPkt${SEP}[IB:$1]OutPkt${SEP}[IB:$1]InKB${SEP}[IB:$1]OutKB${SEP}[IB:$1]Err${SEP}";
     }
     writeData(0, $ch, \$ibHeaders, IB, $ZIB, 'ib', \$headersAll);
   }
@@ -7149,14 +7199,18 @@ sub printTerm
       {
         printText("\n")    if !$homeFlag;
         printText("# INFINIBAND STATISTICS ($rate)\n");
-        printText("#${miniDateTime}HCA    KBIn   PktIn  SizeIn   KBOut  PktOut SizeOut  Errors\n");
+        printText("#${miniDateTime}HCA       KBIn   PktIn  SizeIn   KBOut  PktOut SizeOut  Errors\n");
         exit(0)    if $showColFlag;
      }
 
       for ($i=0; $i<$NumHCAs; $i++)
       {
-        $line=sprintf("$datetime  %2d %7s %7s %7s %7s %7s %7s %7s\n",
-	  $i,
+        # this is messy.  some HCSa end with _ which we don't want to print BUT we
+        # need to preserve the full name in the array so do a non-greedy match so
+        # we see everything except the optional _ at the end.
+        $HCAName[$i]=~/(\S+?)_*$/;
+        $line=sprintf("$datetime %-6s %7s %7s %7s %7s %7s %7s %7s\n",
+          $1,
           cvt($ibRxKB[$i]/$intSecs,7,0,1), cvt($ibRx[$i]/$intSecs,6),
           $ibRx[$i] ? cvt($ibRxKB[$i]*1024/$ibRx[$i],4,0,1) : 0,
           cvt($ibTxKB[$i]/$intSecs,7,0,1), cvt($ibTx[$i]/$intSecs,6),
@@ -9421,6 +9475,7 @@ sub printPlotSlab
   }
 }
 
+# NOTE - although called ibCheck it also picks up opa info
 sub ibCheck
 {
   my $saveHCANames=$HCANames;
@@ -9432,16 +9487,6 @@ sub ibCheck
   # Since VStat can be a list, reset to the first that is found (if any)
   $NumHCAs=0;
   my $found=0;
-
-  foreach my $temp (split(/:/, $VStat))
-  {
-    if (-e $temp)
-    {
-      $found=1;
-      $VStat=$temp;
-      last;
-    }
-  }
 
   # This error can only happen when NOT open fabric
   if (!-e $SysIB && !$found)
@@ -9461,14 +9506,16 @@ sub ibCheck
   foreach $line (@lines)
   {
     $line=~/(.*)(\d+)$/;
-    $devname=$1;
-    $devnum=$2;
+    my $devname=$1;
+    my $devnum=$2;
 
     # While this should work for any ofed compliant adaptor, doing it this
     # way at least makes it more explicit which ones have been found to work.
-    if ($devname=~/mthca|mlx4_|mlx5_|qib/)
+    # also note hfi is the guy who speaks to opa
+    if ($devname=~/mthca|mlx4_|mlx5_|qib|hfi1_/)
     {
       $HCAName[$NumHCAs]=$devname;
+      $HCAId[$NumHCAs]=($devname=~/hfi/) ? $devnum+1 : "$devname$devnum";
       $HCANames.=" $devname";
       $file=$SysIB;
       $file.="/$devname";
@@ -9485,11 +9532,9 @@ sub ibCheck
         $state=~/.*: *(.+)/;
         $portState=($1 eq 'ACTIVE') ? 1 : 0;
         $HCAPorts[$NumHCAs][$port]=$portState;
-	chomp($lid=cat("$file/$port/lid"));
-        $HCALids[$NumHCAs][$port]=$lid;
 	if ($portState)
         {
-	  print "  OFED Port: $port  LID: $lid\n"    if $debug & 2;
+	  print "  OFED Port: $port  ID: $HCAId[$NumHCAs]\n"    if $debug & 2;
           $HCANames.=":$port";
           $activePorts++;
         }

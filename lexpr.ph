@@ -427,30 +427,38 @@ sub lexpr
     $tcpString.=sendData("tcpinfo.tcpxerrs", $tcpExErrors/$intSecs)    if $tcpFilt=~/T/;
   }
 
-  my $intString='';
+  my ($intSumString,$intDetString)=('','');
   if ($lexSubsys=~/x/i)
   {
-    if ($NumXRails)
-    {
-      $kbInT=  $elanRxKBTot;
-      $pktInT= $elanRxTot;
-      $kbOutT= $elanTxKBTot;
-      $pktOutT=$elanTxTot;
-    }
-
     if ($NumHCAs)
     {
-      $kbInT=  $ibRxKBTot;
-      $pktInT= $ibRxTot;
-      $kbOutT= $ibTxKBTot;
-      $pktOutT=$ibTxTot;
+      if ($lexSubsys=~/x/)
+      {
+        $kbInT=  $ibRxKBTot;
+        $pktInT= $ibRxTot;
+        $kbOutT= $ibTxKBTot;
+        $pktOutT=$ibTxTot;
+
+        $intSumString.=sendData("iconnect.kbin",   $kbInT/$intSecs);
+        $intSumString.=sendData("iconnect.pktin",  $pktInT/$intSecs);
+        $intSumString.=sendData("iconnect.kbout",  $kbOutT/$intSecs);
+        $intSumString.=sendData("iconnect.pktout", $pktOutT/$intSecs);
+      }
+
+      if ($lexSubsys=~/X/)
+      {
+        for (my $i=0; $i<$NumHCAs; $i++)
+	{
+	  $HCAName[$i]=~/(\S+?)_*$/;
+	  print "HCA: $HCAName[$i]  1: $1\n";
+          $intDetString.=sendData("iconnect.$1.kbin",   $ibRxKB[$i]/$intSecs);
+          $intDetString.=sendData("iconnect.$1.pktin",  $ibRx[$i]/$intSecs);
+          $intDetString.=sendData("iconnect.$1.kbout",  $ibTxKB[$i]/$intSecs);
+          $intDetString.=sendData("iconnect.$1.pktout", $ibTx[$i]/$intSecs);
+        }
+      }
     }
-   
-    $intString.=sendData("iconnect.kbin",   $kbInT/$intSecs);
-    $intString.=sendData("iconnect.pktin",  $pktInT/$intSecs);
-    $intString.=sendData("iconnect.kbout",  $kbOutT/$intSecs);
-    $intString.=sendData("iconnect.pktout", $pktOutT/$intSecs);
-  }
+     }
 
   my $envString='';
   if ($lexSubsys=~/E/i)
@@ -468,12 +476,16 @@ sub lexpr
 
   # if any imported data, it may want to include lexpr output AND we do a little more work to
   # separate the summary from the detail. also, in case any variables are gauges and we're doing
-  # totals we'll need to know that too.
-  my (@nameS, @valS, @nameD, @valD, @gaugeS, @gaugeD);
+  # totals we'll need to know that as well as non-string formatting.  There is a bit of magic here,
+  # perhaps the easiest example in misc.ph where it reports the uptime as a fracion of a day.  Here
+  # it passes the summary-data formatting in ref7.  Also note since it does distinguish between
+  # summary and detail data, it you want to change the formats of both, you'd need to set ref7 and
+  # ref8 in their appropriate sections of the printExport code.
+  my (@nameS, @valS, @nameD, @valD, @gaugeS, @gaugeD, @fmtS, @fmtD);
   my ($impSumString, $impDetString)=('','');
-  for (my $i=0; $i<$impNumMods; $i++) { &{$impPrintExport[$i]}('l', \@nameS, \@valS, \@nameD, \@valD, \@gaugeS, \@gaugeD); }
-  foreach (my $i=0; $i<scalar(@nameS); $i++) { $impSumString.=sendData($nameS[$i], $valS[$i], $gaugeS[$i]); }
-  foreach (my $i=0; $i<scalar(@nameD); $i++) { $impDetString.=sendData($nameD[$i], $valD[$i], $gaugeD[$i]); }
+  for (my $i=0; $i<$impNumMods; $i++) { &{$impPrintExport[$i]}('l', \@nameS, \@valS, \@nameD, \@valD, \@gaugeS, \@gaugeD, \@fmtS, \@fmtD); }
+  foreach (my $i=0; $i<scalar(@nameS); $i++) { $impSumString.=sendData($nameS[$i], $valS[$i], $gaugeS[$i], $fmtS[$i]); }
+  foreach (my $i=0; $i<scalar(@nameD); $i++) { $impDetString.=sendData($nameD[$i], $valD[$i], $gaugeD[$i], $fmtD[$i]); }
   $lexSumFlag=1    if $impSumString ne '';   # in case not already set
 
   $lexprExtString='';
@@ -495,11 +507,11 @@ sub lexpr
   my $lexprRec='';
   $lexprRec.="sample.time $lastSecs[$rawPFlag]$debTime\n"    if $lexSumFlag;
   $lexprRec.="$cpuSumString$diskSumString$nfsString$inodeString$memString$netSumString";
-  $lexprRec.="$lusSumString$sockString$tcpString$intString$envString$impSumString";
+  $lexprRec.="$lusSumString$sockString$tcpString$intSumString$envString$impSumString";
   $lexprRec.=$lexprExtString;
 
   $lexprRec.="sample.time $lastSecs[$rawPFlag]$debTime\n"   if !$lexSumFlag;
-  $lexprRec.="$cpuDetString$diskDetString$memDetString$netDetString$impDetString";
+  $lexprRec.="$cpuDetString$diskDetString$memDetString$netDetString$intDetString$impDetString";
 
   # Either send data over socket or print to terminal OR write to
   # a file, but not both!
@@ -523,7 +535,8 @@ sub sendData
   my $value= shift;
   my $gauge= shift;
   my $format=shift;
-  #print "Name: $name  VAL: $value\n";
+  #print "Name: $name  VAL: $value  GAUGE: %s  FORMAT: %s\n",
+  # 	defined($gague) ? $gague : '', defined($format) ? $format : '';
 
   # These are only undefined the very first time
   if (!defined($lexTTL{$name}))

@@ -121,8 +121,8 @@ sub miscPrintBrief
   }
   elsif ($type==3)    # data
   {
-    $$lineref.=sprintf(" %4s %4d %2d %3d ", 
-	cvt($miscUptime/86400), $miscMHz, $miscMounts, $miscLogins);
+    $$lineref.=sprintf(" %s %4d %2d %3d ", 
+	cvt(1.0*$miscUptime/86400), $miscMHz, $miscMounts, $miscLogins);
   }
   elsif ($type==4)    # reset 'total' counters
   {
@@ -183,13 +183,21 @@ sub miscPrintExport
   my $ref1=   shift;
   my $ref2=   shift;
   my $ref3=   shift;
+  my $ref4=   shift;
+  my $ref5=   shift;
+  my $ref6=   shift;
+  my $ref7=   shift;
+  my $ref8=   shift;
+
+  # see lexpr for how the above parameters are interpretted and why we have
+  # so many that are not used
 
   # The light-weight counters are reported every sampling interval but since I think sexpr
   # needs to be contant, we'll always report all even if some only sampled periodically.
   # Same thing for gexpr, at least for now.
   if ($type eq 'l')
   {
-     push @$ref1, "misc.uptime";   push @$ref2, sprintf("%d", $miscUptime/86400);
+     push @$ref1, "misc.uptime";   push @$ref2, sprintf("%.3f", $miscUptime/86400); push @$ref7, '%.3f';
      push @$ref1, "misc.cpuMHz";   push @$ref2, sprintf("%d", $miscMHz);
      push @$ref1, "misc.mounts";   push @$ref2, sprintf("%d", $miscMounts);
   }

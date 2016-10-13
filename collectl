@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 
-# Copyright 2003-2013Hewlett-Packard Development Company, L.P. 
+# Copyright 2003-2016 Hewlett-Packard Development Company, L.P. 
 #
 # collectl may be copied only under the terms of either the Artistic License
 # or the GNU General Public License, which may be found in the source kit
@@ -94,7 +94,7 @@ $numBrwBuckets=$cfsVersion=$sfsVersion='';
 $Resize=$IpmiCache=$IpmiTypes=$ipmiExec='';
 $i1DataFlag=$i2DataFlag=$i3DataFlag=0;
 $lastSecs=$interval2Print=0;
-$diskRemapFlag=$diskChangeFlag=$cpuDisabledFlag=$cpusDisabled=$cpusEnabled=$noCpusFlag=0;
+$diskChangeFlag=$cpuDisabledFlag=$cpusDisabled=$cpusEnabled=$noCpusFlag=0;
 $boottime=0;
 
 # only used once here, but set in formatit.ph
@@ -111,8 +111,8 @@ $syslogFlag=(eval {require "Sys/Syslog.pm" or die}) ? 1 : 0;
 $rootFlag=(!$PcFlag && `whoami`=~/root/) ? 1 : 0;
 $SrcArch= $Config{"archname"};
 
-$Version=  '4.0.2-1';
-$Copyright='Copyright 2003-2015 Hewlett-Packard Development Company, L.P.';
+$Version=  '4.0.4-1';
+$Copyright='Copyright 2003-2016 Hewlett-Packard Development Company, L.P.';
 $License=  "collectl may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
 
@@ -289,7 +289,6 @@ if (!-e "$ReqDir/formatit.ph")
 # in the same directory as formatit.ph
 print "BinDir: $BinDir  ReqDir: $ReqDir\n"    if $debug & 1;
 require "$ReqDir/formatit.ph";
-$diskRemapFlag=(eval {require "$ReqDir/diskremap.ph" or die}) ? 1 : 0;
 $formatitLoaded=1;
 
 # finally try to load these two, both of which are optional
@@ -353,7 +352,7 @@ $utimeMask=0;
 $comment=$runas='';
 $rawDskFilter=$rawDskIgnore=$rawNetFilter=$rawNetIgnore='';
 $tcpFiltDefault='ituc';
-
+$dskRemap='';
 my ($extract,$extractMode)=('',0);
 
 # Since --top has optionals arguments, we need to see if it was specified without
@@ -444,6 +443,7 @@ GetOptions('align!'     => \$alignFlag,
            'cpufilt=s'     => \$cpuFilt,
            'dskfilt=s'     => \$dskFilt,
            'dskopts=s'     => \$dskOpts,
+           'dskremap=s'    => \$dskRemap,
            'export=s'      => \$export,
 	   'from=s'        => \$from,
 	   'full!'         => \$fullFlag,
@@ -1029,12 +1029,32 @@ $rawDskFilter=~s/['"]//g;
 # purely an ease of use thing to allow people to use x-y as a cpu range
 $cpuFilt=~s/-/../g;
 
-# Both kinds of DISK and NETWORK filtering
 # Remember, this filter overrides the one in collectl.conf
 if ($rawDskFilter ne '')
 {
-  $DiskFilter=$rawDskFilter;
+  # if filter starts with '+', just add to existing string
+  if ($rawDskFilter=~/\+/)
+  {
+    error("+ in rawdskfilt must be the first char")
+      if $rawDskFilter!~/^\+/;
+
+    $rawDskFilter=~s/^\+//;
+    $DiskFilter.="|$rawDskFilter";
+  }
+  else
+  {
+    $DiskFilter=$rawDskFilter;
+  }
   $DiskFilterFlag=1;
+}
+
+undef %diskRemap;
+$diskRemap{'cciss\/'}='';
+foreach my $remap (split(/,/, $dskRemap))
+{
+  my ($pat, $sub) = split(/:/, $remap);
+  logmsg('F', "--dskremap string, $remap, missing ':'")    if !defined($sub);
+  $diskRemap{$pat}=$sub;
 }
 
 # cpu filters are a little differnt because we're detailing with
@@ -1762,6 +1782,12 @@ if ($playback ne '')
     $tempSys=~s/[$recSubsys]//gi;  # remove ANY that are recorded, whether summary OR detail
     $subsys=''    if $subsys eq ' ';
     print "recSubsys: $recSubsys subsys: $subsys  tempSys: $tempSys\n"    if $debug & 1;
+
+    if ($statsFlag && $recSubsys=~/[YZ]/ && $subsys=~/[YZ]/)
+    {
+      print "--stats does not apply to slabs/process and so ignoring those subsystems\n";
+      $subsys=~s/[YZ]//g;
+    }
 
     # When processing a batch of files, it's possible none of them have any of the selected subsystems,
     # the best example being playing back  *.gz files which have been collected with --tworaw and only
@@ -6735,6 +6761,19 @@ sub whatsnew
   my $whatsnew=<<EOF6;
 What's new in collectl in the last year or so?
 
+Version 4.0.4
+- new switch: --dskremap
+- enhance switch: --dskfilt
+- added disk read/write times to -sD output
+- added AnonHuge to memory stats
+- added nr_shmem to memory -P stats
+- added en as known network device name
+- lustre disabled (though code still there but will be removed soon)
+
+Version 4.0
+- added mlx5 as new IB device type
+- colmux now part of collectl distro
+
 Version 3.7.4  Jun 2014
 - new: --ALL collect/playback for ALL subsystems both summary and detail
 - new: --full forces --verbose + RECORD separator as parsing aid for others
@@ -6742,27 +6781,7 @@ Version 3.7.4  Jun 2014
 - new: 2 new cpu stats, guest and guest_nice
 - new: 3rd --top parameter for vertical (non-home) display, see --showtopopt
 - default native lustre support has been removed.  either add 'l' to -s in
-  collectl.conf OR contact Peter Piela at Terascala for his plugin
-
-Version 3.7.3  Apr 2014
-- support for RHEL7
-
-Version 3.7.2  Mar 2014
-- new --cpufilt allows filtering cpus in detail, plot and for interrupts
-- ehhanced InfiniBand monitoring to use extended counters when present
-  and if so, allow multiple versions of collectl to run at the same time
-- remove myrinet and quadrics support  
-
-version 3.6.8  Aug 2013
-- new --procopt u[width] specifies different username width in proc display
-      --procopt k, removes known shells from process listing with -sZ,
-          currently set to /bin.sh, /usr/bin/perl, /usr/bin/python & python
-- new --dskopt/--netopt o will exclude unused devices from plot order, see
-      disk/network monitoring docs on sourceforge for more detail
-- new --intfilt, works like other filters except this one's for interrupt
-      names and/or numbers
-- always log message types E/F to syslog when in daemon mode
-- exclude openstack/cinder network types of dp, nl and tap from network summary
+  collectl.conf OR contact Peter Piela at Cray for his plugin
 
 EOF6
 

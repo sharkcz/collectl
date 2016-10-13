@@ -393,6 +393,10 @@ this switch has been left in place.
 By default and when -nocheck not specified, colmux checks the versions of all collectl instances
 against that of the first node found to be running collectl and if different, reports the
 mismatch.  This switch suppresses that warning.
+
+When a connection is received from an unexpected address, a warning is also
+reported and the request promptly ignored.  This switch also suppresses those
+messages as well.  For more information on problems connecting, see CONNECTION PROBLEMS.
 .RE
 
 .B "-reachable"
@@ -424,9 +428,8 @@ the ssh to send a periodic keepalive to the other end so that connection doesn't
 
 .B "-retaddr addr"
 .RS
-By default, colmux listens on the default routes interface's address and tell collectl to connect
-back to it using that.  However, in some cases this address won't work correctly and so using this
-switch will tell collectl to use a different address to connect back over.
+Tell remote collectls to open a socket on this address instead of the preselected one.  For
+more details on this, see CONNECTION PROBLEMS.
 .RE
 
 .B "-timeout secs"
@@ -437,55 +440,14 @@ to connect back in time.  This switch will extend that timeout, but it also requ
 V3.6.4 be used because earlier version do not support this feature.
 .RE
 
-.SH WHAT HAS CHANGED WITH VERSION 3?
-
-Users of Version 2 will find this to look like a new utility though in actuality only a couple 
-of enhancements have been made to the functionality, which include:
-
-.B "sorting of multi-line data"
-
-Rather than simply report all the data for all hosts specified, something ver few people actually
-used, only the top-n hosts will now have their data reported, sorted by the column specified by -column.
-
-.B "ability to playback data from collectl files"
-
-Simply add -p to the collectl command and the associated file(s) for the same day will be played back
-and the data reported in either multi- or single-line format.
-
-.B "new features, include -test to show which column(s) selected"
-
-Instead of manually counting which column(s) you wish to select for sorting or single-line mode, -test
-will show you column numbering, which can be particularly useful for wide lines.  Additional switches
-for enhanced multi-line formatting have also been included.
-
-.B "several changes to single line mode"
-
+.B "-timerange secs"
 .RS
-.B "new way to request prefacing lines with timestamps:"
-Simply add the desired time format using -o to the collectl command
-
-.B "no longer need -w for non-plot data:"
-colmux is smart enough to recognize fields that end in K/M/G and convert them to the 
-appropriate values before sorting.  However it will still display them in their
-original forms.  Further, you can even sort on non-numeric fields such as device
-names and many of the fields reported for process data.
-.RE 
-
-.B "several switched eliminated"
-.RS
-Yes, it is hard to believe but a number of switches have been eliminated either 
-because their functionality is encompassed in other mechanisms or their function
-has been deemed obsolete.
-
-.B "-date, -mmdd, -time:"
-time formats now handled with -o in collectl command
-
-.B "-hosts, -machines:"
-use -address
-
-.B "-rsh:"
-nobody uses rsh anymore
-.RE
+When colmux starts up and checks the connectivity to all the machines specified by -addr,
+it also gets their current date/time and using that computes the range of system times
+across all nodes.  If that time is found to be more then -timerange seconds, colmux generates
+a warning as this difference could cause reporting probems.  One can increase the range
+to get rid of the message (not recommended unless other factors are preventing nodes from
+responding quickly enough to the date command) OR suppress the warning with -quiet.
 .RE
 
 .SH PLAYBACK MODE RESTRICTIONS
@@ -549,14 +511,33 @@ technique works just as well with playing back data as well.
 colmux requires passwordless ssh between the node it is running on those it is monitoring.
 also be sure the port you are using for communications, the default is 2655, if open
 
-.SH KNOWN PROBLEMS
+.SH CONNECTION PROBLEMS
 
-see source code
+The way colmux works is to choose an address it wants to communicate over and starts up
+one or more remote copies of collectl, telling them to connect back to colmux using that address.
+The easiest way to see this, is to run colmux with -noesc, which tells it NOT to issue any escape
+sequences and therefore not to run in full screen mode.  The addional switch of -debug 1 tells
+it to show the remote collectl startup command.  When there is a communications problem you
+will typically see 'connection timed out' messages displayed.
+
+There are actually a couple of possibilities here, one of which is a firewall is preventing
+connections and the easiest way to test this is run collectl on the local machine like this: 
+collectl -Aserver.  This tells collectl run as a server, listening for connections just
+like colmux.  Then log into a remote machine and run 
+/usr/share/collectl/util/client.pl addr-of-server which tells
+client.pl to open a socket to that copy of collectl.  It should fail just like when it was
+run via colmux, so  try opening the firewall and try it again.  If it fixes the problem,
+it was indeed the firewall blocking things and colmux should now work just fine.
+
+Sometimes there are multiple interfaces defined on the machine hosting colmux and in some
+cases only some addresses will allow socket connections.  Again, using client.pl on the remote
+machine try connecting back to collectl over different addresses and when you find one that
+works, tell colmux to use that address for communication via the -retaddr switch.
 
 .SH AUTHOR
 This program was written by Mark Seger (mark.seger@hp.com).
 .br
-Copyright 2014 Hewlett-Packard Development Company, L.P.
+Copyright 2015 Hewlett-Packard Development Company, L.P.
 
 .SH SEE ALSO
 http://collectl-utils.sourceforge.net/colmux.html

@@ -246,6 +246,11 @@ patterns to match each input record against.
 Just remember that unlike --dskfilt which only filters during display, records filtered
 with this switch are never even recorded and so lost forever.
 
+You can optionally specify your filter with a leading plus-sign which tells collectl
+to just add your filter to the default specification.  Care should be taken here as
+longer filters will slightly increase overhead and with a lot of disks and/or shorter
+monitoring intervals can add up.
+
 As a side benefit of this switch, if you really want to look at partition level stats
 you can do so by leaving off the trailing space in the default pattern.
 
@@ -972,6 +977,13 @@ i \- display the i/o sizes in brief mode just like with --iosize
 o \- exclude unused disks from new file headers and plot data
 .br
 z \- only applies to disk details, do not report any lines with values of all zeros.
+.RE
+
+.B "--dskremap aaa:bbb,ccc:ddd..."
+.RS
+This will cause disk names matching the perl pattern aaa to be replaced with the string bbb.  In some
+cases, you may simply want to remove the entire string in which case the second string should be left empty.
+If you want to remove a string container a /, be sure to escape it with a backslash.
 .RE
 
 .B "--envopts Environmental Options"

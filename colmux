@@ -3,7 +3,7 @@
 # problems
 #  pattern match for -i recognition/removal (in -test) not robust enough
 
-# Copyright 2005-2014 Hewlett-Packard Development Company, LP
+# Copyright 2005-2015 Hewlett-Packard Development Company, LP
 #
 # colmux may be copied only under the terms of either the Artistic License
 # or the GNU General Public License, which may be found in the source kit
@@ -19,6 +19,7 @@
 #  128 - echo everything from collectl
 #  256 - async double-buffering
 #  512 - echo collectl version checking commands
+# 1024 - print remote host's datetime as yyyymmddhhmmss
 
 # KNOWN PROBLEMS
 #
@@ -49,6 +50,7 @@ use strict 'vars';
 
 use threads;
 use threads::shared;
+my @dates:shared;
 my @threadFailure:shared;
 my $firstHostName:shared;
 my $firstColVersion:shared;
@@ -66,7 +68,7 @@ $|=1;
 my $Collectl='/usr/bin/collectl';
 my $Program='colmux';
 my $Version='4.9.0';
-my $Copyright='Copyright 2005-2014 Hewlett-Packard Development Company, L.P.';
+my $Copyright='Copyright 2005-2015 Hewlett-Packard Development Company, L.P.';
 my $License="colmux may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
 
@@ -153,6 +155,7 @@ my $colLogFlag=0;
 my $colnodiv='';
 my $finalCr=0;
 my $retaddr='';
+my $timerange=1;
 
 GetOptions("address=s"    =>\$address,
 	   "age=i"        =>\$age,
@@ -191,6 +194,7 @@ GetOptions("address=s"    =>\$address,
 	   "retaddr=s"    =>\$retaddr,
            "reverse!"     =>\$revFlag,
 	   "sshkey=s"     =>\$sshkey,
+	   "timerange=i"  =>\$timerange,
 	   "sudo!"        =>\$sudoFlag,
            "test!"        =>\$testFlag,
 	   "timeout=i"    =>\$timeout,
@@ -423,6 +427,29 @@ if ($address ne '' && !$nocheckFlag)
     Time::HiRes::usleep(100000);
   }
 
+  # make sure dates within --timerange secs
+  my $minSecs=9999999999;
+  my $maxSecs=0;
+  for (my $i=0; $i<@hostnames; $i++)
+  {
+    my $year=substr($dates[$i], 0, 4);
+    my $mon= substr($dates[$i], 4, 2);
+    my $day= substr($dates[$i], 6, 2);
+    my $hour=substr($dates[$i], 8, 2);
+    my $mins=substr($dates[$i], 10, 2);
+    my $secs=substr($dates[$i], 12, 2);
+    my $seconds=(timelocal($secs, $mins, $hour, $day, $mon-1, $year-1900));
+    $minSecs=$seconds    if $seconds<$minSecs;
+    $maxSecs=$seconds    if $seconds>$maxSecs;
+    print "$hostnames[$i]: $dates[$i]"    if $debug & 1024;
+    if ($maxSecs-$minSecs>$timerange)
+    {
+      my $plural=($timerange>1) ? 's' : '';
+      print "WARNING: $hostnames[$i]'s time differs by more than $timerange second$plural with at least one other\n";
+      print "         run again with -debug 1024 and/or use -timerange or -quiet to suppress this message\n";
+    }
+  }
+
   # Finally go back through hosts list in reverse order so we don't shift things
   # on top of each other, removing any that report unsuitability for use
   my $killSsh=0;
@@ -449,6 +476,7 @@ if ($address ne '' && !$nocheckFlag)
       $reason='could not resolve name'             if $threadFailure[$i]==16;
       $reason='timed out during banner exchange'   if $threadFailure[$i]==32;
       $reason='collectl version < 3.5'             if $threadFailure[$i]==64;
+      $reason='collectl not installed'             if $threadFailure[$i]==128;
 
       printf "$hostnames[$i] removed from list: $reason\n";
       $printedReturnFlag=1;
@@ -657,12 +685,10 @@ if ($gotHeadersFlag)
 {
   exit    if !reformatHeaders();
 
-  print "LASTHEADER: $lastHeader\n";
   foreach my $col (split(/\s+/, $lastHeader))
   {
     # strip detail field names including surrounding []s
     $col=~s/\[.*\]//    if $colnoinstFlag;
-    print "PUSH: $col\n";
     push @headernames, $col;
   }
 }
@@ -1181,7 +1207,7 @@ sub check
     my $uname= (!defined($usernames{$hostnames[$i]})) ? '' : "$usernames{$hostnames[$i]}\@";
     my $command="$Ssh $switch $uname$hostnames[$i] $Collectl -v 2>&1\n";
     $command=~s/ -q//;    # remove 'quiet' switch so we see 'connection refused'
-    print "Command: $command\n"    if $debug & 512;
+    print "Command: $command"    if $debug & 512;
     my $collectl=`$command`;
 
     # note if motd printed, 'collectl' may not start on the 1st line, so need /m on regx
@@ -1209,6 +1235,11 @@ sub check
     $threadFailure[$i]=8    if $collectl=~/Permission denied/s;
     $threadFailure[$i]=16   if $collectl=~/Could not resolve/s;
     $threadFailure[$i]=32   if $collectl=~/timed out during banner exchange/s;
+    $threadFailure[$i]=128  if $collectl=~/collectl:\s+No such file/s;
+
+    $command="$Ssh $switch $uname$hostnames[$i] date +%Y%m%d%H%M%S 2>&1\n";
+    print "Command: $command"    if $debug & 512;
+    $dates[$i]=`$command`;
   }
 }
 
@@ -2334,7 +2365,8 @@ Exception Reporting Specific
 Diagnostics
   -debug      number       primarily for development/debugging, see source code
   -nocheck                 do not check hosts (ping/ssh/collectl) before connecting
-  -quiet                   do not report warnings for mismatched collectl versions
+  -quiet                   do not report warnings for mismatched collectl versions and
+                             unknown connections
   -reachable               if specified, ALL hosts must be pingable/ssh-able
 
 Miscellanous
@@ -2345,6 +2377,7 @@ Miscellanous
                              start with -deb 1 to see address collectl told to use
   -timeout    secs         use this timeout for remote collectl to connect back
                              requires collectl V3.6.4 or better
+  -timerange  secs         report remote systems times wider than this rang [def=$timerange]
 
 $Copyright;
 EOF

@@ -29,6 +29,7 @@ BINDIR=$DESTDIR/usr/bin
 DOCDIR=$DESTDIR/usr/share/doc/collectl
 SHRDIR=$DESTDIR/usr/share/collectl
 MANDIR=$DESTDIR/usr/share/man/man1
+SYSDDIR=$DESTDIR/usr/lib/systemd/system
 ETCDIR=$DESTDIR/etc
 INITDIR=$ETCDIR/init.d
 
@@ -36,6 +37,7 @@ rm -f $BINDIR/collectl
 rm -f $ETCDIR/collectl.conf
 rm -f $INITDIR/collectl
 rm -f $MANDIR/collectl*
+rm -f $SYSDDIR/collectl.service    # may not be there...
 
 rm -fr $DOCDIR
 rm -fr $SHRDIR

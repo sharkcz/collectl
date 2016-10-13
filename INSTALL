@@ -6,6 +6,7 @@ BINDIR=$DESTDIR/usr/bin
 DOCDIR=$DESTDIR/usr/share/doc/collectl
 SHRDIR=$DESTDIR/usr/share/collectl
 MANDIR=$DESTDIR/usr/share/man/man1
+SYSDDIR=$DESTDIR/usr/lib/systemd/system
 ETCDIR=$DESTDIR/etc
 INITDIR=$ETCDIR/init.d
 
@@ -54,6 +55,11 @@ chmod 755 $SHRDIR/util/*
 if [ -x /bin/rm ] ; then
   /bin/rm -f $INITDIR/rc*.d/*collectl
   /bin/rm -f $ETCDIR/rc.d/rc*.d/*collectl
+fi
+
+# only if systemd is supported
+if [ -d $SYSDDIR ]; then
+  cp service/collectl.service $SYSDDIR
 fi
 
 # Try and decide which distro this is based on distro specific files.

@@ -1,4 +1,4 @@
-# copyright, 2003-20012 Hewlett-Packard Development Company, LP
+# copyright, 2003-20016 Hewlett-Packard Development Company, LP
 #
 # collectl may be copied only under the terms of either the Artistic License
 # or the GNU General Public License, which may be found in the source kit
@@ -66,7 +66,7 @@ sub initRecord
     }
   }
 
-  # For -sD calculations, we need the HZ of the system
+  # for jiffy based calculations, we need the HZ of the system
   $HZ=POSIX::sysconf(&POSIX::_SC_CLK_TCK);
   $PageSize=POSIX::sysconf(_SC_PAGESIZE);
 
@@ -237,8 +237,7 @@ sub initRecord
     my @fields=split(/\s+/, $line);
 
     my $diskName=$fields[3];
-    $diskName=remapDiskName($diskName)    if $diskRemapFlag;
-    $diskName=~s/cciss\///;
+    $diskName=diskRemapName($diskName);
     push @dskOrder, $diskName;
     $disks{$diskName}=$dskIndexNext++;
   }
@@ -767,6 +766,23 @@ sub initRecord
   }
 }
 
+sub diskRemapName
+{
+  my $diskName=shift;
+
+  foreach my $key (keys %diskRemap)
+  {
+    if ($diskName=~/$key/)
+    {
+      my $temp=$diskName;
+      $diskName=~s/$key/$diskRemap{$key}/;
+      $remapped{$temp}=$diskName;    # save, just in case we want to use some day
+      #print "$temp RENAMED via REMAP: $key TO $diskName\n";
+    }
+  }
+  return($diskName);
+}
+
 # Why is initFormat() so damn big?
 # 
 # Since logs can be analyzed on a system on which they were not generated
@@ -1110,7 +1126,7 @@ sub initFormat
     $header=~/Interval: (\S+)/;
     $interval=$1;
 
-    # For -s p calculations, we need the HZ of the system
+    # save HZ and archictecture for later use
     $header=~/HZ:\s+(\d+)\s+Arch:\s+(\S+)/;
     $HZ=$1;
     $SrcArch=$2;
@@ -1320,7 +1336,8 @@ sub initFormat
   $procsRun=$procsBlock=0;
   $pagein=$pageout=$swapin=$swapout=$swapTotal=$swapUsed=$swapFree=0;
   $pagefault=$pagemajfault=0;
-  $memTot=$memUsed=$memFree=$memShared=$memBuf=$memCached=$memSlab=$memAnon=$memMap=$memCommit=$memLocked=0;
+  $memTot=$memUsed=$memFree=$memShared=$memBuf=$memCached=$memSlab=0;
+  $memAnon=$memAnonH=$memMap=$memCommit=$memLocked=0;
   $memHugeTot=$memHugeFree=$memHugeRsvd=$memSUnreclaim=0;
   $sockUsed=$sockTcp=$sockOrphan=$sockTw=$sockAlloc=0;
   $sockMem=$sockUdp=$sockRaw=$sockFrag=$sockFragM=0;
@@ -1446,6 +1463,7 @@ sub initFormat
     $dskRead[$i]=$dskReadKB[$i]=$dskReadMrg[$i]=0;
     $dskWrite[$i]=$dskWriteKB[$i]=$dskWriteMrg[$i]=0;
     $dskRqst[$i]=$dskQueLen[$i]=$dskWait[$i]=$dskSvcTime[$i]=$dskUtil[$i]=0;
+    $dskWaitR[$i]=$dskWaitW[$i]=0;
   }
 
   for ($i=0; $i<$netIndexNext; $i++)
@@ -1568,7 +1586,8 @@ sub initLast
   $pagefaultLast=$pagemajfaultLast=0;
   $opsLast=$readLast=$readKBLast=$writeLast=$writeKBLast=0;
   $memFreeLast=$memUsedLast=$memBufLast=$memCachedLast=0;
-  $memInactLast=$memSlabLast=$memMapLast=$memAnonLast=$memCommitLast=$memLockedLast=0;
+  $memInactLast=$memSlabLast=$memMapLast=0;
+  $memAnonLast=$memAnonHLast=$memCommitLast=$memLockedLast=0;
   $swapFreeLast=$swapUsedLast=0;
 
   for ($i=0; $i<18; $i++)
@@ -1601,7 +1620,7 @@ sub initLast
     $numaStat[$i]->{hitsLast}=$numaStat[$i]->{missLast}=$numaStat[$i]->{forLast}=0;
     $numaMem[$i]->{freeLast}= $numaMem[$i]->{usedLast}=$numaMem[$i]->{actLast}=0;
     $numaMem[$i]->{inactLast}=$numaMem[$i]->{mapLast}= $numaMem[$i]->{anonLast}=0;
-    $numaMem[$i]->{lockLast}= $numaMem[$i]->{slabLast}=0;
+    $numaMem[$i]->{anonHLast}=$numaMem[$i]->{lockLast}= $numaMem[$i]->{slabLast}=0;
   }
 
   # ...and disks
@@ -2119,7 +2138,6 @@ sub intervalEnd
   # during interactive processing, the first interval only provides baseline data
   # and so never call print
   intervalPrint($seconds)           if $playback ne '' || $intFirstSeen;
-
   # need to reinitialize all relevant variables at end of each interval.
   initInterval();
 
@@ -3277,7 +3295,9 @@ sub dataAnalyze
   {
     ($major, $minor, $diskName, @dskFields)=split(/\s+/, $data);
 
-    $diskName=~s/cciss\///;
+    # if using --dskremap (and also noting prepopulated with 'cciss/'), remap disk name
+    $diskName=diskRemapName($diskName);
+
     if (!defined($disks{$diskName}))
     {
       $dskChangeFlag|=1;    # new disk found
@@ -3379,6 +3399,8 @@ sub dataAnalyze
     $dskRqst[$dskIndex]=   $numIOs ? ($dskReadKB[$dskIndex]+$dskWriteKB[$dskIndex])/$numIOs : 0;
     $dskQueLen[$dskIndex]= $dskTicks[$dskIndex] ? $dskWeighted[$dskIndex]/$dskTicks[$dskIndex] : 0;
     $dskWait[$dskIndex]=   $numIOs ? ($dskReadTicks[$dskIndex]+$dskWriteTicks[$dskIndex])/$numIOs : 0;
+    $dskWaitR[$dskIndex]=  $dskRead[$dskIndex] ? ($dskReadTicks[$dskIndex]/$dskRead[$dskIndex]) : 0;
+    $dskWaitW[$dskIndex]=  $dskWrite[$dskIndex] ? ($dskWriteTicks[$dskIndex]/$dskWrite[$dskIndex]) : 0;
     $dskSvcTime[$dskIndex]=$numIOs ? $dskTicks[$dskIndex]/$numIOs : 0;
     $dskUtil[$dskIndex]=   $dskTicks[$dskIndex]*10/$microInterval;
 
@@ -3814,7 +3836,7 @@ sub dataAnalyze
     }
   }
 
-  elsif ($subsys=~/m/i && $type=~/^Buffers|^Cached|^Dirty|^Active|^Inactive|^AnonPages|^Mapped|^Slab:|^Committed_AS:|^Huge|^SUnreclaim|^Mloc|^nr/)
+  elsif ($subsys=~/m/i && $type=~/^Buffers|^Cached|^Dirty|^Active|^Inactive|^Anon|^Mapped|^Slab:|^Committed_AS:|^Huge|^SUnreclaim|^Mloc|^nr/)
   {
     $data=(split(/\s+/, $data))[0];
     $memBuf=$data             if $type=~/^Buf/;
@@ -3823,7 +3845,8 @@ sub dataAnalyze
     $memAct=$data             if $type=~/^Act/;
     $memInact=$data           if $type=~/^Ina/;
     $memSlab=$data            if $type=~/^Sla/;
-    $memAnon=$data            if $type=~/^Anon/;
+    $memAnon=$data            if $type=~/^AnonPages/;
+    $memAnonH=$data           if $type=~/^AnonHuge/;
     $memMap=$data             if $type=~/^Map/;
     $memLocked=$data          if $type=~/^Mlocked/;
     $memCommit=$data          if $type=~/^Com/;
@@ -3843,6 +3866,7 @@ sub dataAnalyze
       $memSlabC=  $memSlab-$memSlabLast;
       $memMapC=   $memMap-$memMapLast;
       $memAnonC=  $memAnon-$memAnonLast;
+      $memAnonHC= $memAnonH-$memAnonHLast;
       $memCommitC=$memCommit-$memCommitLast;
       $memLockedC=$memLocked-$memLockedLast;
 
@@ -3852,6 +3876,7 @@ sub dataAnalyze
       $memSlabLast=  $memSlab;
       $memMapLast=   $memMap;
       $memAnonLast=  $memAnon;
+      $memAnonHLast= $memAnonH;
       $memCommitLast=$memCommit;
       $memLockedLast=$memLocked;
     }
@@ -3891,8 +3916,10 @@ sub dataAnalyze
       { $numaMem[$node]->{inact}=$value; }
       elsif ($name=~/^Mapped/)
       { $numaMem[$node]->{map}=$value; }
-      elsif ($name=~/^Anon/)
+      elsif ($name=~/^AnonPages/)
       { $numaMem[$node]->{anon}=$value; }
+      elsif ($name=~/^AnonHugePages/)
+      { $numaMem[$node]->{anonH}=$value; }
       elsif ($name=~/^Mlock/)
       { $numaMem[$node]->{lock}=$value; }
 
@@ -3910,6 +3937,7 @@ sub dataAnalyze
           $numaMem[$node]->{inactC}=$numaMem[$node]->{inact}-$numaMem[$node]->{inactLast};
           $numaMem[$node]->{mapC}=  $numaMem[$node]->{map}-  $numaMem[$node]->{mapLast};
           $numaMem[$node]->{anonC}= $numaMem[$node]->{anon}- $numaMem[$node]->{anonLast};
+          $numaMem[$node]->{anonHC}=$numaMem[$node]->{anonH}-$numaMem[$node]->{anonHLast};
           $numaMem[$node]->{lockC}= $numaMem[$node]->{lock}- $numaMem[$node]->{lockLast};
           $numaMem[$node]->{slabC}= $numaMem[$node]->{slab}- $numaMem[$node]->{slabLast};
 
@@ -3919,6 +3947,7 @@ sub dataAnalyze
           $numaMem[$node]->{inactLast}=$numaMem[$node]->{inact};
           $numaMem[$node]->{mapLast}=  $numaMem[$node]->{map};
           $numaMem[$node]->{anonLast}= $numaMem[$node]->{anon};
+          $numaMem[$node]->{anonHLast}=$numaMem[$node]->{anonH};
           $numaMem[$node]->{lockLast}= $numaMem[$node]->{lock};
           $numaMem[$node]->{slabLast}= $numaMem[$node]->{slab};
         }
@@ -3943,13 +3972,13 @@ sub dataAnalyze
 	# These MUST be caused by a kernel bug as counters shouldn't go backwards!!!
 	if ($numaStat[$node]->{miss}<0)
 	{
-	  print "#yikes!  numa_miss < 0    on node: $node NOW: $numaStat[$node]->{missNow} LAST: $numaStat[$node]->{missLast}\n";
+	  logmsg('E', "Possible kernel metric bug, miss counter went backwards from $numaStat[$node]->{missLast} to $numaStat[$node]->{missNow}");
   	  $numaStat[$node]->{miss}=0;
 	}
 
 	if ($numaStat[$node]->{for}<0)
 	{
-	  print "#yikes!  numa_foreign < 0 on node: $node NOW: $numaStat[$node]->{forNow} LAST: $numaStat[$node]->{forLast}\n";
+	  logmsg('E', "Possible kernel metric bug, foreign counter went backwards from $numaStat[$node]->{forLast} to $numaStat[$node]->{forNow}");
   	  $numaStat[$node]->{for}=0;
 	}
 
@@ -4426,7 +4455,7 @@ sub printPlotHeaders
   if ($subsys=~/m/)
   {
     $headers.="[MEM]Tot${SEP}[MEM]Used${SEP}[MEM]Free${SEP}[MEM]Shared${SEP}[MEM]Buf${SEP}[MEM]Cached${SEP}";
-    $headers.="[MEM]Slab${SEP}[MEM]Map${SEP}[MEM]Anon${SEP}[MEM]Commit${SEP}[MEM]Locked${SEP}";    # always from V1.7.5 forward
+    $headers.="[MEM]Slab${SEP}[MEM]Map${SEP}[MEM]Anon${SEP}[MEM]AnonH${SEP}[MEM]Commit${SEP}[MEM]Locked${SEP}";
     $headers.="[MEM]SwapTot${SEP}[MEM]SwapUsed${SEP}[MEM]SwapFree${SEP}[MEM]SwapIn${SEP}[MEM]SwapOut${SEP}";
     $headers.="[MEM]Dirty${SEP}[MEM]Clean${SEP}[MEM]Laundry${SEP}[MEM]Inactive${SEP}";
     $headers.="[MEM]PageIn${SEP}[MEM]PageOut${SEP}[MEM]PageFaults${SEP}[MEM]PageMajFaults${SEP}";
@@ -4594,11 +4623,12 @@ sub printPlotHeaders
       $dskName=$dskOrder[$i];
       next    if ($dskFiltKeep eq '' && $dskName=~/$dskFiltIgnore/) || ($dskFiltKeep ne '' && $dskName!~/$dskFiltKeep/);
 
-      $temp= "[DSK]Name${SEP}[DSK]Reads${SEP}[DSK]RMerge${SEP}[DSK]RKBytes${SEP}";
-      $temp.="[DSK]Writes${SEP}[DSK]WMerge${SEP}[DSK]WKBytes${SEP}[DSK]Request${SEP}";
+      # note I removed remapping of cciss name because it was just discovered I never needed to since
+      # the cciss/ was dropped when $dskOrder array implemented
+      $temp= "[DSK]Name${SEP}[DSK]Reads${SEP}[DSK]RMerge${SEP}[DSK]RKBytes${SEP}[DSK]WaitR${SEP}";
+      $temp.="[DSK]Writes${SEP}[DSK]WMerge${SEP}[DSK]WKBytes${SEP}[DSK]WaitW${SEP}[DSK]Request${SEP}";
       $temp.="[DSK]QueLen${SEP}[DSK]Wait${SEP}[DSK]SvcTim${SEP}[DSK]Util${SEP}";
       $temp=~s/DSK/DSK:$dskName/g;
-      $temp=~s/cciss\///g;
       $dskHeaders.=$temp;
     }
     writeData(0, $ch, \$dskHeaders, DSK, $ZDSK, 'dsk', \$headersAll);
@@ -4626,7 +4656,7 @@ sub printPlotHeaders
     for ($i=0; $i<$CpuNodes; $i++)
     {
       $numaHeaders.="[NUMA:$i]Used${SEP}[NUMA:$i]Free${SEP}[NUMA:$i]Slab${SEP}[NUMA:$i]Mapped${SEP}";
-      $numaHeaders.="[NUMA:$i]Anon${SEP}[NUMA:$i]Inactive${SEP}[NUMA:$i]Hits${SEP}";
+      $numaHeaders.="[NUMA:$i]Anon${SEP}[NUMA:$i]AnonH${SEP}[NUMA:$i]Inactive${SEP}[NUMA:$i]Hits${SEP}";
     }
     writeData(0, $ch, \$numaHeaders, NUMA, $ZNUMA, 'numa', \$headersAll);
   }
@@ -4960,7 +4990,7 @@ sub printPlot
   # the data is already being recorded in the raw file and we don't want to do
   # both
 
-  if (!$rawtooFlag && $subsys=~/[YZ]/ && $interval2Print)
+  if (!$rawtooFlag && $subsys=~/[YZ]/ && $interval2Print && !$firstTime2)
   {
     printPlotSlab($date, $time)    if $subsys=~/Y/ && !$slabAnalOnlyFlag;
     printPlotProc($date, $time)    if $subsys=~/Z/ && !$procAnalOnlyFlag;
@@ -5003,7 +5033,8 @@ sub printPlot
     {
       $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
                 $memTot, $memUsed, $memFree, $memShared, $memBuf, $memCached); 
-      $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS", $memSlab, $memMap, $memAnon, $memCommit, $memLocked);   # Always from V1.7.5 forward
+      $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
+		$memSlab, $memMap, $memAnon, $memAnonH, $memCommit, $memLocked);   # Always from V1.7.5 forward
       $plot.=sprintf("$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
                 $swapTotal, $swapUsed, $swapFree, $swapin/$intSecs, $swapout/$intSecs,
                 $memDirty, $clean, $laundry, $memInact,
@@ -5233,16 +5264,16 @@ sub printPlot
       if (defined($disks{$dskName}))
       {
         my $i=$disks{$dskName};
-        $dskRecord=sprintf("%s$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
+        $dskRecord=sprintf("%s$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
                 $dskName,
-                $dskRead[$i]/$intSecs,    $dskReadMrg[$i]/$intSecs,  $dskReadKB[$i]/$intSecs,
-                $dskWrite[$i]/$intSecs,   $dskWriteMrg[$i]/$intSecs, $dskWriteKB[$i]/$intSecs,
+                $dskRead[$i]/$intSecs,    $dskReadMrg[$i]/$intSecs,  $dskReadKB[$i]/$intSecs, $dskWaitR[$i]/$intSecs,
+                $dskWrite[$i]/$intSecs,   $dskWriteMrg[$i]/$intSecs, $dskWriteKB[$i]/$intSecs, $dskWaitW[$i]/$intSecs,
                 $dskRqst[$i], $dskQueLen[$i], $dskWait[$i], $dskSvcTime[$i], $dskUtil[$i]);
       }
       else
       {
-        $dskRecord=sprintf("%s$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
-		$dskName, 0,0,0,0,0,0,0,0,0,0,0);
+        $dskRecord=sprintf("%s$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS$SEP%$FS",
+		$dskName, 0,0,0,0,0,0,0,0,0,0,0,0,0);
       }
 
       # If exception processing in effect and writing to a file, make sure this entry
@@ -5412,13 +5443,13 @@ sub printPlot
     for (my $i=0; $i<$CpuNodes; $i++)
     {
         # don't see how total can ever be 0, but let's be careful anyways
-        my $misses=$numaStat[$i]->{for}+$numaStat[$i]->{miss};
-        my $hitrate=($misses) ? $numaStat[$i]->{hits}/($numaStat[$i]->{hits}+$misses)*100 : 100;
+        my $hitsplusmisses=$numaStat[$i]->{hits}+$numaStat[$i]->{for}+$numaStat[$i]->{miss};
+        my $hitrate=($hitsplusmisses) ? $numaStat[$i]->{hits}/$hitsplusmisses*100 : 100;
 
-	$numaPlot.=sprintf("$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%.2f",
+	$numaPlot.=sprintf("$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%d$SEP%.2f",
 	                $numaMem[$i]->{used}, $numaMem[$i]->{free}, $numaMem[$i]->{slab},
         	        $numaMem[$i]->{map},  $numaMem[$i]->{anon},
-                	$numaMem[$i]->{inact}, $hitrate);
+                	$numaMem[$i]->{anonH},$numaMem[$i]->{inact}, $hitrate);
     }
     writeData(0, $datetime, \$numaPlot, NUMA, $ZNUMA, 'numa', \$oneline);
   }
@@ -5965,15 +5996,15 @@ sub printTerm
     {
       if ($dskOpts!~/f/)
       {
-        $dskhdr1Format="<---------reads---------><---------writes---------><--------averages--------> Pct\n";
-	$dskhdr2Format="     KBytes Merged  IOs Size  KBytes Merged  IOs Size  RWSize  QLen  Wait SvcTim Util\n";
-        $dskdetFormat="%s%-11s %6d %6d %4s %4s  %6d %6d %4s %4s   %5d %5d  %4d   %4d  %3d\n";
+        $dskhdr1Format="<---------reads---------------><---------writes--------------><--------averages--------> Pct\n";
+        $dskhdr2Format="     KBytes Merged  IOs Size  Wait  KBytes Merged  IOs Size  Wait  RWSize  QLen  Wait SvcTim Util\n";
+        $dskdetFormat="%s%-11s %6d %6d %4s %4s %5d  %6d %6d %4s %4s %5d   %5d %5d  %4d   %4d  %3d\n";
       }
       else
       {
-        $dskhdr1Format="<---------reads----------><---------writes---------><---------averages----------> Pct\n";
-        $dskhdr2Format="      KBytes Merged  IOs Size   KBytes Merged  IOs Size  RWSize   QLen   Wait SvcTim Util\n";
-	$dskdetFormat="%s%-11s %7.1f %6.0f %4s %4s  %7.1f %6.0f %4s %4s  %6.1f %6.1f %6.1f %6.1f  %3.0f\n";
+        $dskhdr1Format="<------------reads--------------><-------------writes------------><---------averages---------->   Pct\n";
+        $dskhdr2Format="      KBytes Merged  IOs Size   Wait   KBytes Merged  IOs Size   Wait   RWSize   QLen   Wait SvcTim   Util\n";
+        $dskdetFormat="%s%-11s %7.1f %6.0f %4s %4s %6.1f  %7.1f %6.0f %4s %4s %6.1f  %6.1f  %6.1f %6.1f %6.1f  %5.2f\n";
       }
     }
 
@@ -6005,9 +6036,9 @@ sub printTerm
       $line=sprintf($dskdetFormat,
  	        $datetime, $dskName,
 		$dskReadKB[$i]/$intSecs,  $dskReadMrg[$i]/$intSecs,  cvt($dskRead[$i]/$intSecs),
-	        $dskRead[$i] ? cvt($dskReadKB[$i]/$dskRead[$i],4,0,1) : 0,
+                $dskRead[$i] ? cvt($dskReadKB[$i]/$dskRead[$i],4,0,1) : 0, $dskWaitR[$i],
 		$dskWriteKB[$i]/$intSecs, $dskWriteMrg[$i]/$intSecs, cvt($dskWrite[$i]/$intSecs),
-                $dskWrite[$i] ? cvt($dskWriteKB[$i]/$dskWrite[$i],4,0,1) : 0,
+                $dskWrite[$i] ? cvt($dskWriteKB[$i]/$dskWrite[$i],4,0,1) : 0, $dskWaitW[$i],
 		$dskRqst[$i], $dskQueLen[$i], $dskWait[$i], $dskSvcTime[$i], $dskUtil[$i]);
       printText($line);
     }
@@ -6673,24 +6704,24 @@ sub printTerm
       if ($memOpts!~/R/)
       {
         $line="#$miniFiller";
-        $line.="<-------------------------------Physical Memory-------------------------------------->"    if $memOpts eq '' || $memOpts=~/P/;
-        $line.="<-----------Swap------------><-------Paging------>"                                        if $memOpts eq '' || $memOpts=~/V/;
-        $line.="<---Other---|-------Page Alloc------|------Page Refill----->"                              if $memOpts=~/p/;
-        $line.="<------Page Steal-------|-------Scan KSwap------|------Scan Direct----->"                  if $memOpts=~/s/;
+        $line.="<------------------------------------Physical Memory------------------------------------------>"    if $memOpts eq '' || $memOpts=~/P/;
+        $line.="<-----------Swap------------><-------Paging------>"                                                 if $memOpts eq '' || $memOpts=~/V/;
+        $line.="<---Other---|-------Page Alloc------|------Page Refill----->"                                       if $memOpts=~/p/;
+        $line.="<------Page Steal-------|-------Scan KSwap------|------Scan Direct----->"                           if $memOpts=~/s/;
         printText("$line\n");
 
         $line="#$miniFiller";
-        $line.="   Total    Used    Free    Buff  Cached    Slab  Mapped    Anon  Commit  Locked Inact"    if $memOpts eq '' || $memOpts=~/P/;
-        $line.=" Total  Used  Free   In  Out Fault MajFt   In  Out"                                        if $memOpts eq '' || $memOpts=~/V/;
-        $line.="  Free Activ   Dma Dma32  Norm  Move   Dma Dma32  Norm  Move"                              if $memOpts=~/p/;
-        $line.="   Dma Dma32  Norm  Move   Dma Dma32  Norm  Move   Dma Dma32  Norm  Move"                  if $memOpts=~/s/;
+        $line.="   Total    Used    Free    Buff  Cached    Slab  Mapped    Anon   AnonH  Commit  Locked Inact"    if $memOpts eq '' || $memOpts=~/P/;
+        $line.=" Total  Used  Free   In  Out Fault MajFt   In  Out"                                                if $memOpts eq '' || $memOpts=~/V/;
+        $line.="  Free Activ   Dma Dma32  Norm  Move   Dma Dma32  Norm  Move"                                      if $memOpts=~/p/;
+        $line.="   Dma Dma32  Norm  Move   Dma Dma32  Norm  Move   Dma Dma32  Norm  Move"                          if $memOpts=~/s/;
         printText("$line\n");
       }
       else
       {
-        $line=sprintf("#$miniFiller<-----------------------------------Physical Memory-------------------------------------------><------------Swap-------------><-------Paging------>\n");
+        $line=sprintf("#$miniFiller<---------------------------------------Physical Memory-----------------------------------------------><------------Swap-------------><-------Paging------>\n");
         printText($line);
-        printText("#$miniDateTime   Total     Used     Free     Buff   Cached     Slab   Mapped     Anon  Commit  Locked   Inact Total   Used   Free   In  Out Fault MajFt   In  Out\n");
+        printText("#$miniDateTime   Total     Used     Free     Buff   Cached     Slab   Mapped     Anon   AnonH  Commit  Locked   Inact Total   Used   Free   In  Out Fault MajFt   In  Out\n");
       }
     exit(0)    if $showColFlag;
     }
@@ -6698,10 +6729,11 @@ sub printTerm
     if ($memOpts!~/R/)
     {
       $line="$datetime ";
-      $line.=sprintf(" %7s %7s %7s %7s %7s %7s %7s %7s %7s %7s %5s",
+      $line.=sprintf(" %7s %7s %7s %7s %7s %7s %7s %7s %7s %7s %7s %5s",
                 cvt($memTot,7,1,1),          cvt($memUsed,7,1,1),         cvt($memFree,7,1,1),
                 cvt($memBuf,7,1,1),          cvt($memCached,7,1,1),
-                cvt($memSlab,7,1,1),         cvt($memMap,7,1,1),          cvt($memAnon,7,1,1),
+                cvt($memSlab,7,1,1),         cvt($memMap,7,1,1),
+		cvt($memAnon,7,1,1),	     cvt($memAnonH,7,1,1),
                 cvt($memCommit,7,1,1),       cvt($memLocked,7,1,1),       cvt($memInact,5,1,1))		  if $memOpts eq '' || $memOpts=~/P/;
       $line.=sprintf(" %5s %5s %5s %4s %4s %5s %5s %4s %4s",
                 cvt($swapTotal,5,1,1),       cvt($swapUsed,5,1,1),        cvt($swapFree,5,1,1),
@@ -6720,10 +6752,11 @@ sub printTerm
     }
     else
     {
-      $line=sprintf("$datetime  %7s %8s %8s %8s %8s  %7s  %7s  %7s %7s %7s  %6s %5s %6s %6s %4s %4s %5s %5s %4s %4s\n",
+      $line=sprintf("$datetime  %7s %8s %8s %8s %8s  %7s  %7s  %7s %7s %7s %7s  %6s %5s %6s %6s %4s %4s %5s %5s %4s %4s\n",
             	cvt($memTot/$intSecs,7,1,1),     cvt($memUsedC/$intSecs,7,1,1),   cvt($memFreeC/$intSecs,7,1,1),
             	cvt($memBufC/$intSecs,7,1,1),    cvt($memCachedC/$intSecs,7,1,1),
-		cvt($memSlabC/$intSecs,7,1,1),   cvt($memMapC/$intSecs,7,1,1),    cvt($memAnonC/$intSecs,7,1,1),
+		cvt($memSlabC/$intSecs,7,1,1),   cvt($memMapC/$intSecs,7,1,1),
+		cvt($memAnonC/$intSecs,7,1,1),	 cvt($memAnonHC/$intSecs,7,1,1),
 		cvt($memCommitC/$intSecs,7,1,1), cvt($memLockedC/$intSecs,7,1,1), cvt($memInactC/$intSecs,5,1,1),
             	cvt($swapTotal,5,1,1),           cvt($swapUsedC/$intSecs,5,1,1),  cvt($swapFreeC/$intSecs,5,1,1),
             	cvt($swapin/$intSecs,5,1,1),     cvt($swapout/$intSecs,5,1,1),
@@ -6744,7 +6777,7 @@ sub printTerm
       {
         # we've got the room so let's use an extra column for each and have the same
         # headers for 'R' and because I'm lazy.
-        printText("#$miniFiller Node    Total     Used     Free     Slab   Mapped     Anon   Locked    Inact");
+        printText("#$miniFiller Node    Total     Used     Free     Slab   Mapped     Anon    AnonH   Locked    Inact");
         printText(" HitPct")    if $memOpts!~/R/;
         printText("\n");
       }
@@ -6757,13 +6790,15 @@ sub printTerm
       if ($memOpts!~/R/)
       {
         # total hits can be 0 if no data collected
-        my $misses=$numaStat[$i]->{for}+$numaStat[$i]->{miss};
-        my $hitrate=($misses) ? $numaStat[$i]->{hits}/($numaStat[$i]->{hits}+$misses)*100 : 100;
-        $line.=sprintf("$datetime  %4d %8s %8s %8s %8s %8s %8s %8s %8s %6.2f\n", $i,
+        my $hitsplusmisses=$numaStat[$i]->{hits}+$numaStat[$i]->{for}+$numaStat[$i]->{miss};
+        my $hitrate=($hitsplusmisses) ? $numaStat[$i]->{hits}/$hitsplusmisses*100 : 100;
+
+        $line.=sprintf("$datetime  %4d %8s %8s %8s %8s %8s %8s %8s %8s %8s %6.2f\n", $i,
                 cvt($numaMem[$i]->{used}+$numaMem[$i]->{free},7,1,1),
                 cvt($numaMem[$i]->{used},7,1,1),  cvt($numaMem[$i]->{free},7,1,1),
                 cvt($numaMem[$i]->{slab},7,1,1),  cvt($numaMem[$i]->{map},7,1,1),
-                cvt($numaMem[$i]->{anon},7,1,1),  cvt($numaMem[$i]->{lock},7,1,1),
+                cvt($numaMem[$i]->{anon},7,1,1),  cvt($numaMem[$i]->{anonH},7,1,1),
+		cvt($numaMem[$i]->{lock},7,1,1),
 		cvt($numaMem[$i]->{inact},7,1,1), $hitrate);
       }
       else
@@ -6772,7 +6807,8 @@ sub printTerm
                 cvt($numaMem[$i]->{usedC}+$numaMem[$i]->{freeC},7,1,1),
                 cvt($numaMem[$i]->{usedC},7,1,1), cvt($numaMem[$i]->{freeC},7,1,1),
                 cvt($numaMem[$i]->{slabC},7,1,1), cvt($numaMem[$i]->{mapC},7,1,1),
-                cvt($numaMem[$i]->{anonC},7,1,1), cvt($numaMem[$i]->{lockC},7,1,1),
+                cvt($numaMem[$i]->{anonC},7,1,1), cvt($numaMem[$i]->{anonH},7,1,1),
+		cvt($numaMem[$i]->{lockC},7,1,1),
 		cvt($numaMem[$i]->{inactC},7,1,1));
       }
     }
@@ -8928,7 +8964,7 @@ sub cleanStaleTasks
   undef %procSeen;
 }
 
-# This output only goes to the .prc file
+# This output goes to the .prc file if -f specified
 sub printPlotProc
 {
   my $date=shift;
@@ -8973,7 +9009,7 @@ sub printPlotProc
     # Username comes from translation hash OR we just print the UID
     $procPlot.=sprintf("%s${SEP}%d${SEP}%s${SEP}%s${SEP}%s${SEP}%d${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%s${SEP}%d${SEP}%s${SEP}%d${SEP}%d${SEP}%d${SEP}%d${SEP}%d${SEP}%d${SEP}%d${SEP}%s${SEP}%s${SEP}%s",
           $datetime, $procPid[$i], $procUser[$i],  $procPri[$i], 
-	  $procPpid[$i],  $procThread[%i], $procState[$i],  
+	  $procPpid[$i],  $procTCount[$i], $procState[$i],  
 	  defined($procVmSize[$i]) ? $procVmSize[$i] : 0, 
 	  defined($procVmLck[$i])  ? $procVmLck[$i]  : 0,
 	  defined($procVmRSS[$i])  ? $procVmRSS[$i]  : 0,

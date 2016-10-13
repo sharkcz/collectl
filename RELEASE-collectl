@@ -27,6 +27,31 @@ KNOWN PROBLEMS/RESTRICTIONS
 
 COLLECTL CHANGES
 
+4.0.4    Jan 29, 2016
+  - if you try to playback a file with --stats and it has recorded
+    processes or slabs, ignore them be removing from $subsys [thanks ghassen]
+  - playback of process data with -P was not skipping first interval and so
+    stats for first entry we not rates but rather raw numbers [thanks philippe]
+  - change 'yikes' message to something more meaningful [thanks rob and laurence]
+  - fixed problem with -sZ -P printing all 0s for thread count [thanks philippe]
+  - added /usr/lib/systemd/system/collectl.service, per sourceforge help
+    discussion on 2015-12-28   [thanks george]
+  - added disk read/write wait timing for disk detail in terminal, plot
+    and lexpr format [thanks bud]
+  - new switch dskremap allows one to change disk names on the fly because
+    in some cases such as etherd disks, the names are messy for use with
+    other tools like ganlia [thanks gabriel]
+  - removed access to disk name remapping file
+  - the rawdskfilt has been enhanced to allow a preceding + which will
+    cause the following string to be appended to the default filter
+
+4.0.3	 July 2, 2015
+  - add AnonHuge memory to memory stats, both verbose and detailed as
+    well as lexpr [thanks, fred]
+  - if lexpr called with --import, throw an error
+  - tighten divide-by-zero test for -sM because it looks like in some cases when misses >0
+    we're getting occasional errors.  could hits be somehow negative? [thanks Robert]
+
 4.0.2	 May 27, 2015
   - add /bin/bash to list of 'known shells' excluded from output with
     --procopt k
@@ -35,7 +60,7 @@ COLLECTL CHANGES
   - collect nr_shmem so we can track shared memory, apparently something
     I thought of but never acted on [thanks Christian]
   - do not include guest cpu metrics in totals since already accounted
-    for in user time
+    for in user time [thanks Philippe]
 
 4.0.1
   - change /usr/sbin to /usr/bin in init.d/collectl [thanks Ladislav]
@@ -70,9 +95,15 @@ COLLECTL CHANGES
 
 COLMUX CHANGES
 
-4.9.0  ???
+4.9.0  Jan 06, 2016
   - header name printing in single line mode not quite right for all
     combinations of switches
+  - not trapping 'collectl not installed' errors and just returning
+    the node isn't reachable
+  - new switch -timerange will report warnings for any nodes found to
+    differ from others by more than this number of seconds
+  - added COMMUNICATIONS PROBLEMS section to man page and dropped
+    section describing what changed in Version 3
 
 4.8.3  Mar 9, 2015
   - -oT -test wasn't including time column in help output whereas -od and -oD

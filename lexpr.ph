@@ -24,6 +24,7 @@ my $lexExtName='';
 
 sub lexprInit
 {
+  error('lexpr is an export, not an import')         if $import=~/lexpr/;
   error('--showcolheader not supported by lexpr')    if $showColFlag;
 
   # on the odd chance someone did -s-all and have other ways to generate data, collectl
@@ -252,8 +253,10 @@ sub lexpr
 
         $diskDetString.=sendData("diskinfo.reads.$dskName",    $dskRead[$i]/$intSecs);
         $diskDetString.=sendData("diskinfo.readkbs.$dskName",  $dskReadKB[$i]/$intSecs);
+        $diskDetString.=sendData("diskinfo.readw.$dskName",    $dskWaitR[$i]/$intSecs);
         $diskDetString.=sendData("diskinfo.writes.$dskName",   $dskWrite[$i]/$intSecs);
         $diskDetString.=sendData("diskinfo.writekbs.$dskName", $dskWriteKB[$i]/$intSecs);
+        $diskDetString.=sendData("diskinfo.writew.$dskName",    $dskWaitW[$i]/$intSecs);
         $diskDetString.=sendData("diskinfo.quelen.$dskName",   $dskQueLen[$i]/$intSecs);
         $diskDetString.=sendData("diskinfo.wait.$dskName",     $dskWait[$i]/$intSecs);
         $diskDetString.=sendData("diskinfo.svctime.$dskName",  $dskSvcTime[$i]/$intSecs);
@@ -340,6 +343,7 @@ sub lexpr
       $memString.=sendData("meminfo.slab", $memSlab, 1);
       $memString.=sendData("meminfo.map", $memMap, 1);
       $memString.=sendData("meminfo.anon", $memAnon, 1);
+      $memString.=sendData("meminfo.anonH", $memAnonH, 1);
       $memString.=sendData("meminfo.dirty", $memDirty, 1);
       $memString.=sendData("meminfo.locked", $memLocked, 1);
       $memString.=sendData("meminfo.inactive", $memInact, 1);
@@ -362,7 +366,7 @@ sub lexpr
     {
       for (my $i=0; $i<$CpuNodes; $i++)
       {
-        foreach my $field ('used', 'free', 'slab', 'map', 'anon', 'lock', 'act', 'inact')
+        foreach my $field ('used', 'free', 'slab', 'map', 'anon', 'anonH', 'lock', 'act', 'inact')
         {
           $memDetString.=sendData("numainfo.$field.$i", $numaMem[$i]->{$field}, 1);
         }

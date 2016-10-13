@@ -111,7 +111,7 @@ $syslogFlag=(eval {require "Sys/Syslog.pm" or die}) ? 1 : 0;
 $rootFlag=(!$PcFlag && `whoami`=~/root/) ? 1 : 0;
 $SrcArch= $Config{"archname"};
 
-$Version=  '4.0.0-1';
+$Version=  '4.0.2-1';
 $Copyright='Copyright 2003-2015 Hewlett-Packard Development Company, L.P.';
 $License=  "collectl may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
@@ -3841,7 +3841,7 @@ sub getProc
     # Memory
     elsif ($type==5)
     {
-      next    if $line=~/^nr/;
+      next    if $line=~/^nr/ && $line!~/^nr_sh/;
       next    if $line=~/^numa/;
       last    if $memOpts!~/[ps]/ && $line=~/^pgre/;     # ignore from pgrefill forward
       last    if $memOpts!~/s/ && $line=~/^pgst/;        # ignore from pgstead forward
@@ -6367,7 +6367,6 @@ These generate summary, which is the total of ALL data for a particular type
   f - nfs
   i - inodes
   j - interrupts by CPU
-  l - lustre
   m - memory
   n - network
   s - sockets
@@ -6382,7 +6381,6 @@ These generate detail data, typically but not limited to the device level
   E -  environmental (fan, power, temp) [requires ipmitool]
   F -  nfs data
   J -  interrupts by CPU by interrupt number
-  L -  lustre
   M -  memory numa/node
   N -  individual Networks
   T -  tcp details (lots of data!)

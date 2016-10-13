@@ -13,30 +13,44 @@ Installing from source
 
 Configure to start on boot
 
-    In both cases, collectl will not be configured to start on boot
-    but can easily be set to do so with the command:
+    On RedHat based installations, collectl will not be configured to start
+    on boot, but can easily be set to do so with the command:
 
     chkconfig collectl on
 
 KNOWN PROBLEMS/RESTRICTIONS
 
-  - There is a known problem with older perl Time::HiRes modules, newer
-    versions of glibc and colletcl intervals of 1 second or greater (see
-    http://collectl.sourceforge.net/HiResTime.html for more details) that
-    can result in 'setitimer' messages being logged at system startup when
-    collectl has been configured to run as a daemon.  these messages appear
-    to benign, but be sure to let someone know if that proves not to be the
-    case.  If collectl determines your system has this mismatch, it will 
-    report it as a warning in collectl's message file in /var/log/collectl
-    every time it starts as a daemon.  If you choose, you can easily turn 
-    off the checking by editing the entry at the bottom of /etc/collectl.conf 
-    named TimeHiResCheck and setting it to 0.
   - if system time is changed by more then the log rolling frequency after
     collectl starts, multiple log files will be created during the next polling
     cycle(s)
   - never include aliased networks in the network summary calculations
 
 COLLECTL CHANGES
+
+4.0.2	 May 27, 2015
+  - add /bin/bash to list of 'known shells' excluded from output with
+    --procopt k
+  - generalize ethernet network device name to include ALL names
+    matching type 'p\dp' so we pick up p2p, p3p, p4p... [thanks Matt]
+  - collect nr_shmem so we can track shared memory, apparently something
+    I thought of but never acted on [thanks Christian]
+  - do not include guest cpu metrics in totals since already accounted
+    for in user time
+
+4.0.1
+  - change /usr/sbin to /usr/bin in init.d/collectl [thanks Ladislav]
+  - pattern match to exclude partitions from disk summary is WRONG and
+    we need to make sure name doesn't match cciss disks like c0d0!
+    [thanks, Laurent]
+  - changed help text for -retaddr to NOT use 'use' preceding -deb because
+    rpmbuild gets confused ang tries to include '-deb' as a dependency
+    [thanks dan]
+  - include 'en' network devices in summary data [thanks homerl]
+  - change buddyinfo to deal with less fields in /proc/buddyinfo as apparently
+    there are not always 11 of them [thanks greg]
+  - remove lustre from --showsubsys
+  - removed 'known problem' with older versions of Time::HiRes in these
+    release notes as that was quite a long time ago
 
 4.0.0	Mar 9, 2015
   - rare, but if selecting processes by parent pid or command name, it's
@@ -56,14 +70,18 @@ COLLECTL CHANGES
 
 COLMUX CHANGES
 
+4.9.0  ???
+  - header name printing in single line mode not quite right for all
+    combinations of switches
+
 4.8.3  Mar 9, 2015
-- -oT -test wasn't including time column in help output whereas -od and -oD
-  did [thanks, robbin]
-- new switch: -retaddr tells collectl to connect back to this address rather
-  than the one colmux chooses by default which is default interface's addr
-- change in way return address is determined because RHEL 7 changed the
-  format of the ifconfig output, changing Bcast to broadcast and dropping
-  addr:  [thanks hank]
+  - -oT -test wasn't including time column in help output whereas -od and -oD
+    did [thanks, robbin]
+  - new switch: -retaddr tells collectl to connect back to this address rather
+    than the one colmux chooses by default which is default interface's addr
+  - change in way return address is determined because RHEL 7 changed the
+    format of the ifconfig output, changing Bcast to broadcast and dropping
+    addr:  [thanks hank]
 
 
 PRE-4.0 COLLECTL CHANGES

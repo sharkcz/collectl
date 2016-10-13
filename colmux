@@ -65,7 +65,7 @@ $|=1;
 
 my $Collectl='/usr/bin/collectl';
 my $Program='colmux';
-my $Version='4.8.3';
+my $Version='4.9.0';
 my $Copyright='Copyright 2005-2014 Hewlett-Packard Development Company, L.P.';
 my $License="colmux may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
@@ -657,10 +657,12 @@ if ($gotHeadersFlag)
 {
   exit    if !reformatHeaders();
 
+  print "LASTHEADER: $lastHeader\n";
   foreach my $col (split(/\s+/, $lastHeader))
   {
     # strip detail field names including surrounding []s
     $col=~s/\[.*\]//    if $colnoinstFlag;
+    print "PUSH: $col\n";
     push @headernames, $col;
   }
 }
@@ -1740,14 +1742,16 @@ sub printInterval
       $datetime.='    '                 if $options=~/m/;
       my $dtpad=' ' x length($datetime);
 
-      # write name of column over each set of hostnames, noting there's an
-      # extra column for hostname so we need to subtract one
+      # write name of column over each set of hostnames
       print $dtpad;
       for (my $i=0; $i<@columns; $i++)
       {
         for (my $j=0; $j<@hostnames; $j++)
 	{
-          my $col=$columns[$i]-1;
+	  # note that because of the way the header names are stored (which DO include
+          # a timestamp), we need to skip printing date/timestamps when -o not specified
+          my $col=($options=~/[TdD]/ || $plotFlag) ? $columns[$i]-1 : $columns[$i];
+
 	  if ($j==0)
 	  {
 	    printf " %-${colwidth}s", @headernames ? $headernames[$col] : '???';
@@ -1784,7 +1788,7 @@ sub printInterval
         print ' | '    if !$colnodetFlag;
         for (my $i=0; $i<@columns; $i++)
         {
-          my $col=(!$plotFlag) ? $columns[$i] : $columns[$i]-1;
+	  my $col=($plotFlag || $options=~/[TdD]/) ? $columns[$i]-1 : $columns[$i];
           printf " %${wider}s",  @headernames ? $headernames[$col] : '???';
         }
       }
@@ -2338,7 +2342,7 @@ Miscellanous
   -keepalive  secs         pass this in the ssh command as '-o ServerAliveInterval=secs'
                              to prevent ssh exiting early from an inactive ssh connection
   -retaddr    addr         tell collectl to connect back to this address.
-                             use -deb 1 to see address collectl told to use
+                             start with -deb 1 to see address collectl told to use
   -timeout    secs         use this timeout for remote collectl to connect back
                              requires collectl V3.6.4 or better
 

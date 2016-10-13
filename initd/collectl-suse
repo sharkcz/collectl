@@ -34,15 +34,12 @@
 
 [ -r /etc/rc.status ] && . /etc/rc.status
 rc_reset
-COLLECTL=/usr/sbin/collectl
+COLLECTL=/usr/bin/collectl
 if [ ! -f $COLLECTL ]; then
     echo -n "Cannot find $COLLECTL"
     rc_status -s
     rc_exit
 fi
-
-PATH=/bin:/usr/bin:/sbin:/usr/sbin
-export PATH
 
 # Just to make sure nothing is different when running 'collectl', we 
 # won't use --check even though it's probably ok to use all the time.

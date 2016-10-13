@@ -2489,7 +2489,7 @@ sub dataAnalyze
     $buddyZone[$budIndex]=$fields[3];
     $buddyNode[$budIndex]=~s/,$//;
 
-    for (my $i=0; $i<11; $i++)
+    for (my $i=0; $i<scalar(@fields)-4; $i++)
     {  
       $buddyInfo[$budIndex][$i]=$fields[$i+4];
       $buddyInfoTot[$i]+=$fields[$i+4];
@@ -2529,7 +2529,8 @@ sub dataAnalyze
     $guest= fix($guestNow-$guestLast[$cpuIndex]);
     $guestN=fix($guestNNow-$guestNLast[$cpuIndex]);
 
-    $total=$user+$nice+$sys+$idle+$wait+$irq+$soft+$steal+$guest+$guestN;
+    # NOTE - guest times already included as part of user times
+    $total=$user+$nice+$sys+$idle+$wait+$irq+$soft+$steal;
     $total=100    if $options=~/n/;    # when normalizing, this cancels '100*'
     $total=1      if !$total;          # has seen to be 0 when interval=0;
 
@@ -2544,10 +2545,10 @@ sub dataAnalyze
     $guestP[$cpuIndex]= 100*$guest/$total;
     $guestNP[$cpuIndex]=100*$guestN/$total;
 
+    # guest times already part of user
     $totlP[$cpuIndex]=$userP[$cpuIndex]+$niceP[$cpuIndex]+
 		      $sysP[$cpuIndex]+$irqP[$cpuIndex]+
-		      $softP[$cpuIndex]+$stealP[$cpuIndex]+
-		      $guestP[$cpuIndex]+$guestNP[$cpuIndex];
+		      $softP[$cpuIndex]+$stealP[$cpuIndex];
 
     $userLast[$cpuIndex]=  $userNow;
     $niceLast[$cpuIndex]=  $niceNow;
@@ -2604,8 +2605,7 @@ sub dataAnalyze
       $guestNP[$cpuIndex]/=$cpusUsed;
       $totlP[$cpuIndex]=$userP[$cpuIndex]+$niceP[$cpuIndex]+
 		      $sysP[$cpuIndex]+$irqP[$cpuIndex]+
-		      $softP[$cpuIndex]+$stealP[$cpuIndex]+
-		      $guestP[$cpuIndex]+$guestNP[$cpuIndex];
+		      $softP[$cpuIndex]+$stealP[$cpuIndex];
     }
   }
 
@@ -3347,9 +3347,11 @@ sub dataAnalyze
     # Apply filters to summary totals, explicitly ignoring those we don't want
     if ($diskName!~/^dm-|^psv/ && ($dskFilt eq '' || $diskName!~/$dskFiltIgnore/))
     {
-      # if some explicitly named to keep, keep only those BUT only if not a
-      # partition or else we end up double counting.
-      if ($diskName!~/\d$/ && ($dskFiltKeep eq '' || $diskName=~/$dskFiltKeep/))
+      # if some disks explicitly named to keep, keep only those BUT only if 
+      # not a partition or else we end up double counting.  Note that we're
+      # doing a lookbehind to make sure not a cciss name like c0d0 which DOES
+      # look like a partition when in fact it's not.
+      if ($diskName!~/(?<!c\dd)\d$/ && ($dskFiltKeep eq '' || $diskName=~/$dskFiltKeep/))
       {
         $dskReadTot+=      $dskRead[$dskIndex];
         $dskReadMrgTot+=   $dskReadMrg[$dskIndex];
@@ -3812,7 +3814,7 @@ sub dataAnalyze
     }
   }
 
-  elsif ($subsys=~/m/i && $type=~/^Buffers|^Cached|^Dirty|^Active|^Inactive|^AnonPages|^Mapped|^Slab:|^Committed_AS:|^Huge|^SUnreclaim|^Mloc/)
+  elsif ($subsys=~/m/i && $type=~/^Buffers|^Cached|^Dirty|^Active|^Inactive|^AnonPages|^Mapped|^Slab:|^Committed_AS:|^Huge|^SUnreclaim|^Mloc|^nr/)
   {
     $data=(split(/\s+/, $data))[0];
     $memBuf=$data             if $type=~/^Buf/;
@@ -3829,6 +3831,7 @@ sub dataAnalyze
     $memHugeFree=$data        if $type=~/^HugePages_F/;
     $memHugeRsvd=$data        if $type=~/^HugePages_R/;
     $memSUnreclaim=$data      if $type=~/^SUnreclaim/;
+    $memShared=$data*4	      if $type=~/^nr_shmem/;
 
     # These are 'changes' since last interval, both positive/negative
     # but we only want to do when last one in list seen.
@@ -4157,7 +4160,7 @@ sub dataAnalyze
 
     # at least for now, we're only worrying about totals on real network
     # first, always ignore those in ignore list
-    if (($netFilt eq '' && $netNameNow=~/^eth|^ib|^em|^p1p/) ||
+    if (($netFilt eq '' && $netNameNow=~/^eth|^ib|^em|^en|^p\dp/) ||
         ($netFiltKeep ne '' && $netNameNow=~/$netFiltKeep/) ||
         ($netFiltIgnore ne '' && $netNameNow!~/$netFiltIgnore/))
     {
@@ -5847,7 +5850,7 @@ sub printTerm
         # skip idle CPUs if --cpuopts z specified.  I'd rather check for idle==100% but some kernels don't
 	# always increment counts and there are actually idle cpus with values of 0 here.
         next    if $cpuOpts=~/z/ && $userP[$i]+$niceP[$i]+$sysP[$i]+$waitP[$i]+$irqP[$i]+
-		   		    $softP[$i]+$stealP[$i]+$guestP[$i]+$guestNP[$i]==0;
+		   		    $softP[$i]+$stealP[$i]==0;
 
 	# apply filters if specified
 	next    if (@cpuFiltKeep && !defined($cpuFiltKeep[$i])) ||
@@ -7579,7 +7582,7 @@ sub printTermProc
       # if told to do so, remove some of the known/standard shells from the command string in cmd0;
       if ($procOpts=~/k/)
       {
-        if ($cmd0=~m[/bin/sh|/usr/bin/perl|/usr/bin/python|^python])
+        if ($cmd0=~m[/bin/sh|/bin/bash|/usr/bin/perl|/usr/bin/python|^python])
 	{
           $cmd1=~s/^-\S+\s+//;   # remove optional switch some shells have
 
@@ -8238,7 +8241,7 @@ sub printBrief
   {
     $i=$NumCpus;
     $sysTot=$sysP[$i]+$irqP[$i]+$softP[$i]+$stealP[$i];
-    $cpuTot=$userP[$i]+$niceP[$i]+$guestP[$i]+$guestNP[$i]+$sysTot;
+    $cpuTot=$userP[$i]+$niceP[$i]+$sysTot;
     $line.=sprintf("%3d %3d %5s %6s ",
         $cpuTot, $sysTot, cvt($intrpt/$intSecs,5), cvt($ctxt/$intSecs,6));
   }

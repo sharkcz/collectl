@@ -27,6 +27,9 @@ KNOWN PROBLEMS/RESTRICTIONS
 
 COLLECTL CHANGES
 
+4.1.3	 Apr 10, 2017
+  - throws 'unit var' building distro on openSUSE
+
 4.1.2	 Feb 27, 2017
   - incorrectly requiring a + with --rawdskfilt to be at beginning
   - when added support for 64bit IB counters it looks like I was only

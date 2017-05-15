@@ -46,8 +46,8 @@ sub initRecord
   elsif (-e '/etc/SuSE-release')
   {
     my @temp=split(/\n/, cat('/etc/SuSE-release', 1));
-    $temp[2]=~/(\d+$)/;         # patchlevel
-    $Distro="$temp[0] SP$1";    # append onto release string as SP
+    $Distro="$temp[0]";    	# distro/version
+    $Distro.="SP:$1"    if $temp[2]=~/PATCHLEVEL = (\d+$)/;   # if patchlevel defined
   }
   elsif (-e '/etc/debian_version')
   {

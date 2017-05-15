@@ -3,7 +3,7 @@
 # problems
 #  pattern match for -i recognition/removal (in -test) not robust enough
 
-# Copyright 2005-2015 Hewlett-Packard Development Company, LP
+# Copyright 2005-2017 Hewlett-Packard Development Company, LP
 #
 # colmux may be copied only under the terms of either the Artistic License
 # or the GNU General Public License, which may be found in the source kit
@@ -73,8 +73,8 @@ my $BinDir=($0=~/pl$/) ? '/usr/bin' : dirname(abs_path($0));
 my $Collectl="$BinDir/collectl";
 
 my $Program='colmux';
-my $Version='4.9.1';
-my $Copyright='Copyright 2005-2015 Hewlett-Packard Development Company, L.P.';
+my $Version='4.9.2';
+my $Copyright='Copyright 2005-2017 Hewlett-Packard Development Company, L.P.';
 my $License="colmux may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
 
@@ -438,21 +438,25 @@ if ($address ne '' && !$nocheckFlag)
   my $maxSecs=0;
   for (my $i=0; $i<@hostnames; $i++)
   {
-    my $year=substr($dates[$i], 0, 4);
-    my $mon= substr($dates[$i], 4, 2);
-    my $day= substr($dates[$i], 6, 2);
-    my $hour=substr($dates[$i], 8, 2);
-    my $mins=substr($dates[$i], 10, 2);
-    my $secs=substr($dates[$i], 12, 2);
-    my $seconds=(timelocal($secs, $mins, $hour, $day, $mon-1, $year-1900));
-    $minSecs=$seconds    if $seconds<$minSecs;
-    $maxSecs=$seconds    if $seconds>$maxSecs;
-    print "$hostnames[$i]: $dates[$i]"    if $debug & 1024;
-    if ($maxSecs-$minSecs>$timerange)
+    # some checks may have failed so only look at 'good' nodes
+    if (!$threadFailure[$i])
     {
-      my $plural=($timerange>1) ? 's' : '';
-      print "WARNING: $hostnames[$i]'s time differs by more than $timerange second$plural with at least one other\n";
-      print "         run again with -debug 1024 and/or use -timerange or -quiet to suppress this message\n";
+      my $year=substr($dates[$i], 0, 4);
+      my $mon= substr($dates[$i], 4, 2);
+      my $day= substr($dates[$i], 6, 2);
+      my $hour=substr($dates[$i], 8, 2);
+      my $mins=substr($dates[$i], 10, 2);
+      my $secs=substr($dates[$i], 12, 2);
+      my $seconds=(timelocal($secs, $mins, $hour, $day, $mon-1, $year-1900));
+      $minSecs=$seconds    if $seconds<$minSecs;
+      $maxSecs=$seconds    if $seconds>$maxSecs;
+      print "$hostnames[$i]: $dates[$i]"    if $debug & 1024;
+      if ($maxSecs-$minSecs>$timerange)
+      {
+        my $plural=($timerange>1) ? 's' : '';
+        print "WARNING: $hostnames[$i]'s time differs by more than $timerange second$plural with at least one other\n";
+        print "         run again with -debug 1024 and/or use -timerange or -quiet to suppress this message\n";
+      }
     }
   }
 
@@ -477,8 +481,8 @@ if ($address ne '' && !$nocheckFlag)
       $reason='passwordless ssh failed'            if $threadFailure[$i]==-1;
       $reason='ping failed'                        if $threadFailure[$i]==1;
       $reason='collectl not installed'             if $threadFailure[$i]==2;
-      $reason='connection refused'                 if $threadFailure[$i]==4;
-      $reason='permission denied'                  if $threadFailure[$i]==8;
+      $reason='ssh: connection refused'            if $threadFailure[$i]==4;
+      $reason='ssh: permission denied'             if $threadFailure[$i]==8;
       $reason='could not resolve name'             if $threadFailure[$i]==16;
       $reason='timed out during banner exchange'   if $threadFailure[$i]==32;
       $reason='collectl version < 3.5'             if $threadFailure[$i]==64;
@@ -1600,7 +1604,7 @@ sub getReturnAddress
         close ROUTES;
         $myaddr=`$Ifconfig $interface | grep 'inet '`;
         $myaddr=(split(/\s+/, $myaddr))[2];
-        $myaddr=(split(/:/, $myaddr))[1];    # another no-op for newer ifconfig
+        $myaddr=~s/addr://;  # for cases where ipaddr is preceeded by this
 	print "Got address from route for $interface: $myaddr\n"    if $debug & 1;
         return ($myaddr);
       }

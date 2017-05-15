@@ -651,7 +651,8 @@ sub initRecord
   if ($subsys=~/l/i)
   {
     if ((`ls /lib/modules/*/kernel/net/lustre 2>/dev/null|wc -l`==0) &&
-        (`ls /lib/modules/*/*/kernel/net/lustre 2>/dev/null|wc -l`==0))
+        (`ls /lib/modules/*/*/kernel/net/lustre 2>/dev/null|wc -l`==0) &&
+	(`ls /lib/modules/*/*/lustre-client 2>/dev/null|wc -l`==0))
     {
       disableSubsys('l', 'this system does not have lustre modules installed');
     }
@@ -3385,11 +3386,13 @@ sub dataAnalyze
     # Apply filters to summary totals, explicitly ignoring those we don't want
     if ($diskName!~/^dm-|^psv/ && ($dskFilt eq '' || $diskName!~/$dskFiltIgnore/))
     {
-      # if some disks explicitly named to keep, keep only those BUT only if 
-      # not a partition or else we end up double counting.  Note that we're
-      # doing a lookbehind to make sure not a cciss name like c0d0 which DOES
-      # look like a partition when in fact it's not.
-      if ($diskName!~/(?<!c\dd)\d$/ && ($dskFiltKeep eq '' || $diskName=~/$dskFiltKeep/))
+      # if we're not filtering, we want to add all the disks to the summary except
+      # cciss and nvme disks whose basenames look like partitions and they're not!
+      # the partitions were already filtered out by the default disk filter.
+      # if we are filtering, anything that passes the filter will be reported, noting
+      # to report partition level stats one needs to use --rawdskfilt
+      if (($dskFiltKeep eq '' && ($diskName=~/c\dd\d$/ || $diskName=~/nvme/)) ||
+          ($dskFiltKeep ne '' && $diskName=~/$dskFiltKeep/))
       {
         $dskReadTot+=      $dskRead[$dskIndex];
         $dskReadMrgTot+=   $dskReadMrg[$dskIndex];
@@ -4397,7 +4400,7 @@ sub dataAnalyze
       {
         my ($port, @fieldsNow)=(split(/\s+/, $data))[0,4..7];
 
-        for ($j=0; $j<3; $j++)
+        for ($j=0; $j<4; $j++)
         {
           $fields[$j]=fix($fieldsNow[$j]-$ibFieldsLast[$i][$port][$j]);
           $ibFieldsLast[$i][$port][$j]=$fieldsNow[$j];
@@ -7044,7 +7047,7 @@ sub printTerm
       $line.="<------------Udp----------->"                                                                  if $tcpFilt=~/u/;
       $line.="<----------------------------Icmp--------------------------->"                                 if $tcpFilt=~/c/;
       $line.="<-------------------------IpExt------------------------>"                                      if $tcpFilt=~/I/;
-      $line.="<------------------------------------------TcpExt----------------------------------------->"   if $tcpFilt=~/T/;
+      $line.="<-------------------------------------------------TcpExt------------------------------------------------>"   if $tcpFilt=~/T/;
       $line.="\n";
 
       $line.="#$miniFiller";
@@ -7053,7 +7056,7 @@ sub printTerm
       $line.="  InDgm OutDgm NoPort Errors"								     if $tcpFilt=~/u/;
       $line.=" Recvd FailI UnreI EchoI ReplI  Trans FailO UnreO EchoO ReplO"				     if $tcpFilt=~/c/;
       $line.=" MPktsI BPktsI OctetI MOctsI BOctsI MPktsI OctetI MOctsI"                                      if $tcpFilt=~/I/;
-      $line.=" FasTim Reject DelAck QikAck PktQue PreQuB HdPdct AkNoPy PreAck DsAcks RUData REClos  SackS"   if $tcpFilt=~/T/;
+      $line.=" FasTim Reject DelAck QikAck PktQue PreQuB HdPdct PurAck HPAcks DsAcks RUData REClos  SackS PkLoss FTrans"   if $tcpFilt=~/T/;
       $line.="\n";
       printText($line);
     
@@ -7099,14 +7102,15 @@ sub printTerm
 			$tcpData{IpExt}->{OutOctets}, 		$tcpData{IpExt}->{OutMcastOctets})
 				if $tcpFilt=~/I/;
 
-    $line.=sprintf(" %6d %6d %6d %6d %6d %6d %6d %6d %6d %6d %6d %6d %6d",
+    $line.=sprintf(" %6d %6d %6d %6d %6d %6d %6d %6d %6d %6d %6d %6d %6d %6d %6d",
 			$tcpData{TcpExt}->{TW},		     	$tcpData{TcpExt}->{PAWSEstab},
 			$tcpData{TcpExt}->{DelayedACKs},	$tcpData{TcpExt}->{DelayedACKLost},
 			$tcpData{TcpExt}->{TCPPrequeued},	$tcpData{TcpExt}->{TCPDirectCopyFromPrequeue},
 			$tcpData{TcpExt}->{TCPHPHits},	 	$tcpData{TcpExt}->{TCPPureAcks},
 			$tcpData{TcpExt}->{TCPHPAcks}, 	 	$tcpData{TcpExt}->{TCPDSACKOldSent},
 			$tcpData{TcpExt}->{TCPAbortOnData}, 	$tcpData{TcpExt}->{TCPAbortOnClose},
-			$tcpData{TcpExt}->{TCPSackShiftFallback})
+			$tcpData{TcpExt}->{TCPSackShiftFallback}, $tcpData{TcpExt}->{TCPLoss},
+			$tcpData{TcpExt}->{TCPFastRetrans})
 				if $tcpFilt=~/T/;
 
     $line.="\n";

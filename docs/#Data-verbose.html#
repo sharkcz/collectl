@@ -794,8 +794,8 @@ value of that filter:
 <div class=terminal-wide14>
 <pre>
 # TCP SUMMARY (/sec)# TCP STACK SUMMARY (/sec)
-#<------------------------------------------TcpExt----------------------------------------->
-# FasTim Reject DelAck QikAck PktQue PreQuB HdPdct AkNoPy PreAck DsAcks RUData REClos  SackS
+#<-------------------------------------------------TcpExt------------------------------------------------> 
+# FasTim Reject DelAck QikAck PktQue PreQuB HdPdct PurAck HPAcks DsAcks RUData REClos  SackS PkLoss FTrans 
 </pre></div>
 
 <table>
@@ -806,9 +806,9 @@ value of that filter:
 <tr><td><b>PktQue</b></td><td>- packets directly queued to recvmsg prequeue</td></tr>
 <tr><td><b>PreQuB</b></td><td>- bytes directly received in process context from prequeue</td></tr>
 <tr><td><b>HdPdct</b></td><td>- packet headers predicted</td></tr>
-<tr><td><b>PurAck</b></td><td>- acknowledgements for received packets not containing data</td></tr>
-<tr><td><b>HPAcks</b></td><td>- predicted acknowledgements</td></tr>
-<tr><td><b>DsAcks</b></td><td>- DSACKS sent for old packets</td></tr>
+<tr><td><b>PurAck</b></td><td>- acknowledgements for received packets not containing data, PureAcks in older versions </td></tr>
+<tr><td><b>PurAck</b></td><td>- predicted acknowledgements</td></tr>
+<tr><td><b>HPAcks</b></td><td>- DSACKS sent for old packets</td></tr>
 <tr><td><b>RUData</b></td><td>- connections reset to do unexpected data</td></tr>
 <tr><td><b>REClos</b></td><td>- connections reset due to early close</td></tr>
 <tr><td><b>SackS</b></td><td>- SackShiftFallback</td></tr>
@@ -817,6 +817,16 @@ value of that filter:
 </table>
 
 <table width=100%><tr><td align=right><i>updated Nov 02, 2016</i></td></tr></colgroup></table>
+
+<script type="text/javascript">
+var gaJsHost = (("https:" == document.location.protocol) ? "https://ssl." : "http://www.");
+document.write(unescape("%3Cscript src='" + gaJsHost + "google-analytics.com/ga.js' type='text/javascript'%3E%3C/script%3E"));
+</script>
+<script type="text/javascript">
+try {
+var pageTracker = _gat._getTracker("UA-6408045-1");
+pageTracker._trackPageview();
+} catch(err) {}</script>
 
 </body>
 </html>

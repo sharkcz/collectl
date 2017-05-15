@@ -27,6 +27,22 @@ KNOWN PROBLEMS/RESTRICTIONS
 
 COLLECTL CHANGES
 
+4.1.2	 Feb 27, 2017
+  - incorrectly requiring a + with --rawdskfilt to be at beginning
+  - when added support for 64bit IB counters it looks like I was only
+    saving 3 of the 4 values (loop only went to 3 instead of 4)
+    around line 4403. [thanks seb]
+
+4.1.1   Nov 2, 2016
+  - added packet loss and fast restransmissions to TCP Extended versbose
+    output and renamed AkNoPy and PreAck to PurAck and HPAcks to be
+    consistent with earlier versions [thanks Sophie] 
+  - add support for nvme disks [thanks fred]
+  - it turns out some people re-enable lustre support for the sake of
+    monitoring clients and to support that I had to add a check for
+    the lustre-client module which is now in a differetn location than
+    others [thanks fred]
+
 4.1.0   Oct 7, 2016
   - allow lexpr to pass formatting information for strings and numbers
     [thanks Guy]
@@ -105,6 +121,11 @@ COLLECTL CHANGES
     to be continued here going forward
 
 COLMUX CHANGES
+
+4.9.2
+  - if ping fails, it still tries to ssh and fails, generating
+    meaninlgess uninitialized variable errors
+  - include 'ssh' in the error messages when check() fails (thanks KM5)
 
 4.9.1  Mar 29, 2016
   - assume collectl in same directory as colmux so you can install both

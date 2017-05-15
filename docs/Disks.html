@@ -36,7 +36,7 @@ For those familiar with iostat, this is the same data it reports.  These numbers
 individual disks are operating properly since high wait and/or service times are a bad thing and indicate something
 is causing an undesired delay somewhere.
 
-<p><b>Filtering</b>
+<p><b>Basic Filtering</b>
 <br>If you'd like to limit the disks included in either the detail output or the summary
 totals, you can explicity include or exclude them using <i>--dskfilt</i>.  The target of
 this switch is actually one or more perl expressions, but if you don't know perl all you
@@ -94,6 +94,64 @@ dm-1             0      0    0    0       0      0    0    0       0     0     0
 </pre>
 </div>
 
+<p><b>Raw Filtering</b>
+<br>
+As mentioned in the previous section, basic disk fitering is applied after the data is collected,
+so if you don't collect it in the first place there's nothing to filter.  So what about special
+situations where you maye have a disk collectl doesn't know about in it's default filtering 
+string which is specified in /etc/collectl.conf as DiskFilter (and commented out since that is
+the default)?  OR what if you'd like to see partition level data which is also filtered out?
+<p>
+If you want to override this filtering you actually have 2 choices available to you.  Either edit
+the collectl.conf file or simply use --rawdskfilt which essentially redefines DiskFilter.  It can
+be a handy way to specify filtering via a switch in case you don't want to have to modify the conf
+file.
+
+<p><i>Show stats for unknown disk named nvme1n1 - the wrong way</i>
+<p>
+Since we only specified a partial name, we see everything that matches including partition.
+<div class=terminal>
+<pre>
+collectl.pl -sD --rawdskfilt nvme -c1
+# DISK STATISTICS (/sec)
+#          <---------reads---------------><---------writes--------------><--------averages--------> Pct
+#Name       KBytes Merged  IOs Size  Wait  KBytes Merged  IOs Size  Wait  RWSize  QLen  Wait SvcTim Util
+nvme1n1          0      0    0    0     0       0      0    0    0     0       0     0     0      0    0
+nvme1n1p1        0      0    0    0     0       0      0    0    0     0       0     0     0      0    0
+nvme1n1p2        0      0    0    0     0       0      0    0    0     0       0     0     0      0    0
+nvme0n1          0      0    0    0     0       0      0    0    0     0       0     0     0      0    0
+</pre>
+</div>
+
+
+<p><i>Show stats for unknown disk named nvme1n1 - the right way</i>
+<p>
+If we want to just see nvme0n1 and nvme1n1, we need to be more specific and be sure to include a
+space at the end of the pattern which will also require the string to be quoted.
+
+<div class=terminal>
+<pre>
+collectl.pl -sD --rawdskfilt 'nvme\dn\d '
+# DISK STATISTICS (/sec)
+#          <---------reads---------------><---------writes--------------><--------averages--------> Pct
+#Name       KBytes Merged  IOs Size  Wait  KBytes Merged  IOs Size  Wait  RWSize  QLen  Wait SvcTim Util
+nvme1n1          0      0    0    0     0       0      0    0    0     0       0     0     0      0    0
+nvme0n1          0      0    0    0     0       0      0    0    0     0       0     0     0      0    0
+</pre>
+</div>
+
+<p><i>Show stats for specific partition(s)</i>
+<p>
+<div class=terminal>
+<pre>
+collectl.pl -sD --rawdskfilt sda1
+# DISK STATISTICS (/sec)
+#          <---------reads---------------><---------writes--------------><--------averages--------> Pct
+#Name       KBytes Merged  IOs Size  Wait  KBytes Merged  IOs Size  Wait  RWSize  QLen  Wait SvcTim Util
+sda1             0      0    0    0     0       0      0    0    0     0       0     0     0      0    0
+</pre>
+</div>
+
 <p><b>Dynamic Disk Discovery</b>
 <br>
 Dynamic disks are handled by the exact same algorithms that are applied to dynamic networks and
@@ -104,7 +162,7 @@ for <a href=Network.html#dynamic>dynamic network processing</a> and learn how th
 option <i>--dskopts o</i> would be applied.
 
 
-<p><table width=100%><tr><td align=right><i>updated Sept 4, 2013</i></td></tr></colgroup></table>
+<p><table width=100%><tr><td align=right><i>updated Nov 8, 2016</i></td></tr></colgroup></table>
 
 </body>
 </html>

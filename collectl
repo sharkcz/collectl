@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 
-# Copyright 2003-2016 Hewlett-Packard Development Company, L.P. 
+# Copyright 2003-2017 Hewlett-Packard Development Company, L.P. 
 #
 # collectl may be copied only under the terms of either the Artistic License
 # or the GNU General Public License, which may be found in the source kit
@@ -111,8 +111,8 @@ $syslogFlag=(eval {require "Sys/Syslog.pm" or die}) ? 1 : 0;
 $rootFlag=(!$PcFlag && `whoami`=~/root/) ? 1 : 0;
 $SrcArch= $Config{"archname"};
 
-$Version=  '4.1.0-1';
-$Copyright='Copyright 2003-2016 Hewlett-Packard Development Company, L.P.';
+$Version=  '4.1.2-1';
+$Copyright='Copyright 2003-2017 Hewlett-Packard Development Company, L.P.';
 $License=  "collectl may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
 
@@ -222,7 +222,7 @@ $umask='';
 $DiskMaxValue=-1;    # disabled
 
 # NOTE - the following line should match what is in collectl.conf.  If uncommented there, it will be replaced
-$DiskFilter='cciss/c\d+d\d+ |hd[ab] | sd[a-z]+ |dm-\d+ |xvd[a-z] |fio[a-z]+ | vd[a-z]+ |emcpower[a-z]+ |psv\d+ ';
+$DiskFilter='cciss/c\d+d\d+ |hd[ab] | sd[a-z]+ |dm-\d+ |xvd[a-z] |fio[a-z]+ | vd[a-z]+ |emcpower[a-z]+ |psv\d+ |nvme\d+n\d+ ';
 $DiskFilterFlag=0;   # only set when filter set in collectl.conf
 $ProcReadTest='yes';
 
@@ -1034,11 +1034,8 @@ $cpuFilt=~s/-/../g;
 if ($rawDskFilter ne '')
 {
   # if filter starts with '+', just add to existing string
-  if ($rawDskFilter=~/\+/)
+  if ($rawDskFilter=~/^\+/)
   {
-    error("+ in rawdskfilt must be the first char")
-      if $rawDskFilter!~/^\+/;
-
     $rawDskFilter=~s/^\+//;
     $DiskFilter.="|$rawDskFilter";
   }
@@ -3921,6 +3918,7 @@ sub getProc
         if ($line=~/ vd[a-z] /)          { record(2, "$tag $line"); next; }
         if ($line=~/emcpower[a-z]+ /)    { record(2, "$tag $line"); next; }
         if ($line=~/psv\d+ /)            { record(2, "$tag $line"); next; }
+        if ($line=~/nvme\d+n\d+ /)       { record(2, "$tag $line"); next; }
       }
       else
       {
@@ -6780,6 +6778,11 @@ sub whatsnew
 {
   my $whatsnew=<<EOF6;
 What's new in collectl in the last year or so?
+
+version 4.1.1
+  - added support for nvme disks
+  - added packet loss and fast retransmissions for -st and renamed
+    AkNoPy and PreAck to be consistent with older versions
 
 version 4.1.0
 - enhanced lexpr to allow reporting fractional metrics

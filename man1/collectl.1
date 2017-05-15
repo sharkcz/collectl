@@ -965,6 +965,10 @@ totals and displayed when details are requested.  Alternatively, if you preface 
 first expression with a caret, all names that match all strings will be excluded from the summary
 totals and detail displays rather then included.  If you don't know perl, a partial string will 
 usually work too.
+
+Just remember, this only applies to collected data and so if for example you specify a
+parition, such as sda1, you'll never see the data since it was filtered out at the time of
+data collection.  To see those stats you would need to say --rawdskfilt sda1.
 .RE
 
 .B "--dskopts"
@@ -1295,7 +1299,7 @@ collect tool, which collectl is based on.
 .SH AUTHOR
 This program was written by Mark Seger (mjseger@gmail.com).
 .br
-Copyright 2003-2015 Hewlett-Packard Development Company, LP
+Copyright 2003-2016 Hewlett-Packard Development Company, LP
 .br
 collectl may be copied only under the terms of either the Artistic License
 or the GNU General Public License, which may be found in the source kit

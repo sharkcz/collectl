@@ -7,14 +7,16 @@
 <body>
 <center><h1>Plot Files</h1></center>
 <p>
-One of collectl's main features is its ability to generate files in a ready-to-plot format which
-is compatible with what gnuplot expects and there are actually 2 main types of files that it
+One of collectl's main features is its ability to generate output in a ready-to-plot format 
+and write that data to one or more files which
+are compatible with what gnuplot expects and there are actually 2 main types of files that it
 generates.  The first, which has an extension of <i>tab</i>, represents a table of all the summary
 data.  What makes this file unique is that all data elements are in a fixed set of columns - 
 some columns may get added over time, but for all intents and purposes, the set of data for say CPUs
 do not change regardless of how many CPUs are in the system.  The second type of files deal with 
 detail data, the amount of which changes with the number of instances so a 4 CPU system will have 1/2
-the data an 8 CPU system has.  There is one file for each type of detail data.
+the data an 8 CPU system has.  There is one file for each type of detail data and like raw files you
+tell collectl where to put the plot files with -f.
 <p>
 Plot files can be generated in 2 ways and each has its own advantages as well as disadvantages.
 <ul>
@@ -24,6 +26,11 @@ Those files are then converted to plot files at some time in the future</i>
 for conversion of raw file</li>
 </ul>
 
+<b>Caution</b> - though one can leave off -f and have collectl write its plot formatted output to the
+terminal, this should be avoided unless there is a specific need. In fact, since multiple detail files
+from multiple systems can actually contain different numbers of columns, collectl explcitly only allows
+generating detail plot data from a single raw file.
+<p>
 At first glance, it sounds like you'd always want to generate plot files directly since you avoid
 the need for the conversion step, but you should also realize a few things about this methodology:
 <ul>
@@ -183,7 +190,7 @@ to do so.  If you have multiple unique files and find single files easier to dea
 can also choose to write a post-processing script that merges these into a single file with
 zero-filled columns where there is missing data.
 
-<table width=100%><tr><td align=right><i>updated June 4, 2009</i></td></tr></colgroup></table>
+<table width=100%><tr><td align=right><i>updated June 9, 2017</i></td></tr></colgroup></table>
 
 </body>
 </html>

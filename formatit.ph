@@ -311,8 +311,17 @@ sub initRecord
         $opaFlag=1;
         ibCheck('');
       }
-
     }
+
+    # OPA V4 exposes 64 it counters in /sys, bypassing the need for perfquery so we need to know
+    # since we can have a mix of montitoring methods for different HCAs we want to at least say once
+    # if V4 counters present.
+    my $ibV4Flag=0;
+    for (my $i=0; $i<$NumHCAs; $i++)
+    {
+      $ibV4Flag=1    if $HCAOpaV4[$i][1];
+    }
+    print "Found OPA 64 bit counters in /sys\n"    if $debug & 1 && $ibV4Flag;
     disableSubsys('x', 'no interconnect or opa hardware/drivers found')    if $mellanoxFlag+$opaFlag==0;
 
     # User had ability to turn off in case they don't want destructive monitoring
@@ -3314,7 +3323,7 @@ sub dataAnalyze
   {
     ($major, $minor, $diskName, @dskFields)=split(/\s+/, $data);
 
-    # if using --dskremap (and also noting prepopulated with 'cciss/'), remap disk name
+    # if using --dskremap, remap disk name
     $diskName=diskRemapName($diskName);
 
     if (!defined($disks{$diskName}))
@@ -3383,16 +3392,16 @@ sub dataAnalyze
 	$dskInProg[$dskIndex]=$dskTicks[$dskIndex]=$dskWeighted[$dskIndex]=0;
       }
 
-    # Apply filters to summary totals, explicitly ignoring those we don't want
+    # Apply filters to summary totals, explicitly ignoring dm and psv devices which we know contain
+    # duplicates and should never be considered as summary data. We also ignore other devices
+    # explicitly told to do so with '--dskfilt ^' which means to ignore
     if ($diskName!~/^dm-|^psv/ && ($dskFilt eq '' || $diskName!~/$dskFiltIgnore/))
     {
-      # if we're not filtering, we want to add all the disks to the summary except
-      # cciss and nvme disks whose basenames look like partitions and they're not!
-      # the partitions were already filtered out by the default disk filter.
-      # if we are filtering, anything that passes the filter will be reported, noting
-      # to report partition level stats one needs to use --rawdskfilt
-      if (($dskFiltKeep eq '' && ($diskName=~/c\dd\d$/ || $diskName=~/nvme/)) ||
-          ($dskFiltKeep ne '' && $diskName=~/$dskFiltKeep/))
+      # Never include partitions in summary stats and we're using lookbehind to deal with nvme
+      # perl lookbehind makes my head explode but what we're doing is to ignore nvme partitions
+      # which is any device name that ends in a digit AND not preceded with 'nvme\dn' in which
+      # case the digit is part of the device name. whew...
+      if ($diskName!~/(?<!nvme\dn)\d$/ && ($dskFiltKeep eq '' || $diskName=~/$dskFiltKeep/))
       {
         $dskReadTot+=      $dskRead[$dskIndex];
         $dskReadMrgTot+=   $dskReadMrg[$dskIndex];
@@ -4356,8 +4365,8 @@ sub dataAnalyze
     #   ib stats from /sys
     #######################
 
-    # as a optimization don't even look for these unless /sys
-    if ($PQopt eq 'sys')
+    # as a optimization don't even look for these unless OPA V4 or /sys
+    if ($HCAOpaV4[$i][$port] || $PQopt eq 'sys')
     {
       if ($name eq 'rcvd')
       {
@@ -4675,8 +4684,6 @@ sub printPlotHeaders
       $dskName=$dskOrder[$i];
       next    if ($dskFiltKeep eq '' && $dskName=~/$dskFiltIgnore/) || ($dskFiltKeep ne '' && $dskName!~/$dskFiltKeep/);
 
-      # note I removed remapping of cciss name because it was just discovered I never needed to since
-      # the cciss/ was dropped when $dskOrder array implemented
       $temp= "[DSK]Name${SEP}[DSK]Reads${SEP}[DSK]RMerge${SEP}[DSK]RKBytes${SEP}[DSK]WaitR${SEP}";
       $temp.="[DSK]Writes${SEP}[DSK]WMerge${SEP}[DSK]WKBytes${SEP}[DSK]WaitW${SEP}[DSK]Request${SEP}";
       $temp.="[DSK]QueLen${SEP}[DSK]Wait${SEP}[DSK]SvcTim${SEP}[DSK]Util${SEP}";
@@ -9525,20 +9532,21 @@ sub ibCheck
       $file.="/$devname";
       $file.=$devnum;
       $file.="/ports";
-
       @ports=ls($file);
       $maxPorts=scalar(@ports)    if scalar(@ports)>$maxPorts;
       foreach $port (@ports)
       {
 	$port=~/(\d+)/;
 	$port=$1;
+	$link=cat("$file/$1/link_layer");
 	$state=cat("$file/$1/state");
         $state=~/.*: *(.+)/;
-        $portState=($1 eq 'ACTIVE') ? 1 : 0;
+        $portState=($link="InfiniBand" && $1 eq 'ACTIVE') ? 1 : 0;
         $HCAPorts[$NumHCAs][$port]=$portState;
+	$HCAOpaV4[$NumHCAs][$port]=(-e "$file/$port/counters") ? 1 : 0;
 	if ($portState)
         {
-	  print "  OFED Port: $port  ID: $HCAId[$NumHCAs]\n"    if $debug & 2;
+	  print "  IB Device: $devname$devnum OFED Port: $port  ID: $HCAId[$NumHCAs] OpaV4: $HCAOpaV4[$NumHCAs][$port]\n"    if $debug & 2;
           $HCANames.=":$port";
           $activePorts++;
         }

@@ -27,6 +27,9 @@ KNOWN PROBLEMS/RESTRICTIONS
 
 COLLECTL CHANGES
 
+4.3.0    Oct 3, 2017
+  - disable -sL, should have been done at same time -sl was
+
 4.2.0    Jun 12, 2017
   - Updated Plotfile docs to explain why you shouldn't leave off the -f
     when using -P [thanks Bayard]

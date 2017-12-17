@@ -232,7 +232,7 @@ $SysIB='/sys/class/infiniband';
 
 # These aren't user settable but are needed to build the list of ALL valid
 # subsystems
-$SubsysDet=   "BCDEFJLMNTXYZ";
+$SubsysDet=   "BCDEFJMNTXYZ";
 $SubsysExcore='y';
 
 # These are the subsystems allowed in brief mode

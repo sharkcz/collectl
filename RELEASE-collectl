@@ -27,6 +27,13 @@ KNOWN PROBLEMS/RESTRICTIONS
 
 COLLECTL CHANGES
 
+4.3.1	 Sept 13, 2018
+  - very minor bug. If playing back a file with -P in its name, collectl
+    incorrectly interprets it as the plot format flag! [thanks laurence]
+  - incorrectly dividing $dskWaitR and $dskWaitW by $intSecs [thanks Jan]
+  - added 'm' switch to vmsum to only report VMs whose instance id is
+    >- this minimum value
+
 4.3.0    Oct 3, 2017
   - disable -sL, should have been done at same time -sl was
 
@@ -140,6 +147,11 @@ COLLECTL CHANGES
     to be continued here going forward
 
 COLMUX CHANGES
+
+5.0.0
+  - getHeader routine, removing -c/-i need to look for leading spaces
+    when stipping switches in case a UUID in command string which can
+    contain -c following by a hex string
 
 4.9.2
   - if ping fails, it still tries to ssh and fails, generating

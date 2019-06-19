@@ -18,7 +18,7 @@ our $lexOutputFlag;                           # tells us when lexpr output inter
 my $program='vmsum V1.0';
 my %instances;
 my $oneMB=1024*1024;
-my ($debug, $helpFlag, $versionFlag, $zeroFlag);
+my ($debug, $helpFlag, $instMin, $versionFlag, $zeroFlag);
 
 my $Ssh= '/usr/bin/ssh';
 my $Ping='/bin/ping';
@@ -78,6 +78,7 @@ sub vmsumInit
   # for now, if called via lexpr, we report data a different way!
   $lexprFlag=1    if $export=~/lexpr/;
 
+  $instMin='';
   $startFlag=0;
   $uuidFlag=0;
   $debug=$helpFlag=$versionFlag=$zeroFlag=0;
@@ -87,10 +88,11 @@ sub vmsumInit
     last    if $option eq '';
 
     my ($name, $value)=split(/=/, $option);
-    error2("valid options are: [adhsStuv]")    if $name!~/^[adhsStuvz]$/;
+    error2("valid options are: [adhmsStuv]")    if $name!~/^[adhmsStuvz]$/;
     $addrFlag=1         if $name eq 'a';
     $debug=$value       if $name eq 'd';
     $helpFlag=1         if $name eq 'h';
+    $instMin=$value     if $name eq 'm';
     $startFlag|=1       if $name eq 's';
     $startFlag|=2       if $name eq 'S';
     $textDir=$value     if $name eq 't';
@@ -113,6 +115,7 @@ sub vmsumInit
   error2("--procopts s OR s/S flags but not both")              if $startFlag && $procOpts=~/s/i;
   error2("t= only with lexpr")                                  if $textDir ne '' && !$lexprFlag;
   error2("'$textDir' doesn't exist or is not a directory")      if $textDir ne '' && (!-e $textDir || !-d $textDir);
+  error2("instance specified by -m must be exactly 8 chars")    if $instMin ne '' && length($instMin) != 8;
 
   # set up some things in collectl itself (requires DEEP knowledge)
   setOutputFormat();
@@ -249,8 +252,9 @@ sub vmsum
     # we'll probably catch the full string in the next cycle (or two).  also the command
     # itself looks different for qemu and kvm
     $cmd1=~/instance-(\w+)/;
-    my $instance=$1;
-    #print "INST: $instance\n";
+    my $instance=(defined($1)) ? $1 : '';
+    next    if $instMin ne '' && $instance lt $instMin;
+
     next    if !defined($uuid) || !defined($instance);
 
     # only if no network problems, noting problems are rare, we need to find the index

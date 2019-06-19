@@ -73,8 +73,8 @@ my $BinDir=($0=~/pl$/) ? '/usr/bin' : dirname(abs_path($0));
 my $Collectl="$BinDir/collectl";
 
 my $Program='colmux';
-my $Version='4.9.2';
-my $Copyright='Copyright 2005-2017 Hewlett-Packard Development Company, L.P.';
+my $Version='5.0.0';
+my $Copyright='Copyright 2005-2018 Hewlett-Packard Development Company, L.P.';
 my $License="colmux may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
 
@@ -2140,8 +2140,8 @@ sub getHeaders
   my $command=shift;
 
   # in case -c or -i included, they conflict with -showheader
-  $command=~s/-c\s*\S+//;
-  $command=~s/-i\s*:*\d+//;
+  $command=~s/ -c\s*\S+/ /;
+  $command=~s/ -i\s*:*\d+/ /;
 
   my $cmd="$access $Collectl $command --showcolheaders";
   $cmd=~s/--fr\S+\s+\S*//;

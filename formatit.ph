@@ -375,12 +375,12 @@ sub initRecord
           $message="Required module missing"      if $temp=~/required by/;
           $message="No such file or directory"    if $temp=~/No such file/;
           if ($message ne '')
-          {
+         {EXIT_IF:{
             disableSubsys('x', "perfquery error: $message!");
             $mellanoxFlag=0;
             $PQuery='';
-	    last;
-          }
+	    last EXIT_IF;
+          }}
 
           # perfquery IS there and we can execute it w/o error...
           # Can you believe it?  PQuery writes its version output to stderr!

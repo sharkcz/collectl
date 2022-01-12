@@ -6784,6 +6784,8 @@ sub whatsnew
 {
   my $whatsnew=<<EOF6;
 What's new in collectl in the last year or so?
+version 4.3.2
+   - fixed bug with Can't "last" outside a loop block 
 
 version 4.2.0
   - fixed bug in disk summary stats introduced in 4.1.2

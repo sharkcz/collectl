@@ -9539,9 +9539,10 @@ sub ibCheck
 	$port=~/(\d+)/;
 	$port=$1;
 	$link=cat("$file/$1/link_layer");
+	chomp $link;
 	$state=cat("$file/$1/state");
         $state=~/.*: *(.+)/;
-        $portState=($link="InfiniBand" && $1 eq 'ACTIVE') ? 1 : 0;
+	$portState=($link eq "InfiniBand" && $1 eq 'ACTIVE') ? 1 : 0;
         $HCAPorts[$NumHCAs][$port]=$portState;
 	$HCAOpaV4[$NumHCAs][$port]=(-e "$file/$port/counters") ? 1 : 0;
 	if ($portState)

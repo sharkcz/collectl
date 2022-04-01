@@ -2978,7 +2978,7 @@ for (; $count!=0 && !$doneFlag; $count--)
 	      # for OPA V4, /sys counters always 64 bits
 	      if ($HCAOpaV4[$i][$j])
 	      {
-		my $proc="$SysIB/$HCAName[$i]0/ports/$j/counters";
+		my $proc="$SysIB/$HCAId[$i]/ports/$j/counters";
 		getProc(0, "$proc/port_rcv_data",     "ib$i-$j:rcvd");
 		getProc(0, "$proc/port_xmit_data",    "ib$i-$j:xmtd");
 		getProc(0, "$proc/port_rcv_packets",  "ib$i-$j:rcvp");
@@ -2993,7 +2993,7 @@ for (; $count!=0 && !$doneFlag; $count--)
 	      # non-opa V4 counters but present in /sys, counters come from counters_ext
 	      elsif ($PQopt eq 'sys')
 	      {
-		my $proc="$SysIB/$HCAName[$i]$i/ports/$j/counters_ext";
+		my $proc="$SysIB/$HCAId[$i]/ports/$j/counters_ext";
 		getProc(0, "$proc/port_rcv_data_64",     "ib$i-$j:rcvd");
 		getProc(0, "$proc/port_xmit_data_64",    "ib$i-$j:xmtd");
 		getProc(0, "$proc/port_rcv_packets_64",  "ib$i-$j:rcvp");

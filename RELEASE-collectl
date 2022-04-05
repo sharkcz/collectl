@@ -27,6 +27,9 @@ KNOWN PROBLEMS/RESTRICTIONS
 
 COLLECTL CHANGES
 
+4.3.3	 Apr 1, 2022 
+  - Minor fix for HCA stats with Mellanox HCA's
+
 4.3.2	 Oct 7, 2021
   - very minor bug. the last command in perfquery is not in a loop and prevents
     the collectl daemon from starting via the service. [Thanks Edgar]

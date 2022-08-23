@@ -6054,17 +6054,30 @@ sub printTerm
     # deal with --dskopts f format here
     if (!defined($dskhdr1Format))
     {
-      if ($dskOpts!~/f/)
+     if ($dskOpts!~/f/ && $dskOpts!~/F/)
       {
         $dskhdr1Format="<---------reads---------------><---------writes--------------><--------averages--------> Pct\n";
         $dskhdr2Format="     KBytes Merged  IOs Size  Wait  KBytes Merged  IOs Size  Wait  RWSize  QLen  Wait SvcTim Util\n";
         $dskdetFormat="%s%-11s %6d %6d %4s %4s %5d  %6d %6d %4s %4s %5d   %5d %5d  %4d   %4d  %3d\n";
+	$dskPrint=1
       }
       else
       {
-        $dskhdr1Format="<------------reads--------------><-------------writes------------><---------averages---------->   Pct\n";
-        $dskhdr2Format="      KBytes Merged  IOs Size   Wait   KBytes Merged  IOs Size   Wait   RWSize   QLen   Wait SvcTim   Util\n";
-        $dskdetFormat="%s%-11s %7.1f %6.0f %4s %4s %6.1f  %7.1f %6.0f %4s %4s %6.1f  %6.1f  %6.1f %6.1f %6.1f  %5.2f\n";
+        if ($dskOpts!~/F/)
+	{
+            $dskhdr1Format="<------------reads--------------><-------------writes------------><---------averages---------->   Pct\n";
+            $dskhdr2Format="      KBytes Merged  IOs Size   Wait   KBytes Merged  IOs Size   Wait   RWSize   QLen   Wait SvcTim   Util\n";
+            $dskdetFormat="%s%-11s %7.1f %6.0f %4s %4s %6.1f  %7.1f %6.0f %4s %4s %6.1f  %6.1f  %6.1f %6.1f %6.1f  %5.2f\n";
+	    $dskPrint=1
+	}
+	else
+	{
+            $dskhdr1Format="<---------------------reads---------------------><---------------------writes--------------------><-------------averages------------->    Pct\n";
+            $dskhdr2Format="         KBytes   Merged       IOs    Size      Wait      KBytes   Merged       IOs    Size      Wait   RWSize    QLen      Wait   SvcTim    Util\n";
+            $dskdetFormat="%s%-11s %10.2f %8.2f %9.2f %7.2f %9.2f  %10.2f %8.2f %9.2f %7.2f %9.2f  %7.2f %7.2f %9.2f %8.2f  %6.2f\n";
+	    $dskPrint=0
+         }
+
       }
     }
 
@@ -6093,13 +6106,26 @@ sub printTerm
       # If exception processing in effect, make sure this entry qualities
       next    if $options=~/x/ && $dskRead[$i]/$intSecs<$limIOS && $dskWrite[$i]/$intSecs<$limIOS;
 
-      $line=sprintf($dskdetFormat,
+      if ($dskPrint)
+      {
+          $line=sprintf($dskdetFormat,
  	        $datetime, $dskName,
 		$dskReadKB[$i]/$intSecs,  $dskReadMrg[$i]/$intSecs,  cvt($dskRead[$i]/$intSecs),
                 $dskRead[$i] ? cvt($dskReadKB[$i]/$dskRead[$i],4,0,1) : 0, $dskWaitR[$i],
 		$dskWriteKB[$i]/$intSecs, $dskWriteMrg[$i]/$intSecs, cvt($dskWrite[$i]/$intSecs),
                 $dskWrite[$i] ? cvt($dskWriteKB[$i]/$dskWrite[$i],4,0,1) : 0, $dskWaitW[$i],
 		$dskRqst[$i], $dskQueLen[$i], $dskWait[$i], $dskSvcTime[$i], $dskUtil[$i]);
+      }
+      else
+      {
+          $line=sprintf($dskdetFormat,
+ 	        $datetime, $dskName,
+		$dskReadKB[$i]/$intSecs,  $dskReadMrg[$i]/$intSecs,  $dskRead[$i]/$intSecs,
+                $dskRead[$i]  ? $dskReadKB[$i]/$dskRead[$i]   : 0, $dskWaitR[$i],
+		$dskWriteKB[$i]/$intSecs, $dskWriteMrg[$i]/$intSecs, $dskWrite[$i]/$intSecs,
+                $dskWrite[$i] ? $dskWriteKB[$i]/$dskWrite[$i] : 0, $dskWaitW[$i],
+		$dskRqst[$i], $dskQueLen[$i], $dskWait[$i], $dskSvcTime[$i], $dskUtil[$i]);
+      }
       printText($line);
     }
   }

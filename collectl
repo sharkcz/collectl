@@ -111,7 +111,7 @@ $syslogFlag=(eval {require "Sys/Syslog.pm" or die}) ? 1 : 0;
 $rootFlag=(!$PcFlag && `whoami`=~/root/) ? 1 : 0;
 $SrcArch= $Config{"archname"};
 
-$Version=  '4.3.3';
+$Version=  '4.3.4';
 $Copyright='Copyright 2003-2018 Hewlett-Packard Development Company, L.P.';
 $License=  "collectl may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
@@ -1129,9 +1129,10 @@ print "RawDsk - Ignore: $rawDskIgnore  Keep: $rawDskFilter\n"    if $debug & 1;
 print "RawNet - Ignore: $rawNetIgnore  Keep: $rawNetFilter\n"    if $debug & 1;
 
 error("--dskopts f only applies to -sD")              if $dskOpts=~/f/  && $subsys!~/D/;
+error("--dskopts F only applies to -sD")              if $dskOpts=~/F/  && $subsys!~/D/;
 error("--dskopts z only applies to -sD")              if $dskOpts=~/z/  && $subsys!~/D/;
 error("only valid value for --cpuopts is 'z'")        if $cpuOpts ne '' && $cpuOpts!~/^[z]+$/;
-error("only valid values for --dskopts are 'fioz'")   if $dskOpts ne '' && $dskOpts!~/^[fioz]+$/;
+error("only valid values for --dskopts are 'Ffioz'")   if $dskOpts ne '' && $dskOpts!~/^[Ffioz]+$/;
 error("only valid value for --xopts is 'i'")          if $xOpts ne '' && $xOpts!~/^[i]+$/;
 
 $netOptsW=5;    # minumum width
@@ -6519,6 +6520,7 @@ Disk
       if you don't know perl, a partial string will usually work too
   --dskopts
       f - include fractions for some of the detail output columns
+      F - add more double digit precision to the columns detail output  
       i - include average i/o size in brief mode (as with --iosize)
       o - exclude unused devices from new headers and plot data
           see docs on disk monitoring for more detail
@@ -6784,6 +6786,9 @@ sub whatsnew
 {
   my $whatsnew=<<EOF6;
 What's new in collectl in the last year or so?
+version 4.3.4    
+  - Add patch for dskopts=F to allow double digit precision on playback
+
 version 4.3.3 
    - Fixed bug with stats for Mellanox adapters 
 

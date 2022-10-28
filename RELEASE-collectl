@@ -27,6 +27,9 @@ KNOWN PROBLEMS/RESTRICTIONS
 
 COLLECTL CHANGES
 
+4.3.5    October 28 2022
+  -  Add default collection for Cepg rbd devices to the conf file
+
 4.3.4    August 24, 2022
   - Add patch for dskopts=F to allow double digit precision on playback
 

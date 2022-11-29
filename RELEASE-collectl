@@ -27,6 +27,11 @@ KNOWN PROBLEMS/RESTRICTIONS
 
 COLLECTL CHANGES
 
+4.3.6    November 29 2022
+  -  Removed the error check in sub vmstatInit
+     It was erroneous and that option is seldom used.
+     Reported-by Bill Torpey
+
 4.3.5    October 28 2022
   -  Add default collection for Cepg rbd devices to the conf file
 

@@ -4219,7 +4219,7 @@ sub dataAnalyze
 
     # at least for now, we're only worrying about totals on real network
     # first, always ignore those in ignore list
-    if (($netFilt eq '' && $netNameNow=~/^eth|^hed|^ib|^em|^en|^p\dp/) ||
+    if (($netFilt eq '' && $netNameNow=~/^eth|^hed|^ib|^em|^en|^p\dp|"^sla"|"^psla"|"^priv"|"^pub"|"^dock"/) ||
         ($netFiltKeep ne '' && $netNameNow=~/$netFiltKeep/) ||
         ($netFiltIgnore ne '' && $netNameNow!~/$netFiltIgnore/))
     {

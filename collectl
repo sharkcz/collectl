@@ -111,7 +111,7 @@ $syslogFlag=(eval {require "Sys/Syslog.pm" or die}) ? 1 : 0;
 $rootFlag=(!$PcFlag && `whoami`=~/root/) ? 1 : 0;
 $SrcArch= $Config{"archname"};
 
-$Version=  '4.3.6';
+$Version=  '4.3.8';
 $Copyright='Copyright 2003-2018 Hewlett-Packard Development Company, L.P.';
 $License=  "collectl may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
@@ -6786,6 +6786,9 @@ sub whatsnew
 {
   my $whatsnew=<<EOF6;
 What's new in collectl in the last year or so?
+verson 4.3.8    Feb 7 2023
+  -  Added additional network interface names - Reported by Martin A
+  -  Added rbd device to collectl disk captures
 
 verson 4.3.6    Novemeber 29 2022
   -  Removed the erroneous error check check in sub vmstatInit

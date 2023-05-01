@@ -87,7 +87,10 @@ if [ -f /etc/redhat-release ]; then
     rm -f $INITDIR/collectl-suse
     rm -f $INITDIR/collectl-debian
     rm -f $INITDIR/collectl-generic
-    [ "$DESTDIR" = "/" ] && chkconfig --add collectl
+    if [ -f /usr/sbin/chkconfig ]; then
+    	[ "$DESTDIR" = "/" ] && chkconfig --add collectl
+    fi	
+# Not needed for RHEL8 and higher	
 fi
 
 # gentoo
@@ -116,6 +119,9 @@ if [ ${distro} = 1 ]; then
         chkconfig --add collectl
     elif [ -f /sbin/rc-update ]; then
         rc-update -a collectl default
+# RHEL9 has no chkconfig	
+    elif [ -f /usr/bin/systemctl ]; then
+        systemctl enable collectl
     else
         echo "could not figure out how to enable restarting across reboots"
     fi

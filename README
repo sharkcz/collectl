@@ -1,9 +1,28 @@
+
 With collectl now on github the documents are all self contained.
 For a list of commits use git log
 For example: Last 5 commits
 
-git log
-commit 42cd088d775d3f927b6c9daabb22c0136a1e05a4 (HEAD -> master, origin/master, origin/HEAD)
+[loberman@lobefedora collectl]$ git log | more
+commit 471bc215ec366e960a1989c4da188b2493e24148
+Author: Laurence Oberman <loberman@redhat.com>
+Date:   Tue Aug 1 16:23:27 2023 -0400
+
+    Added md devices to disk parse
+
+commit b888504cef6582ba5f0a269af5a46b19c996a66c
+Author: Laurence Oberman <loberman@redhat.com>
+Date:   Tue May 30 14:37:21 2023 -0400
+
+    Update README
+
+commit b33c643b3e30e025bbd466e9dd7836b1e5046118
+Author: Laurence Oberman <loberman@redhat.com>
+Date:   Tue May 30 14:36:42 2023 -0400
+
+    Update README
+
+commit 42cd088d775d3f927b6c9daabb22c0136a1e05a4
 Author: Laurence Oberman <loberman@redhat.com>
 Date:   Mon May 1 17:24:30 2023 -0400
 
@@ -20,21 +39,8 @@ commit 067f8de362479b9ec414aa5d7d8aa0d6d6c87630
 Author: Laurence Oberman <loberman@redhat.com>
 Date:   Tue Feb 7 13:46:19 2023 -0500
 
-    Report from Martin Arlitt about missing Network interfaces so added those to formatit.ph
-
-commit cd8a94b61f5700945af8f4e6a3fcd0e4ea18f1e2
-Author: Laurence Oberman <loberman@redhat.com>
-Date:   Wed Jan 25 17:21:32 2023 -0500
-
-    Add the nvme native multipath devices filter to the collectl.conf
-    "nvme\d+c\d+"
-
-commit 2001864971f91999216daf091529f5aa47d69150
-Author: Laurence Oberman <loberman@redhat.com>
-Date:   Tue Nov 29 18:29:26 2022 -0500
-
-    Version 4.3.6 with fix in sub vmstatInit where error check was removed
-
+    Report from Martin Arlitt about missing Network interfaces so added those to
+ formatit.ph
 
 If you're real lazy, just run INSTALL and it will install collectl into the
 same locations as the rpm.  It will install as /usr/bin/collectl and all the

@@ -27,6 +27,9 @@ KNOWN PROBLEMS/RESTRICTIONS
 
 COLLECTL CHANGES
 
+4.3.9   Jan 2 2024
+  -  Added md devices to disk parse  
+
 4.3.8    Feb 7 2023
   - Added Ceph rbd devices
   - Added miissing network interface names (Reported by Martin A)

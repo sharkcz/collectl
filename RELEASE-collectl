@@ -27,6 +27,11 @@ KNOWN PROBLEMS/RESTRICTIONS
 
 COLLECTL CHANGES
 
+4.3.10  Jun 12 2024
+  - Fixed an issue reported by Martin where nvme devices were not being aggregated in
+ the summary display for disks
+  - Tags will be properly updated now, I had missed that when I took this over
+
 4.3.9   Jan 2 2024
   -  Added md devices to disk parse  
 

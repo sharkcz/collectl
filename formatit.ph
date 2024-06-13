@@ -3401,7 +3401,9 @@ sub dataAnalyze
       # perl lookbehind makes my head explode but what we're doing is to ignore nvme partitions
       # which is any device name that ends in a digit AND not preceded with 'nvme\dn' in which
       # case the digit is part of the device name. whew...
-      if ($diskName!~/(?<!nvme\dn)\d$/ && ($dskFiltKeep eq '' || $diskName=~/$dskFiltKeep/))
+      #  Replaced this line (For issue reprted by Martin     
+      #  if ($diskName!~/(?<!nvme\dn)\d$/ && ($dskFiltKeep eq '' || $diskName=~/$dskFiltKeep/))
+      if ($diskName!~/nvme\w\d$/ && ($dskFiltKeep eq '' || $diskName=~/$dskFiltKeep/))
       {
         $dskReadTot+=      $dskRead[$dskIndex];
         $dskReadMrgTot+=   $dskReadMrg[$dskIndex];

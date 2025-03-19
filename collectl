@@ -111,7 +111,7 @@ $syslogFlag=(eval {require "Sys/Syslog.pm" or die}) ? 1 : 0;
 $rootFlag=(!$PcFlag && `whoami`=~/root/) ? 1 : 0;
 $SrcArch= $Config{"archname"};
 
-$Version=  '4.3.10';
+$Version=  '4.3.20';
 $Copyright='Copyright 2003-2018 Hewlett-Packard Development Company, L.P.';
 $License=  "collectl may be copied only under the terms of either the Artistic License\n";
 $License.= "or the GNU General Public License, which may be found in the source kit";
@@ -6786,6 +6786,9 @@ sub whatsnew
 {
   my $whatsnew=<<EOF6;
 What's new in collectl in the last year or so?
+
+version 4.3.20  March 19 2025
+  - A few small additions inluding allowing loop devices for the disk stats
 
 version 4.3.10  Jun 12 2024
   - Fixed an issue reported by Martin where nvme devices were not being aggregated in

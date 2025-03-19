@@ -27,6 +27,8 @@ KNOWN PROBLEMS/RESTRICTIONS
 
 COLLECTL CHANGES
 
+4.3.20  March 19 2025
+  - Added loop device to the collectl.conf file for disks
 4.3.10  Jun 12 2024
   - Fixed an issue reported by Martin where nvme devices were not being aggregated in
  the summary display for disks

@@ -9551,7 +9551,7 @@ sub ibCheck
     # While this should work for any ofed compliant adaptor, doing it this
     # way at least makes it more explicit which ones have been found to work.
     # also note hfi is the guy who speaks to opa
-    if ($devname=~/mthca|mlx4_|mlx5_|qib|hfi1_/)
+    if ($devname=~/mthca|mlx4_|mlx5_|qib|hfi1_|ibp/)
     {
       $HCAName[$NumHCAs]=$devname;
       $HCAId[$NumHCAs]=($devname=~/hfi/) ? $devnum+1 : "$devname$devnum";

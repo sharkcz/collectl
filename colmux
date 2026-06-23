@@ -132,6 +132,7 @@ my $age=2;
 my $noboldFlag=0;
 my $nosortFlag=0;
 my $noEscapeFlag=0;
+my $rawEscapeFlag=0;
 my $column=1;
 my $cols='';
 my $colwidth=6;
@@ -193,6 +194,7 @@ GetOptions("address=s"    =>\$address,
            "nocheck!"     =>\$nocheckFlag,
 	   "nobold!"      =>\$noboldFlag,
 	   "noescape!"    =>\$noEscapeFlag,
+	   "rawescape!"   =>\$rawEscapeFlag,
 	   "nosort!"      =>\$nosortFlag,
 	   "port=i"       =>\$port,
 	   "quiet!"       =>\$quietFlag,
@@ -221,6 +223,22 @@ if ($noEscapeFlag)
 {
   $readkeyFlag=0;
   $Home=$Bol=$Clr=$Clscr=$Cleol=$bold=$noBold=$bell='';
+}
+
+# Strip terminal control sequences from data received from remote collectl
+# instances before it is written to the operator's terminal.  An unprivileged
+# user on a monitored host can plant ANSI/VT100 escapes in a process name
+# (argv[0]); without this they would be rendered by colmux, which typically runs
+# in a privileged operator's terminal (screen clear, OSC 52 clipboard, bracketed
+# paste, DECRQSS).  Keeps TAB and all printable/8-bit (UTF-8) bytes; deletes ESC,
+# BEL, CR/LF and the remaining C0/DEL controls.  Applied unconditionally because
+# data off the network is never trusted; --rawescape disables it for operators
+# who explicitly want raw passthrough on a trusted network.
+sub sanitizeRemoteText
+{
+  my $s=shift;
+  $s=~tr/\x09\x20-\x7e\x80-\xff//cd    if defined($s);
+  return $s;
 }
 
 # This may evolve over time
@@ -853,6 +871,7 @@ if (!$playbackFlag)
 	  if ($Record)
 	  {
 	    chomp $Record;
+	    $Record=sanitizeRemoteText($Record)    if !$rawEscapeFlag;
 	    print ">>> $Record\n"    if $debug & 128;
 
   	    ($host, $therest)=split(/ /, $Record, 2);  # preserve leading spaces in 'therest'
@@ -1275,6 +1294,7 @@ sub getNext
     # connected to a terminal can generate 'stty' and that screws up output
     # also some cases of uninit vars in older versions so ignore them too
     chomp $line;
+    $line=sanitizeRemoteText($line)    if !$rawEscapeFlag;   # strip terminal control chars from remote data
     error("$hostnames[$hostnum]: $1")    if $line=~/(Error.*)/;
     print ">>>$line\n"                   if ($line=~/^#/ && $debug & 64) || $debug & 128;
     next                                 if $oldColFlag && $line=~/^stty|^Use of uninit/;
@@ -2332,7 +2352,9 @@ Common Switches
   -help                    print this message
   -hostwidth  number       minimum width to use for printing hostname [def=$hostWidth]
   -lines      number       limit displays to this number of lines
-  -noescape                disable printing ALL escape sequences
+  -noescape                disable colmux-generated terminal escape sequences
+  -rawescape               do NOT strip terminal escape sequences from remote
+                           collectl data (UNSAFE: only on a fully trusted network)
   -port       port         port remote collectl should use for communications
   -sshkey     file         file containing ssh public key to pass with ssh -i
   -sudo                    preface collectl commands with 'sudo'

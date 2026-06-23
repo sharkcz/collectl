@@ -2304,6 +2304,7 @@ sub dataAnalyze
       }
 
       $procName[$i]=~s/[()]//g;  # proc names are wrapped in ()s
+      $procName[$i]=~tr/\x09\x20-\x7e\x80-\xff//cd;  # strip terminal control chars (ANSI injection via argv0)
       $procPri[$i]="RT"    if $procPri[$i]<0 && $procOpts!~/R/;
       $procMinFlt[$i]=fix($procMinFltTot[$i]-$procMinFltLast[$i]);
       $procMajFlt[$i]=fix($procMajFltTot[$i]-$procMajFltLast[$i]);
@@ -2363,7 +2364,7 @@ sub dataAnalyze
 
     # if bad stat file skip the rest
     elsif (!defined($procSTimeTot[$i])) { }
-    elsif ($data=~/^cmd (.*)/)          { $procCmd[$i]=$1; }
+    elsif ($data=~/^cmd (.*)/)          { ($procCmd[$i]=$1)=~tr/\x09\x20-\x7e\x80-\xff//cd; }  # strip terminal control chars
     elsif ($data=~/^VmPeak:\s+(\d+)/)   { $procVmPeak[$i]=$1; }
     elsif ($data=~/^VmSize:\s+(\d+)/)   { $procVmSize[$i]=$1; }
     elsif ($data=~/^VmLck:\s+(\d+)/)    { $procVmLck[$i]=$1; } 

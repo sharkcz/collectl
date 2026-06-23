@@ -25,7 +25,23 @@ KNOWN PROBLEMS/RESTRICTIONS
     cycle(s)
   - never include aliased networks in the network summary calculations
 
-COLLECTL CHANGES
+ COLLECTL CHANGES
+ 
+4.3.20.2  Jun 22 2026
+  - Security: strip terminal escape/control sequences from process names
+ (argv[0] via /proc) before display, preventing ANSI/VT100 injection into
+ the terminal of anyone viewing process data. Reported privately; affects
+ local '-s Z' display and, more seriously, colmux which renders remote data
+ in a privileged operator's terminal. colmux now sanitizes data received
+ from remote collectl instances at ingestion; --rawescape restores the old
+ raw passthrough on trusted networks. --noescape only ever suppressed
+ colmux's own sequences and never filtered remote data; its help text is
+ corrected to say so.
+
+ 4.3.20.1  May 20 2025
+   - Added ibp as a IB interface
+ 4.3.20  March 19 2025
+
 
 4.3.20.2  Feb 11 2026
   - Added colplot-5.2.0.src.tar.gz

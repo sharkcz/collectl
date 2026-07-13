@@ -3,53 +3,37 @@ With collectl now on github the documents are all self contained.
 For a list of commits use git log
 For example: Last 5 commits
 
-[loberman@lobefedora collectl]$ git log | more
-commit 471bc215ec366e960a1989c4da188b2493e24148
+commit 55ae7330ae0dce39373f944dc0fb1241adb6aabf (HEAD -> master)
 Author: Laurence Oberman <loberman@redhat.com>
-Date:   Tue Aug 1 16:23:27 2023 -0400
+Date:   Tue Jun 23 08:55:39 2026 -0400
 
-    Added md devices to disk parse
+    CVE Security: ANSI Terminal Injection in collectl/colmux
 
-commit b888504cef6582ba5f0a269af5a46b19c996a66c
+commit d094c72a1bfda4dc6b68b9962a02941d25fca5e4 (origin/master, origin/HEAD)
 Author: Laurence Oberman <loberman@redhat.com>
-Date:   Tue May 30 14:37:21 2023 -0400
+Date:   Wed Feb 11 17:37:38 2026 -0500
 
-    Update README
+    Added new version number to the collectl code
 
-commit b33c643b3e30e025bbd466e9dd7836b1e5046118
+commit c06ffac71b677a35d9f3a490068f2244714809f8 (tag: 4.3.20.2)
 Author: Laurence Oberman <loberman@redhat.com>
-Date:   Tue May 30 14:36:42 2023 -0400
+Date:   Mon Feb 9 11:05:25 2026 -0500
 
-    Update README
+    Collplot 5.2.0 added
 
-commit 42cd088d775d3f927b6c9daabb22c0136a1e05a4
+commit d3dab6819dc92fa12da4616207c48fdbb1b86f21
 Author: Laurence Oberman <loberman@redhat.com>
-Date:   Mon May 1 17:24:30 2023 -0400
+Date:   Sat Jun 28 10:38:36 2025 -0400
 
-    Modified the INSTALL script to work with RHEL9+ that have no
-    chkconfig
+    Updated colplot to release 5.2.0  per request from
+    Dan Horak
 
-commit 802cd4123330d7ddbdc61d901dd07b9f8461e33f
+commit c1dcedc0fbcf161c4a074fecd24154013c8b3962 (tag: 4.3.20.1)
 Author: Laurence Oberman <loberman@redhat.com>
-Date:   Tue Feb 7 13:53:05 2023 -0500
+Date:   Tue May 20 10:06:39 2025 -0400
 
-    Updated version numbers
+    Add new Infiniband device name so stats get exposed for the new device
+    names in /sys/class/infiniband/ibp202s0/ports/1/hw_counters
+    Reported by youtive10 and fix suggested to add the new device name
+    if ($devname=~/mthca|mlx4_|mlx5_|qib|hfi1_|ibp/)
 
-commit 067f8de362479b9ec414aa5d7d8aa0d6d6c87630
-Author: Laurence Oberman <loberman@redhat.com>
-Date:   Tue Feb 7 13:46:19 2023 -0500
-
-    Report from Martin Arlitt about missing Network interfaces so added those to
- formatit.ph
-
-If you're real lazy, just run INSTALL and it will install collectl into the
-same locations as the rpm.  It will install as /usr/bin/collectl and all the
-other runtime components will be placed into /usr/share/collectl.  If you
-really care where everything goes, read the script as it's pretty short.
-There's also an UNINSTALL that will completely remove everything.
-
-If you want to be more creative, you can either hack up the installation
-script or use it as a guide to move things around to whereever you want them
-keeping a couple of things in mind:
-- collectl.conf is looked for first in /etc and then in its binary directory
-- all ph files must be in the same directory as collectl itself OR /usr/share/collectl
